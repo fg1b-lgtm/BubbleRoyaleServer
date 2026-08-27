@@ -1,0 +1,19 @@
+# 텍스트 파일은 저장소에 LF로 저장하고, 체크아웃 시 OS 기본에 맞춘다.
+* text=auto
+
+# Visual Studio 프로젝트 파일은 항상 CRLF (VS가 다시 저장할 때 diff가 튀는 걸 막는다)
+*.sln       text eol=crlf
+*.vcxproj   text eol=crlf
+*.filters   text eol=crlf
+*.props     text eol=crlf
+
+*.cpp       text eol=crlf
+*.h         text eol=crlf
+*.md        text eol=lf
+
+# 바이너리
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.mp4       binary
+*.pdf       binary

@@ -1,0 +1,109 @@
+# ---------------------------------------------------------------
+# Bubble Royale Server — .gitignore  (C++ / Visual Studio 2022)
+# 이 파일이 저장소의 첫 커밋이다. 코드보다 먼저 커밋한다.
+# ---------------------------------------------------------------
+
+# 빌드 산출물 (이 솔루션은 bin/ obj/ 로 출력을 모은다)
+bin/
+obj/
+
+# Visual Studio 기본 출력 경로 (혹시 설정이 되돌아갔을 때 대비)
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio 사용자별 / 캐시 파일
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.VC.db
+*.VC.VC.opendb
+*.opensdf
+*.sdf
+*.opendb
+*.ipch
+*.aps
+*.ncb
+*.cachefile
+
+# 빌드 중간 산출물
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+*.tlog
+*.log
+*.lastbuildstate
+*.res
+*.tli
+*.tlh
+*.iobj
+*.ipdb
+*.meta
+*.map
+*.rsp
+
+# 프로파일러 / 분석 결과
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.vspscc
+*.vssscc
+*.dbmdl
+*.dbproj.schemaview
+*.jfm
+*.pfx
+*.publishsettings
+
+# CMake (나중에 쓸 수도 있으므로 미리)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CMakeSettings.json
+out/
+build/
+
+# vcpkg
+vcpkg_installed/
+
+# 측정 결과물 중 임시 파일 (최종 리포트는 커밋한다)
+*.tmp
+*.bak
+*.swp
+*~
+
+# Windows / 에디터
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# 절대 커밋 금지 — Public 레포다
+*.pem
+*.key
+*.env
+.env.*
+secrets.*
