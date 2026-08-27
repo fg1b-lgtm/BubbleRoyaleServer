@@ -6,6 +6,7 @@
 *.vcxproj   text eol=crlf
 *.filters   text eol=crlf
 *.props     text eol=crlf
+*.bat       text eol=crlf
 
 *.cpp       text eol=crlf
 *.h         text eol=crlf
