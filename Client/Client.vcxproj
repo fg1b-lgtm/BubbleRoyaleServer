@@ -58,7 +58,7 @@
       <!-- /utf-8: 소스와 실행 문자셋을 UTF-8로 고정. 한글 주석에서 C4819가 나는 것을 막는다. -->
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <PreprocessorDefinitions>_CONSOLE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(SolutionDir)Common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -91,6 +91,10 @@
 
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="..\Common\Protocol.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

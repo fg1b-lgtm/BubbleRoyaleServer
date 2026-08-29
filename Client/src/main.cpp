@@ -7,6 +7,7 @@
 //
 // 종료: Ctrl+Z 후 Enter (입력 끝) 또는 Ctrl+C
 
+#include "Protocol.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <cstdio>
@@ -37,6 +38,28 @@ static bool send_all(SOCKET sock, const char* data, int len)
     }
     return true;
 }
+
+// 정확히 len 바이트를 받을 때까지 반복한다.
+// recv 한 번에 다 안 올 수 있기 때문이다. 서버 쪽 분할 처리와 같은 문제다.
+// 반환: 다 받았으면 true, 상대가 끊었거나 오류면 false
+static bool recv_exact(SOCKET sock, char* dst, int len)
+{
+    int total = 0;
+    while (total < len) {
+        int n = recv(sock, dst + total, len - total, 0);
+        if (n == 0) {
+            printf("[Client] server closed the connection\n");
+            return false;
+        }
+        if (n == SOCKET_ERROR) {
+            printf("[Client] recv failed: %d\n", WSAGetLastError());
+            return false;
+        }
+        total += n;
+    }
+    return true;
+}
+
 
 int main()
 {
@@ -112,35 +135,51 @@ int main()
             continue;
         }
 
-        if (!send_all(sock, input, len)) {
+        // 헤더와 몸통을 한 상자에 담아서 한 번에 보낸다.
+        // 나눠 보내면 중간에 다른 게 끼어들 수 있고, 상대가 조각을 오래 기다린다.
+        char packet[MAX_PACKET_SIZE];
+
+        // 상자 앞 4바이트를 헤더로 본다. 서버가 ReadPtr() 을 헤더로 본 것과 같은 방식이다.
+        PacketHeader* h = (PacketHeader*)packet;
+        h->size = (uint16_t)(HEADER_SIZE + len);   // 헤더 포함 전체
+        h->id   = PKT_ECHO;
+
+        memcpy(packet + HEADER_SIZE, input, len);  // 헤더 뒤에 몸통을 붙인다
+
+        if (!send_all(sock, packet, h->size)) {
             printf("[Client] send failed: %d\n", WSAGetLastError());
             break;
         }
+        
 
-        // 서버가 답할 때까지 여기서 멈춰 선다. 받은 바이트 수가 반환된다.
-        int received = recv(sock, buf, BUF_SIZE, 0);
-
-        // 0 = 서버가 정상적으로 끊었다. 에러가 아니다.
-        if (received == 0) {
-            printf("[Client] server closed the connection\n");
-            break;
-        }
-        if (received == SOCKET_ERROR) {
-            printf("[Client] recv failed: %d\n", WSAGetLastError());
+        // 1. 헤더 4바이트를 정확히 받는다
+        PacketHeader reply = {};
+        if (!recv_exact(sock, (char*)&reply, HEADER_SIZE)) {
             break;
         }
 
-        // buf 에는 문자열 끝 표시가 없다. 그래서 %s 가 아니라 %.*s 로 길이를 함께 넘긴다.
-        printf("[Client] echo (%d bytes): %.*s\n", received, received, buf);
+        // 2. 크기가 말이 되는지 확인한다. 서버가 하는 검사와 같다
+        if (reply.size < HEADER_SIZE || reply.size > MAX_PACKET_SIZE) {
+            printf("[Client] bad packet size %u\n", reply.size);
+            break;
+        }
 
-        // 보낸 것과 받은 것이 같은지 직접 확인한다. 이것이 오늘의 완료 조건이다.
-        // memcmp: 두 상자를 앞에서부터 len 바이트만큼 비교해 같으면 0 을 반환한다.
-        if (received == len && memcmp(input, buf, len) == 0) {
+        // 3. 몸통을 정확히 받는다
+        int body = reply.size - HEADER_SIZE;
+        if (body > 0 && !recv_exact(sock, buf, body)) {
+            break;
+        }
+
+        printf("[Client] echo (id=%u, %d bytes): %.*s\n", reply.id, body, body, buf);
+
+        // 보낸 것과 받은 것이 같은지 확인한다
+        if (body == len && memcmp(input, buf, len) == 0) {
             printf("[Client] OK - matches what I sent\n");
         }
         else {
-            printf("[Client] MISMATCH - sent %d bytes, got %d bytes\n", len, received);
+            printf("[Client] MISMATCH - sent %d bytes, got %d bytes\n", len, body);
         }
+
     }
 
     // 정리 순서: 소켓을 먼저 반납하고 → 마지막에 Winsock 을 내린다.

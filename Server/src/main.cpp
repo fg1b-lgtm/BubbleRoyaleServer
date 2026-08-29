@@ -14,9 +14,11 @@
 #include <winsock2.h>
 #include <WS2tcpip.h>
 #include <cstdio>
+#include "RecvBuffer.h"      // ← 추가. Protocol.h 는 이 안에서 딸려온다
 
 constexpr unsigned short SERVER_PORT = 9000;
-constexpr int BUF_SIZE = 1024;
+// constexpr int BUF_SIZE = 1024;    ← 지운다
+
 
 enum class IoType {Recv, Send};
 
@@ -26,7 +28,7 @@ struct IoContext {
     OVERLAPPED overlapped;  //반드시 첫번째 IoContext랑 주소가 같아야 ov를 되돌릴수 있음
     IoType type;            //받는주문인지 보내는주문인지 완료가 섞여 오니까 구분용
     WSABUF wsabuf;
-    char buf[BUF_SIZE];
+    char       send_buf[MAX_PACKET_SIZE];
 };
 
 //손님이 들어올떄 생성 나갈때 사라짐
@@ -42,6 +44,7 @@ struct Session {
     char ip[INET_ADDRSTRLEN];
     unsigned short port;
     IoContext io;
+    RecvBuffer recv_buf;
 };
 
 static void AddRef(Session* s){
@@ -69,10 +72,13 @@ static void CloseSession(Session* s)
 // 받는주문
 static bool PostRecv(Session* s)
 {
+    s->recv_buf.Clean();      // ← 추가. 쓸 자리부터 확보한다
+
     ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
     s->io.type = IoType::Recv;
-    s->io.wsabuf.buf = s->io.buf;
-    s->io.wsabuf.len = BUF_SIZE;
+    s->io.wsabuf.buf = s->recv_buf.WritePtr();      // ← 바구니 빈 자리를 가리킨다
+    s->io.wsabuf.len = s->recv_buf.WritableSize();  // ← 담을 수 있는 만큼
+
 
     AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
 
@@ -94,11 +100,14 @@ static bool PostRecv(Session* s)
 }
 
 // 보내는주문
-static bool PostSend(Session* s, int len){
+static bool PostSend(Session* s, const char* data, int len){
+     memcpy(s->io.send_buf, data, len);   // ← 보낼 것을 내 상자에 복사
+
     ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
     s->io.type = IoType::Send;
-    s->io.wsabuf.buf = s->io.buf;
+    s->io.wsabuf.buf = s->io.send_buf;
     s->io.wsabuf.len = len;
+
 
     AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
 
@@ -115,6 +124,39 @@ static bool PostSend(Session* s, int len){
         }
     }
     return true;    
+}
+
+// 바구니에 완전한 패킷이 있으면 꺼내서 보내고(한개), 없으면 다시 받기를 건다.
+// 받기완료 후랑 보내기 완료 후에도 이 함수를 부른다.
+static void PumpSession(Session* s)
+{
+    int data = s-> recv_buf.DataSize();
+
+    // 헤더 4바이트는 와야 크기를 읽을 수 있으므로 확인한다
+    if (data >= HEADER_SIZE) {
+        // 바구니 앞 4바이트를 헤더로 읽는다
+        PacketHeader* h = (PacketHeader*)s->recv_buf.ReadPtr();
+
+        // 크기가 말이 안되는 경우 끊는다. 끊지 않으면 이상한 값 하나로 망가질 수 있다.
+        if (h->size < HEADER_SIZE || h->size > MAX_PACKET_SIZE){
+            printf("[Worker] %s:%d bad packet size %u\n", s->ip, s->port, h->size);
+            CloseSession(s);
+            return;
+        }
+
+        // 몸통까지 다 왔나 크기를 비교하는 부분
+        if (data >= h->size) {
+            int len = h->size;
+            printf("[Worker] %s:%d packet id=%u size=%d\n", s->ip, s->port, h->id, len);
+
+            PostSend(s, s->recv_buf.ReadPtr(), len);        // 그대로 되돌려 보낸다
+            s->recv_buf.OnRead(len);        // 이만큼 처리했다고 표시
+            return;
+        }
+    }
+
+    // 완전한 패킷이 없으므로 더 받는다
+    PostRecv(s);
 }
 
 // 주문확인하고 전달하고 안내하는 홀 직원
@@ -152,17 +194,16 @@ static DWORD WINAPI WorkerThread(LPVOID param){
             }
             //받은 게 있음 그대로 되돌려 보냄
             else {
-                printf("[Worker] %s:%d recv %lu bytes: %.*s\n", s->ip, s->port, bytes, (int)bytes, io->buf);
-
+                s->recv_buf.OnWrite(bytes);     // 바구니에 이만큼 찼다고 알림
                 if (s->closing == 0){
-                    PostSend(s, bytes);
+                    PumpSession(s);
                 }
             }
         }
         //분기4 다 보냄 이제 다시 받을 준비
         else {
             if (s->closing ==0){
-                PostRecv(s);
+                PumpSession(s);
             }
         }
         Release(s);   //이 주문 하나 끝남 손님 한명 나간거
@@ -171,6 +212,11 @@ static DWORD WINAPI WorkerThread(LPVOID param){
 }
 
 int main(){
+    // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
+    // 화면에 직접 띄울 때는 상관없지만, 파일로 넘기거나 서버가 강제 종료되면
+    // 모아둔 로그가 통째로 날아간다. 서버 로그는 사고 직전이 제일 중요하다.
+    setvbuf(stdout, nullptr, _IONBF, 0);
+
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2,2), &wsa);
     if(rc != 0){

@@ -61,7 +61,7 @@
       <!-- WIN32_LEAN_AND_MEAN: windows.h가 구버전 winsock.h를 끌어와
            winsock2.h와 충돌하는 사고를 원천 차단한다. -->
       <PreprocessorDefinitions>_CONSOLE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(SolutionDir)Common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -94,6 +94,10 @@
 
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="..\Common\Protocol.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
