@@ -9,25 +9,6 @@
 // 이전 버전(8/27 blocking 에코)은 커밋 befb680 에 있다.
 //
 // ─────────────────────────────────────────────────────────────
-// A. 먼저 주석만 쓴다. 코드는 한 줄도 쓰지 않는다.
-//    원본을 봐도 되지만 베끼지 말고 내 문장으로 압축한다. 25줄 안쪽.
-// B. 원본 탭을 닫고 자동완성을 끈 다음, 그 주석만 보고 코드를 채운다.
-//
-// 주석에 반드시 들어가야 하는 것
-//   - 구조체 두 개가 왜 있고 각각 언제까지 사는가 (수명)
-//   - 누가 만들고 누가 지우는가 (소유 스레드)
-//   - main 이 하는 일 / worker 가 하는 일
-//   - worker 의 분기 네 갈래
-//   - 참조 카운트를 언제 올리고 언제 내리고 언제 지우는가
-//   - 실패했을 때 무엇을 되돌리는가
-//
-// 안 적어도 되는 것
-//   - 함수 인자 순서, 상수 철자, 헤더 파일 이름
-//
-// 시도 기록:
-//   1차 (  월  일) — 막힌 곳:
-//   2차 (  월  일) — 막힌 곳:
-// ─────────────────────────────────────────────────────────────
 
 // ↓ 여기부터 직접 쓴다
 #include <winsock2.h>
@@ -39,17 +20,25 @@ constexpr int BUF_SIZE = 1024;
 
 enum class IoType {Recv, Send};
 
+// 주문표 주문이 들어올때 생기고 끝났을때 사라짐
+// OS가 여기다 직접 씀 그래서 주문 끝날때까지 살아있어야함
 struct IoContext {
-    OVERLAPPED overlapped;
-    IoType type;
+    OVERLAPPED overlapped;  //반드시 첫번째 IoContext랑 주소가 같아야 ov를 되돌릴수 있음
+    IoType type;            //받는주문인지 보내는주문인지 완료가 섞여 오니까 구분용
     WSABUF wsabuf;
     char buf[BUF_SIZE];
 };
 
+//손님이 들어올떄 생성 나갈때 사라짐
+//소유 스레드
+//  main   accept 하고 만듬 첫 주문 건 다음엔 안 건드림
+//  worker 완료 받은 뒤부터 소유 ref_count 0되면 지움
 struct Session {
     SOCKET sock;
-    LONG ref_count;
-    LONG closing;
+    LONG ref_count; // 주문카운트 주문 걸면 +1 완료되면 -1 0되면 닫고 지움
+    LONG closing;   // 손님이 있는가 나갔는가 확인 팻말, 나가면 1
+                    // 1이면 새 주문을 안 검
+                    // 안 막으면 계속 새로 걸려서 ref_count가 영영 0이 안됨
     char ip[INET_ADDRSTRLEN];
     unsigned short port;
     IoContext io;
@@ -77,6 +66,7 @@ static void CloseSession(Session* s)
     shutdown(s->sock, SD_BOTH);
 }
 
+// 받는주문
 static bool PostRecv(Session* s)
 {
     ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
@@ -84,17 +74,18 @@ static bool PostRecv(Session* s)
     s->io.wsabuf.buf = s->io.buf;
     s->io.wsabuf.len = BUF_SIZE;
 
-    AddRef(s);
+    AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
 
     DWORD flags = 0;
     DWORD recived = 0;
     int rc = WSARecv(s->sock, &s->io.wsabuf, 1, &recived, &flags, &s->io.overlapped, nullptr);  
 
     if (rc == SOCKET_ERROR) {
+        // WSA_IO_PENDING은 실패가 아니라 진행중임 비동기라 이게 정상
         int err = WSAGetLastError();
         if (err != WSA_IO_PENDING) {
             printf("[Server]  %s:%d WSARecv faild: %d\n", s->ip, s->port, err);
-            Release(s);
+            Release(s);   //주문이 안 걸렸으니 올린거 도로 내림
             return false;
         }
     }
@@ -102,28 +93,31 @@ static bool PostRecv(Session* s)
 
 }
 
+// 보내는주문
 static bool PostSend(Session* s, int len){
     ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
     s->io.type = IoType::Send;
     s->io.wsabuf.buf = s->io.buf;
     s->io.wsabuf.len = len;
 
-    AddRef(s);
+    AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
 
     DWORD sent = 0;
     int rc = WSASend(s->sock, &s->io.wsabuf, 1, &sent, 0, &s->io.overlapped, nullptr);  
 
     if (rc == SOCKET_ERROR) {
+        // WSA_IO_PENDING은 실패가 아니라 진행중임 비동기라 이게 정상
         int err = WSAGetLastError();
         if (err != WSA_IO_PENDING) {
             printf("[Server]  %s:%d WSASend faild: %d\n", s->ip, s->port, err);
-            Release(s);
+            Release(s);   //주문이 안 걸렸으니 올린거 도로 내림
             return false;
         }
     }
     return true;    
 }
 
+// 주문확인하고 전달하고 안내하는 홀 직원
 static DWORD WINAPI WorkerThread(LPVOID param){
     HANDLE iocp = (HANDLE)param;
 
@@ -132,24 +126,31 @@ static DWORD WINAPI WorkerThread(LPVOID param){
         ULONG_PTR key = 0;
         OVERLAPPED* ov = nullptr;
 
+        //완성된거 나올때까지 여기서 멈춰있음
         BOOL ok = GetQueuedCompletionStatus(iocp, &bytes, (PULONG_PTR)&key, (LPOVERLAPPED*)&ov, INFINITE);
+
+        //분기1 ov가 없음 = 손님 얘기가 아니라 픽업대가 닫힌거 여기만 Release 안함
         if (!ok && ov == nullptr){
             printf("[Worker] complition port closed\n");
             break;
         }
 
-        Session* s = (Session*) key;
-        IoContext* io = (IoContext*)ov;
+        Session* s = (Session*) key;     //누구인지
+        IoContext* io = (IoContext*)ov;  //무슨 일인지
+
+        //분기2 강제 종료 창 X로 닫음 프로세스 죽음 64 10054 같은거
 
         if (!ok) {
             printf("[Worker] %s:%d io faild: %lu\n", s->ip, s->port, GetLastError());
             CloseSession(s);
         }
         else if (io->type == IoType::Recv){
+            //분기3 0바이트 = 손님이 정상적으로 끊음 에러 아님
             if (bytes == 0){
                 printf("[Worker] %s:%d disconnected\n", s->ip, s->port);
                 CloseSession(s);
             }
+            //받은 게 있음 그대로 되돌려 보냄
             else {
                 printf("[Worker] %s:%d recv %lu bytes: %.*s\n", s->ip, s->port, bytes, (int)bytes, io->buf);
 
@@ -158,12 +159,13 @@ static DWORD WINAPI WorkerThread(LPVOID param){
                 }
             }
         }
+        //분기4 다 보냄 이제 다시 받을 준비
         else {
             if (s->closing ==0){
                 PostRecv(s);
             }
         }
-        Release(s);
+        Release(s);   //이 주문 하나 끝남 손님 한명 나간거
     }
     return 0;
 }
@@ -246,6 +248,8 @@ int main(){
 
         printf("[Session] %s:%d connected\n", s->ip, s->port);
 
+        //첫 주문 여기 지나면 s의 주인은 worker
+        //실패하면 PostRecv 안의 Release가 이미 닫고 지웠음 여기서 또 하면 이중해제
         if (!PostRecv(s)) {
             printf("[Server] first PostRecv faild\n");
         }
