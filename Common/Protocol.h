@@ -4,16 +4,15 @@
 //
 // 고정 헤더 + 페이로드. 리틀 엔디안.
 //   [ uint16 size ][ uint16 id ][ payload ... ]
-// size 는 헤더를 포함한 전체 바이트다.
-
-// ↓ 여기부터 직접 쓴다
+// size 는 헤더를 포함한 전체 바이트다. 몸통이 없으면 4 다.
 #pragma  once
 
 #include <cstdint>
 
-constexpr int HEADER_SIZE = 4;
-constexpr int MAX_PACKET_SIZE = 1024;
+constexpr int HEADER_SIZE = 4;         // size 2 + id 2
+constexpr int MAX_PACKET_SIZE = 1024;  // 이보다 크다고 하면 믿을 수 없는 상대다
 
+// 패킷 종류. 숫자로 쓰면 읽는 사람이 모르니 이름을 붙인다
 enum PacketId : uint16_t
 {
     PKT_ECHO = 1,

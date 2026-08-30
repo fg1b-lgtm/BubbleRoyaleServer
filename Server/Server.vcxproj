@@ -98,6 +98,8 @@
 
   <ItemGroup>
     <ClInclude Include="..\Common\Protocol.h" />
+    <ClInclude Include="src\RecvBuffer.h" />
+    <ClInclude Include="src\SendBuffer.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

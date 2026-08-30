@@ -1,11 +1,9 @@
-// tools/probe.cpp — 패킷 경계 검증 도구 (C구역)
+// tools/probe.cpp — 패킷 경계 · 브로드캐스트 검증 도구 (C구역)
 //
-// 완료 조건 확인용.
 //   시험 1 (분할) : 패킷 하나를 1바이트씩 쪼개 보낸다
 //   시험 2 (연접) : 패킷 셋을 한 번에 몰아 보낸다
 //   시험 3 (섞임) : 패킷 둘 + 셋째의 앞 3바이트만 보내고, 잠시 뒤 나머지를 보낸다
-//
-// 셋 다 서버가 패킷 단위로 정확히 잘라내면 통과다.
+//   시험 4 (전파) : 셋이 붙은 상태에서 하나가 보내면 셋 다 받는가
 //
 // 빌드: practice 폴더에서  build.bat ..\tools\probe.cpp
 // 실행: practice\bin\probe.exe   (서버를 먼저 켤 것)
@@ -69,25 +67,25 @@ static void ExpectReply(SOCKET sock, const char* expect)
 {
     PacketHeader h = {};
     if (!RecvExact(sock, (char*)&h, HEADER_SIZE)) {
-        printf("  [FAIL] 헤더를 못 받았다\n");
+        printf("[FAIL] 헤더를 못 받았다\n");
         ++g_fail;
         return;
     }
     int body = h.size - HEADER_SIZE;
     char buf[MAX_PACKET_SIZE] = {};
     if (body > 0 && !RecvExact(sock, buf, body)) {
-        printf("  [FAIL] 몸통을 못 받았다\n");
+        printf("[FAIL] 몸통을 못 받았다\n");
         ++g_fail;
         return;
     }
 
     int want = (int)strlen(expect);
     if (body == want && memcmp(buf, expect, want) == 0) {
-        printf("  [PASS] size=%u id=%u body=\"%.*s\"\n", h.size, h.id, body, buf);
+        printf("[PASS] size=%u id=%u body=\"%.*s\"\n", h.size, h.id, body, buf);
         ++g_pass;
     }
     else {
-        printf("  [FAIL] 기대 \"%s\" (%d) / 실제 \"%.*s\" (%d)\n", expect, want, body, buf, body);
+        printf("[FAIL] 기대 \"%s\" (%d) / 실제 \"%.*s\" (%d)\n", expect, want, body, buf, body);
         ++g_fail;
     }
 }
@@ -112,6 +110,7 @@ int main()
             send(sock, pkt + i, 1, 0);
             Sleep(80);
         }
+        printf("  ");
         ExpectReply(sock, "SPLIT");
         closesocket(sock);
     }
@@ -129,9 +128,9 @@ int main()
         printf("  패킷 3개(%d바이트)를 send 한 번으로 보낸다\n", n);
         send(sock, stream, n, 0);
 
-        ExpectReply(sock, "AAA");
-        ExpectReply(sock, "BBBB");
-        ExpectReply(sock, "CCCCC");
+        printf("  ");  ExpectReply(sock, "AAA");
+        printf("  ");  ExpectReply(sock, "BBBB");
+        printf("  ");  ExpectReply(sock, "CCCCC");
         closesocket(sock);
     }
 
@@ -151,15 +150,42 @@ int main()
         printf("  먼저 %d바이트 (패킷 2개 + 셋째 조각)\n", first_chunk);
         send(sock, stream, first_chunk, 0);
 
-        ExpectReply(sock, "ONE");
-        ExpectReply(sock, "TWO");
+        printf("  ");  ExpectReply(sock, "ONE");
+        printf("  ");  ExpectReply(sock, "TWO");
 
         Sleep(400);
         printf("  나머지 %d바이트\n", n - first_chunk);
         send(sock, stream + first_chunk, n - first_chunk, 0);
 
-        ExpectReply(sock, "THREE");
+        printf("  ");  ExpectReply(sock, "THREE");
         closesocket(sock);
+    }
+
+    // ── 시험 4 : 브로드캐스트 ───────────────────────────────
+    printf("\n=== 시험 4: 셋이 붙은 상태에서 하나가 보내면 셋 다 받나 ===\n");
+    {
+        SOCKET s[3];
+        bool ok = true;
+        for (int i = 0; i < 3; ++i) {
+            s[i] = ConnectToServer();
+            if (s[i] == INVALID_SOCKET) { ok = false; break; }
+        }
+
+        if (ok) {
+            Sleep(300);   // 셋 다 목록에 들어갈 시간을 준다
+
+            int n = MakePacket(pkt, "BCAST", 5);
+            printf("  0번만 보낸다 (%d바이트)\n", n);
+            send(s[0], pkt, n, 0);
+
+            for (int i = 0; i < 3; ++i) {
+                printf("  %d번: ", i);
+                ExpectReply(s[i], "BCAST");
+            }
+            for (int i = 0; i < 3; ++i) {
+                closesocket(s[i]);
+            }
+        }
     }
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);

@@ -1,25 +1,27 @@
 // Bubble Royale — Server
 //
-// IOCP + 세션 생명주기. 완료 포트 하나, 워커 스레드 하나.
+// IOCP 서버. 완료 포트 하나, 워커 스레드 여러 개.
+// 손님마다 Session 을 하나 만들고, 받은 바이트를 수신 버퍼에 쌓아두다가
+// 완전한 패킷이 나올 때마다 잘라서 처리한다.
 //
-// 이 파일은 본진이다. 규칙 하나만 지킨다.
-//   본진에는 내가 안 보고 쓸 수 있는 코드만 들어간다.
+// 흐름
+//   main   accept 만 한다. Session 만들어 목록에 넣고 첫 주문 건 다음엔 손 뗀다
+//   worker 완료된 것만 집어서 처리하고 다음 주문을 건다
+//   둘은 서로 부르지 않는다. 완료 포트를 사이에 두고만 이어져 있다
 //
-// 원본(보지 말 것): practice/d9-session/server.cpp
-// 이전 버전(8/27 blocking 에코)은 커밋 befb680 에 있다.
-//
-// ─────────────────────────────────────────────────────────────
-
-// ↓ 여기부터 직접 쓴다
+// 여러 스레드가 같이 만지는 건 세션 목록 하나뿐이다.
+// 나머지는 세션당 하나씩이라 자물쇠가 필요 없다.
 #include <winsock2.h>
 #include <WS2tcpip.h>
 #include <cstdio>
-#include "RecvBuffer.h"      // ← 추가. Protocol.h 는 이 안에서 딸려온다
+#include "RecvBuffer.h"   // Protocol.h 는 이 안에서 딸려온다
+#include "SendBuffer.h"
 
 constexpr unsigned short SERVER_PORT = 9000;
-// constexpr int BUF_SIZE = 1024;    ← 지운다
+constexpr int WORKER_COUNT = 4;    // 워커 스레드 수. 코어 수 정도면 된다
+constexpr int MAX_SESSION = 256;   // 동시 접속 상한. 목록 배열 크기다
 
-
+// 주문 종류. 완료가 픽업대에 섞여 올라오니까 이걸로 구분한다
 enum class IoType {Recv, Send};
 
 // 주문표 주문이 들어올때 생기고 끝났을때 사라짐
@@ -28,7 +30,6 @@ struct IoContext {
     OVERLAPPED overlapped;  //반드시 첫번째 IoContext랑 주소가 같아야 ov를 되돌릴수 있음
     IoType type;            //받는주문인지 보내는주문인지 완료가 섞여 오니까 구분용
     WSABUF wsabuf;
-    char       send_buf[MAX_PACKET_SIZE];
 };
 
 //손님이 들어올떄 생성 나갈때 사라짐
@@ -43,14 +44,57 @@ struct Session {
                     // 안 막으면 계속 새로 걸려서 ref_count가 영영 0이 안됨
     char ip[INET_ADDRSTRLEN];
     unsigned short port;
-    IoContext io;
+    IoContext recv_io;
     RecvBuffer recv_buf;
+
+    IoContext send_io;
+    SendBuffer send_buf;
+    SRWLOCK send_lock;
+    LONG sending;
 };
 
+// 접속 중인 세션 목록. 이 서버에서 여러 스레드가 같이 만지는 유일한 공유물이다
+// 넣기는 main, 빼기와 읽기는 worker. 반드시 g_session_lock 을 잡고 만진다
+Session* g_sessions[MAX_SESSION] = {};
+SRWLOCK g_session_lock;   // 읽기는 여럿이 동시에, 쓰기는 혼자만
+
+// 목록에 넣는다. 자리가 없으면 false. 넣고 빼는 건 쓰기 자물쇠
+static bool AddSession(Session* s){
+    AcquireSRWLockExclusive(&g_session_lock);
+    
+    bool ok = false;
+    for (int i = 0; i < MAX_SESSION; ++i){
+        if (g_sessions[i] == nullptr){
+            g_sessions[i] = s;
+            ok = true;
+            break;
+        }
+    }
+
+    ReleaseSRWLockExclusive(&g_session_lock);
+    return ok;
+}
+
+// 목록에서 뺀다. 여기서 빠져야 아무도 못 꺼내고 지울 수 있게 된다
+static void RemoveSession(Session* s){
+    AcquireSRWLockExclusive(&g_session_lock);
+
+    for ( int i = 0; i < MAX_SESSION; ++i){
+        if(g_sessions[i] == s){
+            g_sessions[i] = nullptr;
+            break;
+        }
+    }
+
+    ReleaseSRWLockExclusive(&g_session_lock);
+}
+
+// 붙잡는다. 주문을 걸기 전이나 목록에서 꺼내 쓰기 전에 부른다
 static void AddRef(Session* s){
     InterlockedIncrement(&s -> ref_count);
 }
 
+// 놓는다. 마지막 하나가 놓으면 그때 소켓 닫고 지운다
 static void Release(Session* s){
     if (InterlockedDecrement(&s->ref_count) == 0) {
         printf("[Server]  %s:%d fully closed\n", s->ip, s->port);
@@ -59,32 +103,36 @@ static void Release(Session* s){
     }
 }
 
+// 영업 종료 팻말을 건다. 문을 잠그지는 않는다
+// 걸린 주문이 아직 있을 수 있어서, 지우는 건 ref_count 가 0 이 될 때 Release 가 한다
 static void CloseSession(Session* s)
 {
-    if (s->closing==1){
+    if (InterlockedExchange(&s->closing, 1)== 1){
         return;
     }
-    s->closing = 1;
     printf("[Server]  %s:%d closing\n", s->ip, s->port);
+    
+    RemoveSession(s);
     shutdown(s->sock, SD_BOTH);
+    Release(s);
 }
 
 // 받는주문
 static bool PostRecv(Session* s)
 {
-    s->recv_buf.Clean();      // ← 추가. 쓸 자리부터 확보한다
+    s->recv_buf.Clean();   // 쓸 자리부터 확보한다
 
-    ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
-    s->io.type = IoType::Recv;
-    s->io.wsabuf.buf = s->recv_buf.WritePtr();      // ← 바구니 빈 자리를 가리킨다
-    s->io.wsabuf.len = s->recv_buf.WritableSize();  // ← 담을 수 있는 만큼
+    ZeroMemory(&s->recv_io.overlapped, sizeof(OVERLAPPED));
+    s->recv_io.type = IoType::Recv;
+    s->recv_io.wsabuf.buf = s->recv_buf.WritePtr();      // 바구니 빈 자리를 가리킨다
+    s->recv_io.wsabuf.len = s->recv_buf.WritableSize();  // 담을 수 있는 만큼
 
 
     AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
 
     DWORD flags = 0;
     DWORD recived = 0;
-    int rc = WSARecv(s->sock, &s->io.wsabuf, 1, &recived, &flags, &s->io.overlapped, nullptr);  
+    int rc = WSARecv(s->sock, &s->recv_io.wsabuf, 1, &recived, &flags, &s->recv_io.overlapped, nullptr);  
 
     if (rc == SOCKET_ERROR) {
         // WSA_IO_PENDING은 실패가 아니라 진행중임 비동기라 이게 정상
@@ -99,64 +147,112 @@ static bool PostRecv(Session* s)
 
 }
 
-// 보내는주문
-static bool PostSend(Session* s, const char* data, int len){
-     memcpy(s->io.send_buf, data, len);   // ← 보낼 것을 내 상자에 복사
+static void StartSend(Session* s){
+    AcquireSRWLockExclusive(&s->send_lock);
+    char* ptr = s->send_buf.PeekPtr();
+    int len = s->send_buf.PeekSize();
+    ReleaseSRWLockExclusive(&s->send_lock);
 
-    ZeroMemory(&s->io.overlapped, sizeof(OVERLAPPED));
-    s->io.type = IoType::Send;
-    s->io.wsabuf.buf = s->io.send_buf;
-    s->io.wsabuf.len = len;
+    ZeroMemory(&s->send_io.overlapped, sizeof(OVERLAPPED));
+    s->send_io.type = IoType::Send;
+    s->send_io.wsabuf.buf = ptr;
+    s->send_io.wsabuf.len = len;
 
-
-    AddRef(s);   //걸기 전에 올림 걸고 나서 올리면 그 사이에 완료돼서 Release가 먼저 될수 있음
+    AddRef(s);
 
     DWORD sent = 0;
-    int rc = WSASend(s->sock, &s->io.wsabuf, 1, &sent, 0, &s->io.overlapped, nullptr);  
+    int rc = WSASend(s->sock, &s->send_io.wsabuf, 1, &sent, 0, &s->send_io.overlapped, nullptr);
 
     if (rc == SOCKET_ERROR) {
-        // WSA_IO_PENDING은 실패가 아니라 진행중임 비동기라 이게 정상
         int err = WSAGetLastError();
         if (err != WSA_IO_PENDING) {
-            printf("[Server]  %s:%d WSASend faild: %d\n", s->ip, s->port, err);
-            Release(s);   //주문이 안 걸렸으니 올린거 도로 내림
-            return false;
+            printf("[SERVER] %s:%d WSASend failed: %d\n", s->ip, s->port, err);
+            Release(s);
+            CloseSession(s);
         }
     }
-    return true;    
 }
 
-// 바구니에 완전한 패킷이 있으면 꺼내서 보내고(한개), 없으면 다시 받기를 건다.
-// 받기완료 후랑 보내기 완료 후에도 이 함수를 부른다.
-static void PumpSession(Session* s)
-{
-    int data = s-> recv_buf.DataSize();
+static void SendPacket(Session* s, const char* data, int len){
+    if ( s-> closing ==1 ){
+        return;
+    }
 
-    // 헤더 4바이트는 와야 크기를 읽을 수 있으므로 확인한다
-    if (data >= HEADER_SIZE) {
-        // 바구니 앞 4바이트를 헤더로 읽는다
+    bool need_start = false;
+    
+    AcquireSRWLockExclusive(&s->send_lock);
+    bool pushed = s->send_buf.Push(data, len);
+    if (pushed && s->sending == 0){
+        s->sending = 1;     // 내가 시작한다고 표시
+        need_start = true;
+    }
+    ReleaseSRWLockExclusive(&s->send_lock);
+
+    if (!pushed){
+        // 안받아가서 쌓이기만 한것들 처리
+        printf("[Server] %s:%d send buffer full\n", s->ip, s->port);
+        CloseSession(s);
+        return;
+    }
+
+    if (need_start){
+        StartSend(s);
+    }
+}
+
+// 접속 중인 모두에게 뿌린다. except는 제외
+static void Broadcast(const char* data, int len, Session* except){
+    Session* targets[MAX_SESSION];
+    int count = 0;
+
+    AcquireSRWLockShared(&g_session_lock);  //읽기 자물쇠
+    for (int i = 0; i < MAX_SESSION; ++i){
+        Session* t = g_sessions[i];
+        if (t == nullptr) continue;
+        if (t == except) continue;
+        if (t->closing == 1) continue;
+
+        AddRef(t);     //락 안에서 붙잡는다.
+        targets[count++] = t;
+    }
+    ReleaseSRWLockShared(&g_session_lock);
+
+    // 락 밖에서 보낸다
+    for (int i = 0; i < count; ++i){
+        SendPacket(targets[i], data, len);
+        Release(targets[i]);        // 다 썼으니 놓는다
+    }
+}
+
+// 바구니에서 완전한 패킷을 전부 꺼내서 처리
+static void ProcessPackets(Session* s){
+    while (true){
+        int data = s->recv_buf.DataSize();
+        // 헤더가 덜 왔다 
+        if (data < HEADER_SIZE){
+            break;
+        }
+
         PacketHeader* h = (PacketHeader*)s->recv_buf.ReadPtr();
 
-        // 크기가 말이 안되는 경우 끊는다. 끊지 않으면 이상한 값 하나로 망가질 수 있다.
         if (h->size < HEADER_SIZE || h->size > MAX_PACKET_SIZE){
             printf("[Worker] %s:%d bad packet size %u\n", s->ip, s->port, h->size);
             CloseSession(s);
             return;
         }
-
-        // 몸통까지 다 왔나 크기를 비교하는 부분
-        if (data >= h->size) {
-            int len = h->size;
-            printf("[Worker] %s:%d packet id=%u size=%d\n", s->ip, s->port, h->id, len);
-
-            PostSend(s, s->recv_buf.ReadPtr(), len);        // 그대로 되돌려 보낸다
-            s->recv_buf.OnRead(len);        // 이만큼 처리했다고 표시
-            return;
+        
+        // 몸통이 덜 왔다
+        if ( data < h->size){
+            break;
         }
-    }
 
-    // 완전한 패킷이 없으므로 더 받는다
-    PostRecv(s);
+        int len = h->size;
+        printf("[Worker] %s:%d packet id=%u size=%d\n", s->ip, s->port, h->id, len);
+
+        Broadcast(s->recv_buf.ReadPtr(), len, nullptr);
+
+        s->recv_buf.OnRead(len);
+    }
 }
 
 // 주문확인하고 전달하고 안내하는 홀 직원
@@ -195,15 +291,25 @@ static DWORD WINAPI WorkerThread(LPVOID param){
             //받은 게 있음 그대로 되돌려 보냄
             else {
                 s->recv_buf.OnWrite(bytes);     // 바구니에 이만큼 찼다고 알림
+                ProcessPackets(s);
                 if (s->closing == 0){
-                    PumpSession(s);
+                    PostRecv(s);        // 받기는 항상 다시 걸기
                 }
             }
         }
-        //분기4 다 보냄 이제 다시 받을 준비
+        //분기4 보내기 완료, 나간 만큼 큐에서 빼고 남았으면 이어서 보내기
         else {
-            if (s->closing ==0){
-                PumpSession(s);
+            bool more = false;
+            AcquireSRWLockExclusive(&s->send_lock);
+            s->send_buf.OnSent(bytes);
+            more = s->send_buf.Size() > 0;
+            if (!more){
+                s->sending = 0;     //다 보냈다.
+            }
+            ReleaseSRWLockExclusive(&s->send_lock);
+
+            if(more && s->closing == 0){
+                StartSend(s);
             }
         }
         Release(s);   //이 주문 하나 끝남 손님 한명 나간거
@@ -211,11 +317,14 @@ static DWORD WINAPI WorkerThread(LPVOID param){
     return 0;
 }
 
+// 순서: 픽업대 만들고 -> 워커 띄우고 -> listen 열고 -> accept 만 반복
 int main(){
     // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
     // 화면에 직접 띄울 때는 상관없지만, 파일로 넘기거나 서버가 강제 종료되면
     // 모아둔 로그가 통째로 날아간다. 서버 로그는 사고 직전이 제일 중요하다.
     setvbuf(stdout, nullptr, _IONBF, 0);
+
+    InitializeSRWLock(&g_session_lock);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2,2), &wsa);
@@ -231,22 +340,29 @@ int main(){
         return 1;
     }
 
-    HANDLE worker = CreateThread(nullptr, 0, WorkerThread, iocp, 0, nullptr);
-    if (worker == nullptr){
-        printf("[Server] CreateThread faild: %lu\n", GetLastError());
-        CloseHandle(iocp);
-        WSACleanup();
-        return 1;
+    HANDLE workers[WORKER_COUNT];
+    for (int i = 0; i < WORKER_COUNT; ++i){
+        workers[i] = CreateThread(nullptr, 0, WorkerThread, iocp, 0, nullptr);
+        if (workers[i] == nullptr){
+            printf("[Server] CreateThread faild: %lu\n", GetLastError());
+            CloseHandle(iocp);
+            WSACleanup();
+            return 1;
+        }
     }
-
+    printf("[Server] %d workers started\n", WORKER_COUNT);
+    
 
     SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listen_sock == INVALID_SOCKET) {
         printf("[Server] socket faild: %d\n", WSAGetLastError());
-        CloseHandle(worker);
         CloseHandle(iocp);
+        WaitForMultipleObjects(WORKER_COUNT, workers, TRUE, 1000);
+        for(int i = 0; i < WORKER_COUNT; i++){
+            CloseHandle(workers[i]);
+        }
         WSACleanup();
-        return 1;
+        return 1; 
     }
 
     sockaddr_in server_addr = {};
@@ -280,15 +396,23 @@ int main(){
 
         Session* s = new Session();
         s->sock = client_sock;
-        s->ref_count = 0;
+        s->ref_count = 1;
         s->closing = 0;
+        s->sending = 0;
+        InitializeSRWLock(&s->send_lock);
         inet_ntop(AF_INET, &client_addr.sin_addr, s->ip, sizeof(s->ip));
         s->port = ntohs(client_addr.sin_port);
 
-        if (CreateIoCompletionPort((HANDLE)client_sock, iocp, (ULONG_PTR)s, 0) == nullptr) {
-            printf("[Server] associate faild: %lu\n", GetLastError());
+        if(!AddSession(s)){
+            printf("[Server] session list full\n");
             closesocket(client_sock);
             delete s;
+            continue;
+        }
+
+        if (CreateIoCompletionPort((HANDLE)client_sock, iocp, (ULONG_PTR)s, 0) == nullptr) {
+            printf("[Server] associate faild: %lu\n", GetLastError());
+            CloseSession(s);
             continue;
         }
 
@@ -298,13 +422,16 @@ int main(){
         //실패하면 PostRecv 안의 Release가 이미 닫고 지웠음 여기서 또 하면 이중해제
         if (!PostRecv(s)) {
             printf("[Server] first PostRecv faild\n");
+            CloseSession(s);
         }
     }
 
     closesocket(listen_sock);
     CloseHandle(iocp);
-    WaitForSingleObject(worker, 1000);
-    CloseHandle(worker);
+    WaitForMultipleObjects(WORKER_COUNT, workers, TRUE, 1000);
+        for(int i = 0; i < WORKER_COUNT; i++){
+            CloseHandle(workers[i]);
+        }
     WSACleanup();
     return 0;
 }
