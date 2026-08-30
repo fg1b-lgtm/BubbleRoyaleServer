@@ -16,7 +16,6 @@
 #include "Protocol.h"
 
 constexpr char           SERVER_IP[] = "127.0.0.1";
-constexpr unsigned short SERVER_PORT = 9000;
 
 static int g_pass = 0;
 static int g_fail = 0;

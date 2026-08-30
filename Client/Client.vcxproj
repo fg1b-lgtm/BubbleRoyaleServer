@@ -95,6 +95,7 @@
 
   <ItemGroup>
     <ClInclude Include="..\Common\Protocol.h" />
+    <ClInclude Include="..\Common\GameConstants.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

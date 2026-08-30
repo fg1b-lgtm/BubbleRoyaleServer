@@ -15,7 +15,6 @@
 
 // 매직 넘버 금지 — 주소/포트/버퍼 크기는 이름을 붙여 한곳에 모은다.
 constexpr char SERVER_IP[] = "127.0.0.1";   // 내 PC 자신을 가리키는 주소(루프백)
-constexpr unsigned short SERVER_PORT = 9000;
 constexpr int BUF_SIZE = 1024;
 
 // send 는 요청한 길이를 한 번에 다 못 보낼 수 있다.

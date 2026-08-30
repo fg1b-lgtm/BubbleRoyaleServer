@@ -18,7 +18,6 @@
 #include "Protocol.h"
 
 constexpr char           SERVER_IP[] = "127.0.0.1";
-constexpr unsigned short SERVER_PORT = 9000;
 
 // 여러 스레드가 같이 올린다. 그래서 Interlocked 로 센다
 static LONG g_connects = 0;

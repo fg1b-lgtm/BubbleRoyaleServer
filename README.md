@@ -74,14 +74,39 @@ bin\x64\Debug\Server.exe
 bin\x64\Debug\Client.exe
 ```
 
-현재(D-11) 동작:
+클라이언트를 여러 개 띄우면 한 명이 친 것이 전원에게 전파된다.
 
 ```
-[Server] listening on port 9000        [Client] connected to 127.0.0.1:9000
-[Server] client connected: 127.0.0.1   > hello
-[Server] recv 5 bytes: hello           [Client] echo (5 bytes): hello
-                                       [Client] OK - matches what I sent
+[Server] 4 workers started
+[Server] listening on port 9000
+[Session] 127.0.0.1:51234 connected
+[Session] 127.0.0.1:51234 packet id=1 size=9
+[Session] 127.0.0.1:51234 disconnected
+[Session] 127.0.0.1:51234 closing
+[Session] 127.0.0.1:51234 fully closed
 ```
+
+로그 접두어는 두 가지다. 주소가 붙으면 `[Session]`, 서버 전체 얘기면 `[Server]`.
+
+### 검증 도구
+
+`tools/` 의 두 프로그램으로 확인한다. `practice/build.bat` 으로 빌드한다.
+
+```bat
+cd practice
+build.bat ..\tools\probe.cpp
+build.bat ..\tools\bot.cpp
+```
+
+| 도구 | 무엇을 확인하나 |
+|---|---|
+| `probe.exe` | 패킷 경계. 1바이트씩 쪼개 보내기 / 몰아 보내기 / 둘이 섞인 경우 / 브로드캐스트 |
+| `bot.exe [봇수] [초]` | 부하와 레이스. 봇이 동시에 붙었다 끊기를 반복한다 |
+
+`bot.exe` 를 돌린 뒤 서버 로그에서 `connected` 수와 `fully closed` 수가 같아야 한다.
+다르면 세션이 샌 것이다.
+
+최근 확인: 봇 24개 12초에 접속 2855, 서버 `fully closed` 2855, 누수 0.
 
 ---
 
@@ -89,11 +114,22 @@ bin\x64\Debug\Client.exe
 
 ```
 BubbleRoyale.sln
-├─ Server/src/        서버
+├─ Common/            서버와 클라이언트가 같이 보는 것
+│   ├─ Protocol.h        패킷 헤더 · 포트 · 패킷 종류
+│   └─ GameConstants.h   게임 규칙 상수 (9/1 부터 사용)
+├─ Server/src/
+│   ├─ main.cpp          패킷 처리 + 워커 루프 + 시작/종료
+│   ├─ Session.h         Session / IoContext / 참조 카운트
+│   ├─ SessionManager.h  세션 목록 + 자물쇠 + CloseSession
+│   ├─ Network.h         PostRecv / StartSend / SendPacket / Broadcast
+│   ├─ RecvBuffer.h      받은 바이트를 쌓아두는 버퍼 (커서 두 개)
+│   ├─ SendBuffer.h      보낼 것을 쌓아두는 링버퍼
+│   └─ ServerConfig.h    워커 수 · 동시 접속 상한
 ├─ Client/src/        테스트용 콘솔 클라이언트
+├─ tools/             검증 도구 (probe, bot)
 ├─ practice/          학습용 재작성 연습 (아래 참고)
 ├─ devlog/            매일의 개발 로그
-├─ SPEC.md            스펙 · 프로토콜 · 9일 계획
+├─ SPEC.md            스펙 · 프로토콜 · 일별 완료 조건
 └─ CLAUDE.md          AI 어시스턴트 사용 규칙
 ```
 

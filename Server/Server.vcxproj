@@ -100,6 +100,11 @@
     <ClInclude Include="..\Common\Protocol.h" />
     <ClInclude Include="src\RecvBuffer.h" />
     <ClInclude Include="src\SendBuffer.h" />
+    <ClInclude Include="src\Session.h" />
+    <ClInclude Include="src\SessionManager.h" />
+    <ClInclude Include="src\Network.h" />
+    <ClInclude Include="src\ServerConfig.h" />
+    <ClInclude Include="..\Common\GameConstants.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

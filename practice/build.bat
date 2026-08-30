@@ -59,7 +59,7 @@ echo.
 echo === compiling %~1 ===
 echo.
 
-cl /nologo /W4 /std:c++17 /utf-8 /EHsc /Zi /I"%~dp0..\Common" /I"%~dp0..\Server\src" /D_CONSOLE /DWIN32_LEAN_AND_MEAN /DNOMINMAX "%~1" /Fe:"bin\%~n1.exe" /Fo:"bin\%~n1.obj" /Fd:"bin\%~n1.pdb" /link ws2_32.lib mswsock.lib
+cl /nologo /W4 /std:c++17 /utf-8 /EHsc /Zi /I"%~dp0..\Common" /D_CONSOLE /DWIN32_LEAN_AND_MEAN /DNOMINMAX "%~1" /Fe:"bin\%~n1.exe" /Fo:"bin\%~n1.obj" /Fd:"bin\%~n1.pdb" /link ws2_32.lib mswsock.lib
 
 if errorlevel 1 (
     echo.

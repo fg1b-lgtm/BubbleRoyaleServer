@@ -9,6 +9,9 @@
 
 #include <cstdint>
 
+// 서버가 듣는 포트. 양쪽이 같아야 하므로 약속에 포함된다
+constexpr unsigned short SERVER_PORT = 9000;
+
 constexpr int HEADER_SIZE = 4;         // size 2 + id 2
 constexpr int MAX_PACKET_SIZE = 1024;  // 이보다 크다고 하면 믿을 수 없는 상대다
 
