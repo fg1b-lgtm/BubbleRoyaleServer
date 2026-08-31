@@ -89,8 +89,17 @@ struct GameMap
 
         // 3) 스폰 자리를 먼저 정한다. 블록을 깔기 전에 잡아야 주변을 비울 수 있다.
         //    조각 하나에 세 자리. 서로 최대한 떨어뜨린다
-        const int local_x[SPAWN_PER_SECTOR] = { 1, SECTOR_W - 2, SECTOR_W / 2 };
-        const int local_y[SPAWN_PER_SECTOR] = { 1, 1,            SECTOR_H - 2 };
+        // 조각 안에서만 떨어뜨리면 안 된다.
+        // 조각 경계를 사이에 둔 두 스폰이 붙어버리기 때문이다.
+        //
+        // 처음에 쓰던 (1,1) (13,1) (7,11) 은 조각 안에서는 잘 떨어져 있는데,
+        // 옆 조각의 (1,1) 이 (16,1) 이라 (13,1) 과 3칸 거리였다.
+        // 물줄기 사거리가 2 인데 3칸이면 시작하자마자 사정권이다.
+        //
+        // 아래 배치는 전체 27개 스폰의 최소 거리를 가장 크게 만드는 조합이다.
+        // 3칸 -> 9칸
+        const int local_x[SPAWN_PER_SECTOR] = { 2, 5, 10 };
+        const int local_y[SPAWN_PER_SECTOR] = { 2, 8,  4 };
 
         for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
             for (int sx = 0; sx < SECTOR_COLS; ++sx) {

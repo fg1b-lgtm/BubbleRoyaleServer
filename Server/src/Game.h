@@ -214,10 +214,34 @@ inline int AddPlayer(Session* s)
         return -1;
     }
 
+    // 빈 자리를 앞에서부터 주면 안 된다.
+    // 두세 명만 붙었을 때 전부 같은 조각에 몰려서 시작하자마자 싸우게 된다.
+    // 이미 앉은 사람들에게서 제일 먼 자리를 고른다
     int spawn = -1;
+    int best_gap = -1;
+
     for (int i = 0; i < g_game.map.spawn_count; ++i) {
-        if (!g_game.spawn_used[i]) { spawn = i; break; }
+        if (g_game.spawn_used[i]) {
+            continue;
+        }
+
+        int gap = 1 << 20;   // 아무도 없으면 아주 큰 값
+        for (int j = 0; j < g_game.map.spawn_count; ++j) {
+            if (!g_game.spawn_used[j]) {
+                continue;
+            }
+            int dx = g_game.map.spawn_x[i] - g_game.map.spawn_x[j];
+            int dy = g_game.map.spawn_y[i] - g_game.map.spawn_y[j];
+            int d  = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+            if (d < gap) gap = d;
+        }
+
+        if (gap > best_gap) {
+            best_gap = gap;
+            spawn = i;
+        }
     }
+
     if (spawn < 0) {
         return -1;
     }
