@@ -11,7 +11,7 @@
 #pragma once
 
 #include "ServerConfig.h"
-#include "Session.h"
+#include "JobQueue.h"
 
 inline Session* g_sessions[MAX_SESSION] = {};   // nullptr = 빈 자리
 inline SRWLOCK  g_session_lock;
@@ -69,6 +69,7 @@ inline void CloseSession(Session* s)
 
     printf("[Session] %s:%d closing\n", s->ip, s->port);
 
+    PushJob(JobType::Leave, s, nullptr, 0); // 나갔다는 것을 틱 스레드에 알림
     RemoveSession(s);              // 목록에서 뺀다
     shutdown(s->sock, SD_BOTH);    // 걸린 주문들이 실패로라도 완료되게 깨운다
     Release(s);                    // 목록이 들고 있던 참조를 놓는다

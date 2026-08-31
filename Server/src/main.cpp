@@ -22,23 +22,35 @@
 //   [Server]   서버 전체 얘기
 //   [Session]  주소가 붙는 모든 것
 #include "Network.h"
+#include "GameConstants.h"
 
-// 패킷 하나를 종류별로 처리한다.
-// 9/1 에 게임 패킷이 늘면 여기에 case 를 하나씩 추가한다.
-// 몸통이 필요하면  (const char*)h + HEADER_SIZE  가 시작이고 길이는 h->size - HEADER_SIZE 다.
-static void HandlePacket(Session* s, const PacketHeader* h)
-{
-    switch (h->id) {
-    case PKT_ECHO:
-        // 지금은 받은 것을 그대로 전원에게 뿌린다
-        Broadcast((const char*)h, h->size, nullptr);
-        break;
+// 주문 하나를 처리한다. 이 함수는 틱 스레드에서만 불린다.
+static void HandleJob(const Job* j){
+    Session* s = j->s;
 
-    default:
-        // 모르는 패킷을 보내는 상대는 믿을 수 없다
-        printf("[Session] %s:%d unknown packet id=%u\n", s->ip, s->port, h->id);
-        CloseSession(s);
-        break;
+    switch (j->type) {
+        case JobType::Enter:
+            printf("[Tick] %s:%d entered\n", s->ip, s->port);
+            break;
+        case JobType::Leave:
+            printf("[Tick] %s:%d left\n", s->ip, s->port);
+            break;
+        case JobType::Packet: {
+            const PacketHeader* h = (const PacketHeader*)j->data;
+
+            switch(h->id){
+                case PKT_ECHO:
+                    Broadcast(j->data, h->size, nullptr);
+                    break;
+
+                default:
+                    printf("[Session] %s:%d unknown packet id=%u\n", s->ip, s->port, h->id);
+                    CloseSession(s);
+                    break;
+            }
+            break;
+        }
+
     }
 }
 
@@ -68,9 +80,13 @@ static void ProcessPackets(Session* s)
         }
 
         int len = h->size;
-        printf("[Session] %s:%d packet id=%u size=%d\n", s->ip, s->port, h->id, len);
+        
+        if (!PushJob(JobType::Packet, s, (const char*)h, len)){
+            printf("[Session] %s:%d job queue full\n", s->ip, s->port);
+            CloseSession(s);
+            return;
+        }
 
-        HandlePacket(s, h);
         s->recv_buf.OnRead(len);
 
         if (s->closing == 1) {
@@ -140,6 +156,56 @@ static DWORD WINAPI WorkerThread(LPVOID param)
     return 0;
 }
 
+static LONG g_tick_running = 1;   // 0 이 되면 틱 스레드가 나간다
+
+// 게임 스레드. 초당 TICK_RATE 번 돌면서 꽂힌 주문을 가져다 처리한다.
+// 게임 상태는 앞으로 전부 이 스레드만 소유한다.
+static DWORD WINAPI TickThread(LPVOID)
+{
+    ULONGLONG start = GetTickCount64();   // 부팅 후 흐른 밀리초
+    ULONGLONG tick  = 0;                  // 몇 번째 틱인가
+
+    while (g_tick_running == 1) {
+        ++tick;
+
+        // 1) 꽂힌 주문을 통째로 가져온다
+        Job* jobs  = nullptr;
+        int  count = SwapJobs(&jobs);
+
+        // 2) 순서대로 처리한다. 여긴 나 혼자다
+        for (int i = 0; i < count; ++i) {
+            HandleJob(&jobs[i]);
+            Release(jobs[i].s);   // 꽂을 때 든 참조를 여기서 놓는다
+        }
+
+        // 3) 9/1 에 게임 한 틱이 여기 들어간다 (이동, 퓨즈, 폭발, 침수)
+
+        // 4) 다음 틱 시각까지 잔다.
+        //    33 을 계속 더해 나가지 않고 시작 시각에서 매번 다시 계산한다.
+        //    1000/30 은 33.333 이라 33 으로 더하면 한 틱마다 0.333ms 씩 빨라진다.
+        //    1분이면 0.6초, 5분 한 판이면 3초가 어긋난다.
+        //    시간을 전부 틱으로 적어놨기 때문에(GameConstants.h) 이게 그대로 게임 시각이 된다.
+        //    곱하기를 나누기보다 먼저 하면 오차가 안 쌓인다.
+        ULONGLONG target = start + tick * 1000 / TICK_RATE;
+        ULONGLONG now    = GetTickCount64();
+
+        if (now < target) {
+            Sleep((DWORD)(target - now));
+        }
+        else if (now - target > 1000) {
+            // 1초 넘게 밀렸다. 따라잡으려고 쉬지 않고 돌면 더 밀린다.
+            // 따라잡기를 포기하고 시계를 지금으로 맞춘다
+            printf("[Server] tick behind %llu ms, resync\n", now - target);
+            start = now;
+            tick  = 0;
+        }
+    }
+
+    printf("[Server] tick thread stopped\n");
+    return 0;
+}
+
+
 // 워커 정리. 실패 경로에서도 같이 쓴다
 static void ShutdownWorkers(HANDLE* workers, int count)
 {
@@ -158,6 +224,7 @@ int main()
     setvbuf(stdout, nullptr, _IONBF, 0);
 
     InitSessionManager();
+    InitJobQueue();
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -218,7 +285,20 @@ int main()
         WSACleanup();
         return 1;
     }
+
     printf("[Server] listening on port %d\n", SERVER_PORT);
+
+    HANDLE tick_thread = CreateThread(nullptr, 0, TickThread, nullptr, 0, nullptr);
+    if (tick_thread == nullptr) {
+        printf("[Server] tick CreateThread failed: %lu\n", GetLastError());
+        closesocket(listen_sock);
+        CloseHandle(iocp);
+        ShutdownWorkers(workers, WORKER_COUNT);
+        WSACleanup();
+        return 1;
+    }
+    printf("[Server] tick thread started (%d Hz)\n", TICK_RATE);
+
 
     while (true) {
         sockaddr_in client_addr = {};
@@ -260,6 +340,10 @@ int main()
 
         printf("[Session] %s:%d connected\n", s->ip, s->port);
 
+        // 들어왔다는 걸 틱 스레드에 알린다. 첫 주문보다 먼저다
+        PushJob(JobType::Enter, s, nullptr, 0);
+
+
         // 첫 주문. 이 줄을 지나면 s 의 주인은 worker 다.
         // 실패하면 PostRecv 안의 Release 가 이미 참조를 내렸으므로 CloseSession 으로만 정리한다
         if (!PostRecv(s)) {
@@ -271,6 +355,9 @@ int main()
     }
 
     closesocket(listen_sock);
+    InterlockedExchange(&g_tick_running, 0);   // 나가라고 알린다
+    WaitForSingleObject(tick_thread, 2000);    // 나갈 때까지 기다린다
+    CloseHandle(tick_thread);
     CloseHandle(iocp);
     ShutdownWorkers(workers, WORKER_COUNT);
     WSACleanup();

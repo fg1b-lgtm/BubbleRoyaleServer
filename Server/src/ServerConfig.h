@@ -5,3 +5,4 @@
 
 constexpr int WORKER_COUNT = 4;    // 워커 스레드 수. 코어 수 정도면 된다
 constexpr int MAX_SESSION  = 256;  // 동시 접속 상한. 세션 목록 배열 크기다
+constexpr int MAX_JOB = 1024;  // 한 틱에 담을 수 있는 주문 수. 넘치면 틱이 밀렸다는 뜻이다
