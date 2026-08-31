@@ -107,7 +107,7 @@ struct WelcomeBody
     uint16_t trap_ticks;
     uint16_t flood_escape_ticks;
     uint8_t  blast_ticks;
-    uint8_t  switch_num, switch_den;   // 걸치기 임계값. 화면에 판정 타일을 그리는 데 쓴다
+    uint8_t  body_num, body_den;   // 캐릭터 몸 크기. 화면에 실제 크기로 그려야 걸치기가 보인다
     uint32_t seed;
 };
 

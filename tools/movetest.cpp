@@ -40,59 +40,72 @@ static Player MakePlayer(int tx, int ty)
     return p;
 }
 
-// ── 시험 1 : 임계값이 정확히 상수대로인가 ────────────────────
+// ── 시험 1 : 판정 칸이 몸 중심이 있는 칸인가 ─────────────────
 //
-// 새 타일에 TILE_SWITCH_NUM/DEN 이상 들어가야 판정이 넘어간다.
-// 256 * 68 / 100 = 174.08 이므로 175 units 부터 넘어가야 맞다.
-static void Test1_Threshold()
+// 규칙은 한 줄이다. 몸의 과반수가 있는 칸이 내가 있는 칸이다.
+// 몸이 중심 기준으로 대칭이라 그건 곧 중심이 있는 칸이다.
+static void Test1_Judge()
 {
-    printf("\n=== 시험 1: 판정이 넘어가는 지점 ===\n");
+    printf("\n=== 시험 1: 판정 칸 ===\n");
+    printf("  몸 크기 %d/%d 타일, 중심에서 %d units 씩\n",
+           PLAYER_BODY_NUM, PLAYER_BODY_DEN, PLAYER_HALF);
 
-    int want = (TILE_UNITS * TILE_SWITCH_NUM + TILE_SWITCH_DEN - 1) / TILE_SWITCH_DEN;
-    printf("  상수로 계산한 임계값: %d units (타일 %d 칸 중)\n", want, TILE_UNITS);
-
-    const int judge = 5;
-
-    // 오른쪽으로 넘어가는 경우. 새 타일(6번) 안으로 in 만큼 들어갔다
-    int first_right = -1;
-    bool ok_right = true;
-    for (int in = 0; in < TILE_UNITS; ++in) {
-        int pos = 6 * TILE_UNITS + in;
-        int got = UpdateJudgeAxis(pos, judge);
-
-        bool should = (in >= want);
-        if ((got == 6) != should) { ok_right = false; }
-        if (got == 6 && first_right < 0) { first_right = in; }
+    // 칸 안 어디에 있든 판정은 그 칸이어야 한다.
+    // 늦게 따라오면 발밑이 아닌 칸에 물풍선이 깔린다
+    bool ok = true;
+    for (int t = 1; t < 8; ++t) {
+        for (int in = 0; in < TILE_UNITS; ++in) {
+            if (JudgeAxis(t * TILE_UNITS + in) != t) { ok = false; }
+        }
     }
-    printf("  오른쪽: %d units 들어갔을 때 넘어갔다\n", first_right);
-    Check(ok_right && first_right == want, "오른쪽 임계값이 상수와 같다");
+    Check(ok, "칸 안 어디에 있든 판정은 그 칸이다");
 
-    // 왼쪽으로 넘어가는 경우. 새 타일(4번)에 오른쪽에서 들어간다
-    int first_left = -1;
-    bool ok_left = true;
-    for (int in = TILE_UNITS - 1; in >= 0; --in) {
-        int pos = 4 * TILE_UNITS + in;
-        int got = UpdateJudgeAxis(pos, judge);
-
-        bool should = ((TILE_UNITS - in) >= want);
-        if ((got == 4) != should) { ok_left = false; }
-        if (got == 4 && first_left < 0) { first_left = TILE_UNITS - in; }
-    }
-    printf("  왼쪽  : %d units 들어갔을 때 넘어갔다\n", first_left);
-    Check(ok_left && first_left == want, "왼쪽 임계값이 오른쪽과 같다 (좌우 대칭)");
-
-    // 같은 타일 안에서는 아무 일도 없어야 한다
-    bool same_ok = true;
-    for (int in = 0; in < TILE_UNITS; ++in) {
-        if (UpdateJudgeAxis(judge * TILE_UNITS + in, judge) != judge) { same_ok = false; }
-    }
-    Check(same_ok, "같은 타일 안에서는 판정이 안 흔들린다");
+    // 경계를 넘는 순간 바로 넘어가야 한다
+    Check(JudgeAxis(5 * TILE_UNITS - 1) == 4, "경계 직전은 앞 칸이다");
+    Check(JudgeAxis(5 * TILE_UNITS)     == 5, "경계를 넘으면 바로 뒤 칸이다");
 }
 
-// ── 시험 2 : 걸치기가 실제로 몇 틱이나 유지되나 ──────────────
+// ── 시험 2 : 몸이 두 칸에 걸칠 수 있는가 ─────────────────────
+//
+// 걸치기는 여기서 나온다. 몸은 두 칸에 걸쳐 있는데 중심은 한 칸에만 있다.
+static void Test1b_BodySpan()
+{
+    printf("\n=== 시험 2: 몸이 걸쳐 있는 범위 ===\n");
+
+    int from, to;
+
+    // 칸 한가운데. 몸이 타일보다 작으니 한 칸 안에 다 들어간다
+    BodySpanAxis(5 * TILE_UNITS + TILE_UNITS / 2, &from, &to);
+    printf("  칸 한가운데: %d ~ %d\n", from, to);
+    Check(from == 5 && to == 5, "한가운데 서면 한 칸에만 있다");
+
+    // 경계 바로 앞. 몸이 다음 칸으로 넘어가 있다
+    BodySpanAxis(6 * TILE_UNITS - 10, &from, &to);
+    printf("  경계 10 units 앞: %d ~ %d\n", from, to);
+    Check(from == 5 && to == 6, "경계 앞에서는 몸이 두 칸에 걸친다");
+    Check(JudgeAxis(6 * TILE_UNITS - 10) == 5, "그때 판정은 아직 앞 칸이다");
+
+    // 경계를 막 넘었다. 판정은 넘어갔지만 몸은 아직 뒤에 남아 있다
+    BodySpanAxis(6 * TILE_UNITS + 10, &from, &to);
+    printf("  경계 10 units 뒤: %d ~ %d\n", from, to);
+    Check(from == 5 && to == 6, "넘어간 직후에도 몸은 두 칸에 걸친다");
+    Check(JudgeAxis(6 * TILE_UNITS + 10) == 6, "그때 판정은 이미 뒤 칸이다");
+
+    // 몸이 걸치는 구간이 얼마나 되나. 여기가 걸치기를 노릴 수 있는 폭이다
+    int span = 0;
+    for (int in = 0; in < TILE_UNITS; ++in) {
+        BodySpanAxis(5 * TILE_UNITS + in, &from, &to);
+        if (from != to) ++span;
+    }
+    printf("  한 칸 %d units 중 %d units 에서 두 칸에 걸친다 (%d%%)\n",
+           TILE_UNITS, span, span * 100 / TILE_UNITS);
+    Check(span > TILE_UNITS / 4, "걸칠 수 있는 폭이 노릴 만하다");
+}
+
+// ── 시험 3 : 걸어가는 동안 걸친 시간이 얼마나 되나 ───────────
 static void Test2_Straddle()
 {
-    printf("\n=== 시험 2: 오른쪽으로 걸어가며 걸치기 구간 보기 ===\n");
+    printf("\n=== 시험 3: 오른쪽으로 걸어가며 걸치기 구간 보기 ===\n");
 
     GameMap m;
     MakeOpenMap(m);
@@ -100,33 +113,33 @@ static void Test2_Straddle()
     Player p = MakePlayer(3, 5);
     p.dir_x = 1;
 
-    printf("  틱  위치     몸이 있는 타일  판정 타일   걸침\n");
+    printf("  틱  위치     판정 칸   몸이 걸친 칸   걸침\n");
 
     int straddle_ticks = 0;
-    bool seen = false;
 
     for (int t = 1; t <= 22; ++t) {
         MovePlayer(m, p);
 
-        int body = p.px / TILE_UNITS;
-        bool straddling = (body != p.judge_tx);
-        if (straddling) { ++straddle_ticks; seen = true; }
+        int from, to;
+        BodySpanAxis(p.px, &from, &to);
+        bool straddling = (from != to);
+        if (straddling) ++straddle_ticks;
 
-        printf("  %2d  %5d    %2d              %2d          %s\n",
-               t, p.px, body, p.judge_tx, straddling ? "<-- 걸침" : "");
+        printf("  %2d  %5d    %2d        %2d ~ %2d        %s\n",
+               t, p.px, p.judge_tx, from, to, straddling ? "<-- 걸침" : "");
     }
 
-    printf("\n  걸친 채로 지나간 틱: %d\n", straddle_ticks);
-    Check(seen, "몸이 있는 타일과 판정 타일이 다른 순간이 존재한다");
+    printf("\n  걸친 채로 지나간 틱: %d / 22\n", straddle_ticks);
 
     // 걸치기가 없으면 그냥 격자 게임이 된다. 이 게임의 핵심이 사라진다
     Check(straddle_ticks >= 3, "걸치기 구간이 최소 3틱은 된다 (한 틱이면 노릴 수 없다)");
+    Check(straddle_ticks < 22, "늘 걸쳐 있지는 않다 (그러면 걸치기가 특별하지 않다)");
 }
 
 // ── 시험 3 : 벽을 뚫지 않는가 ────────────────────────────────
 static void Test3_Wall()
 {
-    printf("\n=== 시험 3: 벽에 부딪히기 ===\n");
+    printf("\n=== 시험 4: 벽에 부딪히기 ===\n");
 
     GameMap m;
     MakeOpenMap(m);
@@ -157,7 +170,7 @@ static void Test3_Wall()
 // ── 시험 4 : 벽을 타고 미끄러지나 ────────────────────────────
 static void Test4_Slide()
 {
-    printf("\n=== 시험 4: 벽에 비스듬히 부딪히기 ===\n");
+    printf("\n=== 시험 5: 벽에 비스듬히 부딪히기 ===\n");
 
     GameMap m;
     MakeOpenMap(m);
@@ -187,7 +200,7 @@ static void Test4_Slide()
 // ── 시험 5 : 롤러를 먹으면 실제로 빨라지나 ───────────────────
 static void Test5_Speed()
 {
-    printf("\n=== 시험 5: 속도 ===\n");
+    printf("\n=== 시험 6: 속도 ===\n");
 
     GameMap m;
     MakeOpenMap(m);
@@ -221,7 +234,7 @@ static void Test5_Speed()
 // ── 시험 6 : 맵이 씨앗 하나로 똑같이 재현되나 ────────────────
 static void Test6_MapDeterminism()
 {
-    printf("\n=== 시험 6: 같은 씨앗이면 같은 맵 ===\n");
+    printf("\n=== 시험 7: 같은 씨앗이면 같은 맵 ===\n");
 
     GameMap a, b, c;
     a.Generate(1234);
@@ -253,7 +266,7 @@ static void Test6_MapDeterminism()
 // ── 시험 7 : 모서리에 걸렸을 때 서버가 돌게 도와주나 ─────────
 static void Test7_CornerAssist()
 {
-    printf("\n=== 시험 7: 코너 보정 ===\n");
+    printf("\n=== 시험 8: 코너 보정 ===\n");
 
     // 세로 벽을 세우고, 한 줄만 뚫어둔다.
     // 플레이어는 뚫린 줄이 아니라 그 옆 줄에서 반쯤 어긋난 채로 달려온다
@@ -329,7 +342,8 @@ int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
 
-    Test1_Threshold();
+    Test1_Judge();
+    Test1b_BodySpan();
     Test2_Straddle();
     Test3_Wall();
     Test4_Slide();

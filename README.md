@@ -139,9 +139,9 @@ build.bat ..\tools\probe.cpp
 최근 확인:
 
 ```
-movetest    19 PASS / 0 FAIL
-bubbletest  41 PASS / 0 FAIL
-floodtest   23 PASS / 0 FAIL
+movetest    25 PASS / 0 FAIL
+bubbletest  45 PASS / 0 FAIL
+floodtest   25 PASS / 0 FAIL
 probe       10 PASS / 0 FAIL
 wstest      15 PASS / 0 FAIL
 봇 24개 8초  접속 1740 = fully closed 1740, 에러 0

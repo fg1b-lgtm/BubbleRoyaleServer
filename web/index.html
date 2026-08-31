@@ -168,8 +168,8 @@ function onWelcome(v) {
     trap:      u16(),
     floodEsc:  u16(),
     blast:     u8(),
-    switchNum: u8(),
-    switchDen: u8(),
+    bodyNum:   u8(),
+    bodyDen:   u8(),
     seed:      u32(),
   };
   myId = C.myId;
@@ -483,10 +483,14 @@ function draw() {
       ctx.strokeRect(p.jtx * TS + 0.5, p.jty * TS + 0.5, TS - 1, TS - 1);
     }
 
+    // 서버가 준 몸 크기 그대로 그린다.
+    // 실제 크기로 그려야 두 칸에 걸쳐 서 있다는 게 눈에 보인다
+    const bodyR = TS * C.bodyNum / C.bodyDen / 2;
+
     ctx.globalAlpha = dead ? 0.22 : ((p.flags & PF.INVULN) && (now / 90 | 0) % 2 ? 0.35 : 1);
     ctx.fillStyle = PLAYER_COLORS[id % PLAYER_COLORS.length];
     ctx.beginPath();
-    ctx.arc(cx, cy, TS * 0.34, 0, 7);
+    ctx.arc(cx, cy, bodyR, 0, 7);
     ctx.fill();
 
     if (id === myId) {
@@ -495,7 +499,7 @@ function draw() {
       ctx.stroke();
     }
 
-    // 갇힘. 물방울이 씌워진다
+    // 갇힘. 물방울이 씌워진다. 안에서 아주 느리게 움직일 수 있다
     if (p.flags & PF.TRAPPED) {
       ctx.strokeStyle = 'rgba(150,210,255,0.85)';
       ctx.lineWidth = 2;

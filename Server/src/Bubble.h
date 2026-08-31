@@ -251,18 +251,30 @@ inline void ResolveHits()
             continue;
         }
 
-        int bx = p.px / TILE_UNITS;   // 몸이 있는 칸
-        int by = p.py / TILE_UNITS;
-
         bool judge_hit = g_game.blast[p.judge_ty][p.judge_tx] > 0;
-        bool body_hit  = g_game.blast[by][bx] > 0;
 
-        // 몸은 물줄기 안에 있는데 판정 칸은 아니다. 걸치기로 피한 것이다.
+        // 몸이 걸쳐 있는 칸을 전부 본다.
+        // 중심은 안전한 칸에 있는데 몸 일부가 물에 닿아 있으면 걸치기다
+        int x0, x1, y0, y1;
+        BodySpanAxis(p.px, &x0, &x1);
+        BodySpanAxis(p.py, &y0, &y1);
+
+        bool body_hit = false;
+        for (int y = y0; y <= y1 && !body_hit; ++y) {
+            for (int x = x0; x <= x1; ++x) {
+                if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) {
+                    continue;
+                }
+                if (g_game.blast[y][x] > 0) { body_hit = true; break; }
+            }
+        }
+
+        // 몸은 물에 닿았는데 중심은 안 닿았다. 걸치기로 피한 것이다.
         // 이 게임에서 유일하게 "내 손이 좋아서 살았다" 가 성립하는 순간이라,
         // 클라이언트가 알아서 못 만든다. 서버가 알려줘야 한다
         if (!judge_hit && body_hit) {
             if (!p.grazing) {
-                PushEvent(EVT_GRAZE, bx, by, i, 0);
+                PushEvent(EVT_GRAZE, p.judge_tx, p.judge_ty, i, 0);
             }
             p.grazing = true;
             continue;

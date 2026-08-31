@@ -319,19 +319,26 @@ inline void SetInput(Session* s, int dx, int dy)
 // 한 사람을 한 틱 움직인다
 inline void MovePlayer(const GameMap& map, Player& p)
 {
-    if (!p.alive || p.trap_ticks > 0) {
-        return;   // 갇혀 있으면 못 움직인다. 그게 갇힘의 전부다
+    if (!p.alive) {
+        return;
     }
 
-    int speed = MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP;
+    bool trapped = (p.trap_ticks > 0);
+
+    // 갇혀도 아주 느리게는 갈 수 있다.
+    // 아예 묶어두면 5초가 죽은 시간이 된다. 기어서라도 물줄기 밖으로 나갈 수 있어야
+    // 그 5초가 판단하는 시간이 된다
+    int speed = trapped ? TRAP_MOVE_SPEED
+                        : (MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP);
 
     // 움직이기 전에 코너를 돌게 도와준다.
     // 한 방향만 누르고 있을 때만이다. 두 방향을 누르고 있으면 본인이 조준하는 중이라
-    // 서버가 끼어들면 오히려 방해가 된다
-    if (p.dir_x != 0 && p.dir_y == 0) {
+    // 서버가 끼어들면 오히려 방해가 된다.
+    // 갇혔을 때는 안 도와준다. 물방울에 갇힌 채로 미끄러지면 이상하다
+    if (!trapped && p.dir_x != 0 && p.dir_y == 0) {
         p.py = CornerAssistAxis(map, p.px, p.py, p.dir_x * speed, true, speed);
     }
-    else if (p.dir_y != 0 && p.dir_x == 0) {
+    else if (!trapped && p.dir_y != 0 && p.dir_x == 0) {
         p.px = CornerAssistAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
     }
 
@@ -341,8 +348,7 @@ inline void MovePlayer(const GameMap& map, Player& p)
     p.px = StepAxis(map, p.px, p.py, p.dir_x * speed, true);
     p.py = StepAxis(map, p.py, p.px, p.dir_y * speed, false);
 
-    // 위치가 다 정해진 뒤에 판정 타일을 따라오게 한다.
-    // 순서가 중요하다. 판정을 먼저 옮기면 아직 가지도 않은 칸에서 맞는다
-    p.judge_tx = UpdateJudgeAxis(p.px, p.judge_tx);
-    p.judge_ty = UpdateJudgeAxis(p.py, p.judge_ty);
+    // 위치가 다 정해진 뒤에 판정 칸을 정한다. 몸 중심이 있는 칸이다
+    p.judge_tx = JudgeAxis(p.px);
+    p.judge_ty = JudgeAxis(p.py);
 }

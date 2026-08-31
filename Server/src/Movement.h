@@ -12,38 +12,31 @@
 
 #include "GameMap.h"
 
-// 판정 타일을 갱신한다. 걸치기의 전부가 이 함수 하나다.
+// 판정 칸. 몸의 과반수가 있는 칸이다.
 //
-// 몸이 있는 타일과 판정 타일을 일부러 따로 둔다.
-// 새 칸에 발을 걸쳐도 판정은 아직 옛 칸에 남아 있고,
-// 그 사이에 물줄기가 새 칸을 때리면 안 맞는다. 그게 걸치기다.
-inline int UpdateJudgeAxis(int pos, int judge)
+// 몸은 중심을 기준으로 양쪽으로 똑같이 뻗으므로, 과반수가 있는 칸은 언제나
+// 중심이 있는 칸이다. 그래서 나눗셈 한 번이면 끝난다.
+//
+// 판정을 일부러 늦추지 않는다. 늦추면 발밑이 아닌 칸에 물풍선이 깔린다.
+inline int JudgeAxis(int pos)
 {
-    int t  = pos / TILE_UNITS;   // 몸이 실제로 들어가 있는 타일
-    int in = pos % TILE_UNITS;   // 그 타일의 왼쪽 끝에서 얼마나 들어왔나
+    return pos / TILE_UNITS;
+}
 
-    if (t == judge) {
-        return judge;            // 아직 안 넘어갔다. 볼 것도 없다
-    }
+// 몸이 걸쳐 있는 칸의 범위. 걸치기는 여기서 나온다.
+//
+// 몸은 타일보다 작아서(PLAYER_BODY_NUM/DEN) 두 칸에 걸쳐 설 수 있다.
+// 물줄기는 칸 단위로 덮으므로, 몸은 물에 닿았는데 중심은 안전한 칸에 있는
+// 순간이 생긴다. 그 순간이 이 게임에서 유일하게 손이 좋아서 사는 순간이다.
+inline void BodySpanAxis(int pos, int* from, int* to)
+{
+    int lo = pos - PLAYER_HALF;
+    int hi = pos + PLAYER_HALF;
 
-    // 한 틱에 두 칸 넘게 갔다면 걸치기를 따질 상황이 아니다.
-    // 지금 속도로는 안 생기지만, 나중에 순간이동이 붙으면 여기로 온다
-    if (t > judge + 1 || t < judge - 1) {
-        return t;
-    }
+    if (lo < 0) lo = 0;   // 테두리가 벽이라 실제로는 안 생기지만 나눗셈을 지킨다
 
-    // 새 타일 안으로 얼마나 파고들었나.
-    // 오른쪽으로 갔으면 왼쪽 끝에서 잰 in 이 그대로 깊이고,
-    // 왼쪽으로 갔으면 오른쪽 끝에서 재야 하므로 뒤집는다
-    int depth = (t > judge) ? in : (TILE_UNITS - in);
-
-    // depth / TILE_UNITS >= NUM / DEN  을 나누기 없이 쓴 것이다.
-    // 나누면 소수점이 잘려서 경계에서 한 칸씩 어긋난다
-    if (depth * TILE_SWITCH_DEN >= TILE_UNITS * TILE_SWITCH_NUM) {
-        return t;
-    }
-
-    return judge;   // 아직 덜 들어갔다. 판정은 옛 칸에 남는다
+    *from = lo / TILE_UNITS;
+    *to   = hi / TILE_UNITS;
 }
 
 // 코너 보정. 가려는 쪽이 막혔을 때 옆으로 살짝 밀어 모서리를 돌게 해준다.

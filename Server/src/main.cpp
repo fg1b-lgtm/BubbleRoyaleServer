@@ -61,8 +61,8 @@ static void SendWelcome(Session* s, int slot)
     w.trap_ticks         = (uint16_t)TRAP_DURATION_TICKS;
     w.flood_escape_ticks = (uint16_t)FLOOD_ESCAPE_TICKS;
     w.blast_ticks        = (uint8_t)BLAST_DURATION_TICKS;
-    w.switch_num         = (uint8_t)TILE_SWITCH_NUM;
-    w.switch_den         = (uint8_t)TILE_SWITCH_DEN;
+    w.body_num           = (uint8_t)PLAYER_BODY_NUM;
+    w.body_den           = (uint8_t)PLAYER_BODY_DEN;
     w.seed               = g_game.map.seed;
     memcpy(buf + HEADER_SIZE, &w, sizeof(w));
 

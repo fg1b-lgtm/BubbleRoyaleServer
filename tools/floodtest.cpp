@@ -307,22 +307,27 @@ static void Test7_StraddleBoundary()
     int me = Join(SECTOR_W, SECTOR_H / 2 + SECTOR_H * (SECTOR_ROWS / 2));
     Player& p = g_game.players[me];
 
-    // 몸은 잠긴 구역 마지막 칸에 들어가 있지만 판정은 아직 안전한 칸에 있다
-    int edge_tx = SECTOR_W - 1;
-    p.px       = edge_tx * TILE_UNITS + 100;
-    p.judge_tx = SECTOR_W;          // 판정은 옆 구역
+    // 중심은 안전한 구역의 첫 칸에 두고 경계에 바짝 붙인다.
+    // 몸은 잠긴 구역까지 걸치지만 과반수는 안전한 쪽에 있다
+    const int stand = SECTOR_W * TILE_UNITS + 10;
 
     for (int t = 1; t <= g_game.flood_fill[0] + 5; ++t) {
+        p.px = stand;   // 매 틱 그 자리를 유지한다
         Tick();
-        p.px       = edge_tx * TILE_UNITS + 100;   // 매 틱 그 자리를 유지한다
-        p.judge_tx = SECTOR_W;
     }
 
-    printf("  몸은 구역 %d, 판정은 구역 %d\n",
-           SectorIndex(p.px / TILE_UNITS, p.py / TILE_UNITS),
-           SectorIndex(p.judge_tx, p.judge_ty));
+    int from, to;
+    BodySpanAxis(p.px, &from, &to);
 
-    Check(p.flood_ticks == 0, "판정 칸이 안전하면 카운트다운이 안 돈다");
+    printf("  중심은 %d번 칸(구역 %d), 몸은 %d ~ %d 칸에 걸쳐 있다\n",
+           p.judge_tx, SectorIndex(p.judge_tx, p.judge_ty), from, to);
+    printf("  걸친 쪽 구역: %d (%s)\n",
+           SectorIndex(from, p.judge_ty),
+           SectorStateAt(from, p.judge_ty) == SECTOR_FLOODED ? "잠김" : "안전");
+
+    Check(from != to, "몸이 두 구역에 걸쳐 있다");
+    Check(SectorStateAt(from, p.judge_ty) == SECTOR_FLOODED, "걸친 쪽은 잠긴 구역이다");
+    Check(p.flood_ticks == 0, "중심이 안전하면 카운트다운이 안 돈다");
     Check(p.alive, "경계에 걸쳐 있으면 안 죽는다");
 }
 

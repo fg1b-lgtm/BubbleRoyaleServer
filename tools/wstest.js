@@ -65,7 +65,7 @@ ws.onmessage = (e) => {
         welcome = {
             myId: u8(), mapW: u8(), mapH: u8(), sectorW: u8(), sectorH: u8(),
             tickRate: u8(), tileUnits: u16(), fuse: u16(), trap: u16(),
-            floodEsc: u16(), blast: u8(), switchNum: u8(), switchDen: u8(), seed: u32(),
+            floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(), seed: u32(),
         };
         ++welcomeCount;
         seeds.add(welcome.seed);
@@ -123,7 +123,7 @@ function report() {
         check(welcome.mapW === 45 && welcome.mapH === 39, '맵 크기가 45x39 다');
         check(welcome.tickRate === 30, '틱레이트가 30 이다');
         check(welcome.tileUnits === 256, '타일이 256 units 다');
-        check(welcome.switchNum === 68 && welcome.switchDen === 100, '걸치기 임계값이 왔다');
+        check(welcome.bodyNum === 68 && welcome.bodyDen === 100, '몸 크기가 왔다');
         check(welcome.myId >= 0 && welcome.myId < 24, '내 번호를 받았다');
 
         console.log('  판 줄 ' + rows.size + ' / ' + welcome.mapH);

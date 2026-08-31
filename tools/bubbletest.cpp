@@ -233,14 +233,19 @@ static void Test4_Graze()
     OpenBoard();
     int me = Join(10, 10);
 
-    // 몸은 11번 칸에 들어갔지만 아직 판정은 10번에 남아 있는 자리로 옮긴다.
-    // 임계값이 175 이므로 100 만 들어간 상태면 판정은 안 넘어갔다
+    // 중심은 10번 칸에 두고 경계에 바짝 붙인다.
+    // 몸은 11번 칸까지 걸치지만 과반수는 10번에 있다
     Player& p = g_game.players[me];
-    p.px       = 11 * TILE_UNITS + 100;
-    p.judge_tx = 10;
+    p.px       = 11 * TILE_UNITS - 10;
+    p.judge_tx = JudgeAxis(p.px);
     p.dir_x    = 0;
 
-    Check(p.px / TILE_UNITS == 11 && p.judge_tx == 10, "몸은 11칸, 판정은 10칸");
+    int from, to;
+    BodySpanAxis(p.px, &from, &to);
+    printf("  중심 %d (판정 %d), 몸은 %d ~ %d 칸\n", p.px, p.judge_tx, from, to);
+
+    Check(p.judge_tx == 10, "중심이 10번 칸에 있다");
+    Check(from == 10 && to == 11, "몸은 10, 11 두 칸에 걸쳐 있다");
 
     // 11번 칸만 물줄기로 덮는다
     SetBlast(11, 10, 0, 42);
@@ -280,11 +285,22 @@ static void Test5_Trap()
     Check(p.trap_ticks > 0, "갇혔다");
     Check(CountEvent(EVT_TRAP) == 1, "TRAPPED 가 떴다");
 
-    // 갇힌 동안은 못 움직인다
+    // 갇힌 동안에도 아주 느리게는 갈 수 있다.
+    // 완전히 묶어두면 5초가 죽은 시간이 된다
     p.dir_x = 1;
     int before = p.px;
     Tick();
-    Check(p.px == before, "갇힌 동안 못 움직인다");
+    int crawled = p.px - before;
+
+    printf("  갇힌 채로 한 틱에 %d units (평소 %d)\n", crawled, MOVE_SPEED_BASE);
+    Check(crawled > 0, "갇혀도 움직이기는 한다");
+    Check(crawled == TRAP_MOVE_SPEED, "느린 속도가 상수와 같다");
+    Check(crawled < MOVE_SPEED_BASE / 2, "평소의 절반보다 훨씬 느리다");
+
+    // 느려도 물줄기 밖으로 기어나갈 수는 있어야 한다. 그게 판단거리가 된다
+    int tiles = TRAP_MOVE_SPEED * TRAP_DURATION_TICKS / TILE_UNITS;
+    printf("  5초 동안 기어서 갈 수 있는 거리: 약 %d 칸\n", tiles);
+    Check(tiles >= 2, "갇힌 5초 동안 두 칸은 갈 수 있다");
 
     // 나를 가둔 그 물줄기로는 안 죽는다.
     // 안 그러면 갇히는 순간 바로 죽어서 5초를 판단할 시간이 사라진다
