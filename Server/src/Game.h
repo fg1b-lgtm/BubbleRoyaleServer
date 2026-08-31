@@ -38,6 +38,7 @@ struct Player
     int      invuln_ticks;  // 갇힘에서 빠져나온 직후 잠깐 무적
 
     bool grazing;        // 지난 틱에 걸치기로 피하는 중이었나. 같은 걸 두 번 안 띄우려고
+    int  flood_ticks;   // 잠긴 구역 안에서 남은 시간. 0 이면 안 잠긴 데 있다
     bool alive;
 
     int spawn_slot;      // 어느 스폰 자리를 쓰고 있나. 나갈 때 돌려준다
@@ -84,6 +85,14 @@ struct GameState
     uint16_t next_gen;      // 다음 폭발에 줄 번호
     MapRandom drop_rnd;     // 아이템이 나올지 굴리는 주사위
 
+    // ── 침수 ──
+    uint8_t sector_state[SECTOR_ROWS][SECTOR_COLS];
+    int     flood_order[SECTOR_ROWS * SECTOR_COLS];   // 잠기는 순서. 가운데는 안 들어간다
+    int     flood_outer;                              // 바깥 구역이 몇 개인가
+    int     flood_done;                               // 지금까지 몇 구역이 잠겼나
+    int     flood_warn[FLOOD_STAGES];                 // 예고 시각. 배속을 걸 수 있게 복사해 둔다
+    int     flood_fill[FLOOD_STAGES];                 // 잠기는 시각
+
     bool spawn_used[SPAWN_TOTAL];
     int  player_count;
 
@@ -110,10 +119,59 @@ inline void PushEvent(uint8_t type, int x, int y, int who, int value)
     e.value = (uint8_t)value;
 }
 
-inline void InitGame(unsigned int seed)
+// 구역 번호. 3x3 이라 0..8
+inline int SectorIndex(int tx, int ty)
 {
+    int sx = tx / SECTOR_W;
+    int sy = ty / SECTOR_H;
+    if (sx >= SECTOR_COLS) sx = SECTOR_COLS - 1;
+    if (sy >= SECTOR_ROWS) sy = SECTOR_ROWS - 1;
+    return sy * SECTOR_COLS + sx;
+}
+
+// flood_scale 은 침수 일정을 몇 배로 당길 것인가.
+// 1 이면 SPEC 그대로 6분짜리다. 손맛을 보려고 매번 6분을 기다릴 수는 없어서
+// 서버를 fast 로 띄우면 10 이 들어온다. 규칙은 그대로고 시각만 나눈다
+inline void InitGame(unsigned int seed, int flood_scale = 1)
+{
+    if (flood_scale < 1) {
+        flood_scale = 1;
+    }
+
     g_game.map.Generate(seed);
     g_game.drop_rnd.Seed(seed ^ 0x5bf03635u);
+
+    // 침수 일정을 복사해 둔다. 배속을 여기서 한 번만 적용한다
+    for (int i = 0; i < FLOOD_STAGES; ++i) {
+        g_game.flood_warn[i] = FLOOD_WARN_TICKS[i] / flood_scale;
+        g_game.flood_fill[i] = FLOOD_FILL_TICKS[i] / flood_scale;
+    }
+
+    // 잠기는 순서를 섞는다. 가운데는 넣지 않는다. 거기가 최종 구역이다
+    MapRandom order_rnd;
+    order_rnd.Seed(seed ^ 0x9e3779b9u);
+
+    g_game.flood_outer = 0;
+    g_game.flood_done  = 0;
+
+    for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
+        for (int sx = 0; sx < SECTOR_COLS; ++sx) {
+            g_game.sector_state[sy][sx] = SECTOR_OPEN;
+
+            if (sx == SECTOR_COLS / 2 && sy == SECTOR_ROWS / 2) {
+                continue;
+            }
+            g_game.flood_order[g_game.flood_outer++] = sy * SECTOR_COLS + sx;
+        }
+    }
+
+    // 뒤에서부터 하나씩 뽑아 자리를 바꾼다. 흔한 섞기 방법이다
+    for (int i = g_game.flood_outer - 1; i > 0; --i) {
+        int j = order_rnd.Next(i + 1);
+        int t = g_game.flood_order[i];
+        g_game.flood_order[i] = g_game.flood_order[j];
+        g_game.flood_order[j] = t;
+    }
 
     g_game.player_count = 0;
     g_game.next_gen     = 1;
@@ -183,6 +241,7 @@ inline int AddPlayer(Session* s)
     p.trap_gen     = 0;
     p.invuln_ticks = 0;
     p.grazing      = false;
+    p.flood_ticks  = 0;
     p.alive        = true;
     p.spawn_slot   = spawn;
 

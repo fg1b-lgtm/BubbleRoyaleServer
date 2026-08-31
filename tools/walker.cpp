@@ -4,7 +4,7 @@
 // 이 도구는 PKT_MOVE 만 보낸다. 화면은 서버 로그다.
 //
 // 컴파일: practice 폴더에서  build.bat ..\tools\walker.cpp
-// 실행  : practice\bin\walker.exe [사람수]
+// 실행  : practice\bin\walker.exe [사람수] [초]
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <cstdio>
@@ -17,6 +17,8 @@
 // 벽에 부딪히면 그 축만 서므로 방 안을 돌아다니게 된다
 static const int DIR_X[4] = {  1,  0, -1,  0 };
 static const int DIR_Y[4] = {  0,  1,  0, -1 };
+
+static int g_seconds = 10;   // 몇 초 동안 돌아다닐 것인가
 
 static bool SendAll(SOCKET s, const char* p, int len)
 {
@@ -83,8 +85,11 @@ static DWORD WINAPI Walk(LPVOID param)
 
     printf("[walker %d] connected\n", id);
 
-    // 방향마다 2초씩. 사람마다 다른 방향에서 시작한다
-    for (int step = 0; step < 4; ++step) {
+    // 방향마다 2초씩. 사람마다 다른 방향에서 시작한다.
+    // 준 시간이 다 될 때까지 계속 돈다
+    DWORD until = GetTickCount() + (DWORD)g_seconds * 1000;
+
+    for (int step = 0; GetTickCount() < until; ++step) {
         int d = (id + step) % 4;
 
         if (!SendMove(s, DIR_X[d], DIR_Y[d])) {
@@ -120,6 +125,9 @@ int main(int argc, char** argv)
     if (count < 1)           count = 1;
     if (count > PLAYER_MAX)  count = PLAYER_MAX;
 
+    g_seconds = (argc > 2) ? atoi(argv[2]) : 10;
+    if (g_seconds < 1) g_seconds = 1;
+
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("WSAStartup failed\n");
@@ -133,7 +141,7 @@ int main(int argc, char** argv)
         th[i] = CreateThread(nullptr, 0, Walk, (LPVOID)(INT_PTR)i, 0, nullptr);
     }
 
-    WaitForMultipleObjects(count, th, TRUE, 30000);
+    WaitForMultipleObjects(count, th, TRUE, (DWORD)(g_seconds + 10) * 1000);
     for (int i = 0; i < count; ++i) {
         CloseHandle(th[i]);
     }

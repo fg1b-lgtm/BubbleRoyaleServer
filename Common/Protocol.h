@@ -41,6 +41,10 @@ enum EventType : uint8_t
     EVT_BLOCK   = 7,   // 블록이 부서졌다
     EVT_BUBBLE  = 8,   // 물풍선이 놓였다
     EVT_BLAST   = 9,   // 물줄기가 이 칸을 덮었다
+
+    EVT_FLOOD_WARN = 10,   // 이 구역이 곧 잠긴다. value 가 몇 초 뒤인지
+    EVT_FLOOD      = 11,   // 이 구역이 잠겼다
+    EVT_DROWN      = 12,   // 잠긴 구역 안이다. 카운트다운이 시작됐다
 };
 
 

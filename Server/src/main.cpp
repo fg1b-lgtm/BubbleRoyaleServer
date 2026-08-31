@@ -61,6 +61,9 @@ static void FlushEvents()
         case EVT_DEATH:  printf("[Game] DEAD       p%u at (%u,%u)\n", e.who, e.x, e.y); break;
         case EVT_ITEM:   printf("[Game] ITEM %u     p%u at (%u,%u)\n", e.value, e.who, e.x, e.y); break;
         case EVT_BUBBLE: printf("[Game] BUBBLE     p%u at (%u,%u) range %u\n", e.who, e.x, e.y, e.value); break;
+        case EVT_FLOOD_WARN: printf("[Game] FLOOD IN %u  sector %u\n", e.value, e.x); break;
+        case EVT_FLOOD:      printf("[Game] FLOODED    sector %u\n", e.x); break;
+        case EVT_DROWN:      printf("[Game] DROWNING   p%u at (%u,%u) %u sec\n", e.who, e.x, e.y, e.value); break;
         default: break;
         }
     }
@@ -317,7 +320,9 @@ static void ShutdownWorkers(HANDLE* workers, int count)
 }
 
 // 순서: 완료 포트 만들고 -> 워커 띄우고 -> listen 열고 -> accept 만 반복
-int main()
+// Server.exe            SPEC 그대로. 침수가 6분에 걸쳐 진행된다
+// Server.exe fast       침수 일정만 10배로 당긴다. 손맛 볼 때 6분을 기다릴 수는 없다
+int main(int argc, char** argv)
 {
     // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
     // 서버가 강제 종료되면 모아둔 로그가 통째로 날아간다.
@@ -330,9 +335,17 @@ int main()
     // 판을 깐다. 씨앗을 로그에 찍어두면 같은 판을 다시 만들 수 있다.
     // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
     const unsigned int map_seed = 1234;
-    InitGame(map_seed);
+
+    int flood_scale = 1;
+    if (argc > 1 && argv[1][0] == 'f') {
+        flood_scale = 10;
+    }
+
+    InitGame(map_seed, flood_scale);
     printf("[Server] map %dx%d generated (seed %u, %d spawns)\n",
            MAP_W, MAP_H, map_seed, g_game.map.spawn_count);
+    printf("[Server] flood x%d, first warning at %d s\n",
+           flood_scale, g_game.flood_warn[0] / TICK_RATE);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);

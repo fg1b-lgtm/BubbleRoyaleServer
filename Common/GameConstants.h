@@ -97,6 +97,36 @@ constexpr int CHAIN_STEP_TICKS = 3;   // 0.1초
 // 없으면 아직 남아 있는 물줄기에 그 자리에서 다시 맞는다
 constexpr int INVULN_TICKS = TICK_RATE;   // 1초
 
+// ── 침수 ───────────────────────────────────────────────────
+//
+// SPEC 2.6 의 표를 그대로 옮긴 것이다. 전부 틱으로 적는다.
+//
+//   2:00 예고(3구역) -> 2:30 침수
+//   3:30 예고(2구역) -> 4:00
+//   4:30 예고(2구역) -> 5:00
+//   5:30 예고(1구역) -> 6:00
+//
+// 바깥 여덟 구역이 3+2+2+1 로 잠기고 가운데 하나가 남는다.
+// 가운데가 남는 건 우연이 아니다. SPEC 2.5 의 "중앙 위험 구역" 과 같은 자리다.
+// 어차피 다 거기로 몰린다는 걸 알기 때문에 자리 잡기가 판단거리가 된다.
+constexpr int FLOOD_STAGES = 4;
+
+constexpr int FLOOD_WARN_TICKS[FLOOD_STAGES] = {
+    TICK_RATE * 120, TICK_RATE * 210, TICK_RATE * 270, TICK_RATE * 330,
+};
+constexpr int FLOOD_FILL_TICKS[FLOOD_STAGES] = {
+    TICK_RATE * 150, TICK_RATE * 240, TICK_RATE * 300, TICK_RATE * 360,
+};
+constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 2, 2, 1 };
+
+// 구역 상태
+enum SectorState : uint8_t
+{
+    SECTOR_OPEN    = 0,
+    SECTOR_WARNING = 1,   // 예고 중. 바닥에 물이 얕게 깔린다
+    SECTOR_FLOODED = 2,   // 잠겼다. 여기 있으면 카운트다운이 돈다
+};
+
 // ── 아이템 ─────────────────────────────────────────────────
 enum ItemType : uint8_t
 {
