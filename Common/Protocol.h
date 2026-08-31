@@ -19,6 +19,7 @@ constexpr int MAX_PACKET_SIZE = 1024;  // 이보다 크다고 하면 믿을 수 
 enum PacketId : uint16_t
 {
     PKT_ECHO = 1,
+    PKT_MOVE = 2,   // 클라 -> 서버. 어느 쪽으로 가고 있는지
 };
 
 
@@ -31,4 +32,16 @@ struct PacketHeader
     uint16_t size;
     uint16_t id;
 };
+
+// PKT_MOVE 의 몸통.
+// 위치가 아니라 "누르고 있는 방향" 을 보낸다.
+// 위치를 보내게 하면 클라이언트가 아무 데나 순간이동한다고 우길 수 있다.
+// 방향만 받고 실제로 얼마나 갔는지는 서버가 정한다.
+struct MoveBody
+{
+    int8_t dx;   // -1, 0, 1
+    int8_t dy;
+};
 #pragma pack(pop)
+
+constexpr int MOVE_PACKET_SIZE = HEADER_SIZE + (int)sizeof(MoveBody);

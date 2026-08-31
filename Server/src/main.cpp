@@ -23,16 +23,28 @@
 //   [Session]  주소가 붙는 모든 것
 #include "Network.h"
 #include "GameConstants.h"
+#include "Game.h"
 
 // 주문 하나를 처리한다. 이 함수는 틱 스레드에서만 불린다.
 static void HandleJob(const Job* j){
     Session* s = j->s;
 
     switch (j->type) {
-        case JobType::Enter:
-            printf("[Tick] %s:%d entered\n", s->ip, s->port);
+        case JobType::Enter: {
+            // 판에 앉힌다. 이건 틱 스레드에서만 부른다. 그래서 g_game 에 자물쇠가 없다
+            int slot = AddPlayer(s);
+            if (slot < 0) {
+                printf("[Tick] %s:%d board is full\n", s->ip, s->port);
+                CloseSession(s);
+                break;
+            }
+            Player& p = g_game.players[slot];
+            printf("[Tick] %s:%d entered as p%d at tile (%d,%d)\n",
+                   s->ip, s->port, slot, p.judge_tx, p.judge_ty);
             break;
+        }
         case JobType::Leave:
+            RemovePlayer(s);
             printf("[Tick] %s:%d left\n", s->ip, s->port);
             break;
         case JobType::Packet: {
@@ -42,6 +54,18 @@ static void HandleJob(const Job* j){
                 case PKT_ECHO:
                     Broadcast(j->data, h->size, nullptr);
                     break;
+
+                case PKT_MOVE: {
+                    // 크기를 먼저 본다. 몸통이 모자라면 없는 바이트를 읽게 된다
+                    if (h->size != MOVE_PACKET_SIZE) {
+                        printf("[Session] %s:%d bad move size %u\n", s->ip, s->port, h->size);
+                        CloseSession(s);
+                        break;
+                    }
+                    const MoveBody* mb = (const MoveBody*)(j->data + HEADER_SIZE);
+                    SetInput(s, mb->dx, mb->dy);
+                    break;
+                }
 
                 default:
                     printf("[Session] %s:%d unknown packet id=%u\n", s->ip, s->port, h->id);
@@ -178,9 +202,29 @@ static DWORD WINAPI TickThread(LPVOID)
             Release(jobs[i].s);   // 꽂을 때 든 참조를 여기서 놓는다
         }
 
-        // 3) 9/1 에 게임 한 틱이 여기 들어간다 (이동, 퓨즈, 폭발, 침수)
+        // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
+        UpdateGame();
 
-        // 4) 다음 틱 시각까지 잔다.
+        // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.
+        // 클라이언트가 없어서 지금은 이게 유일한 화면이다
+        if (g_game.player_count > 0 && tick % TICK_RATE == 0) {
+            for (int i = 0; i < PLAYER_MAX; ++i) {
+                Player& p = g_game.players[i];
+                if (p.s == nullptr) {
+                    continue;
+                }
+
+                int bx = p.px / TILE_UNITS;
+                int by = p.py / TILE_UNITS;
+                bool straddle = (bx != p.judge_tx) || (by != p.judge_ty);
+
+                printf("[Tick] p%d pos=(%d,%d) tile=(%d,%d) judge=(%d,%d)%s\n",
+                       i, p.px, p.py, bx, by, p.judge_tx, p.judge_ty,
+                       straddle ? "  <-- 걸침" : "");
+            }
+        }
+
+        //    4) 다음 틱 시각까지 잔다.
         //    33 을 계속 더해 나가지 않고 시작 시각에서 매번 다시 계산한다.
         //    1000/30 은 33.333 이라 33 으로 더하면 한 틱마다 0.333ms 씩 빨라진다.
         //    1분이면 0.6초, 5분 한 판이면 3초가 어긋난다.
@@ -225,6 +269,13 @@ int main()
 
     InitSessionManager();
     InitJobQueue();
+
+    // 판을 깐다. 씨앗을 로그에 찍어두면 같은 판을 다시 만들 수 있다.
+    // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
+    const unsigned int map_seed = 1234;
+    InitGame(map_seed);
+    printf("[Server] map %dx%d generated (seed %u, %d spawns)\n",
+           MAP_W, MAP_H, map_seed, g_game.map.spawn_count);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
