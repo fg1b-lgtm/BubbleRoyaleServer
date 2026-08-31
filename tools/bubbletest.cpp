@@ -306,8 +306,8 @@ static void Test5_Trap()
 
     // 느려도 물줄기 밖으로 기어나갈 수는 있어야 한다. 그게 판단거리가 된다
     int tiles = TRAP_MOVE_SPEED * TRAP_DURATION_TICKS / TILE_UNITS;
-    printf("  5초 동안 기어서 갈 수 있는 거리: 약 %d 칸\n", tiles);
-    Check(tiles >= 2, "갇힌 5초 동안 두 칸은 갈 수 있다");
+    printf("  %d초 동안 기어서 갈 수 있는 거리: 약 %d 칸\n", TRAP_DURATION_TICKS / TICK_RATE, tiles);
+    Check(tiles >= 3, "갇힌 동안 세 칸은 기어갈 수 있다");
 
     // 물줄기로는 갇힌 사람을 더 어쩌지 못한다. 크아가 그렇다
     for (int t = 0; t < BLAST_DURATION_TICKS + 2; ++t) {

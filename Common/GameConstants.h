@@ -233,7 +233,12 @@ constexpr int CAMERA_HYSTERESIS = 2;   // 경계를 몇 칸 넘어야 카메라�
 
 // ── 시간 (전부 틱 단위. 초로 두면 틱레이트 바꿀 때 다 틀어진다) ──
 constexpr int BUBBLE_FUSE_TICKS   = TICK_RATE * 5 / 2;   // 2.5초
-constexpr int TRAP_DURATION_TICKS = TICK_RATE * 5;       // 5초
+constexpr int TRAP_DURATION_TICKS = TICK_RATE * 7;       // 7초
+
+// 5초는 너무 빨리 풀렸다. 잡으러 가는 쪽이 거리를 좁히기도 전에 끝났다.
+// 마무리가 몸으로만 되는 규칙이라, 쫓아갈 시간이 나와야 갇힘이 판단거리가 된다.
+//   갇힌 쪽: 7초 x 6 units = 약 5칸. 기어서 도망칠 만한 거리
+//   쫓는 쪽: 7초면 20칸 가까이 간다. 웬만하면 닿는다
 constexpr int FLOOD_ESCAPE_TICKS  = TICK_RATE * 2;       // 2초
 
 // ── 아이템 ─────────────────────────────────────────────────

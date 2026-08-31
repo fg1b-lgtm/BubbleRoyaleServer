@@ -84,7 +84,7 @@ let tiles = null, items = null;
 let sectors = new Array(9).fill(SECT.OPEN);
 let bubbles = [];
 let blasts  = [];          // {x,y,until}
-let pops    = [];          // 화면에 뜨는 글자
+let rings   = [];          // 퍼지는 고리. 글자 대신 이걸로 알린다
 let players = new Map();   // id -> {x0,y0,x1,y1,jtx,jty,flags,bubble_lv,power_lv,speed_lv}
 let lastSnapAt = 0, snapInterval = 33;
 let curTick = 0;
@@ -295,11 +295,11 @@ function onWelcome(v) {
   // 다시 시작하면 WELCOME 이 또 온다. 지난 판의 흔적을 지운다
   bubbles = [];
   blasts  = [];
-  pops    = [];
+  rings   = [];
   players.clear();
   sectors.fill(SECT.OPEN);
   edgeFlash = null;
-  floodBanner = { text: 'NEW ROUND', until: performance.now() + 1500 };
+  floodBanner = null;
 
   tiles = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
   items = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
@@ -406,8 +406,13 @@ function onSnapshot(v) {
   }
 }
 
-function pop(text, tx, ty, color, size) {
-  pops.push({ text, x: tx, y: ty, color, size: size || 13, born: performance.now() });
+// 판 위에 글자를 띄우지 않는다.
+//
+// 영어가 떠다니면 화면이 시끄럽고 싸구려로 보인다. 그리고 글자는 읽어야 알지만
+// 그림은 안 읽어도 안다. 싸우는 중에 글자를 읽을 여유는 없다.
+// 그래서 무슨 일이 났는지는 퍼지는 고리로만 알린다.
+function burst(tx, ty, color, maxR, width) {
+  rings.push({ x: tx, y: ty, color, maxR, width: width || 2, born: performance.now() });
 }
 
 function onEvent(v) {
@@ -441,22 +446,32 @@ function onEvent(v) {
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
     // 연속으로 걸치면 숫자가 올라간다. 숫자 자체가 보상이다
     case EVT.GRAZE:
-      pop(val > 1 ? 'GRAZE x' + val : 'GRAZE', x, y, '#58d6ff', val > 1 ? 20 : 17);
+      // 연속으로 걸칠수록 고리가 커지고 여러 겹이 된다.
+      // 숫자를 안 읽어도 늘어난 게 보인다
+      {
+        const n = Math.min(val || 1, 4);
+        for (let i = 0; i < n; ++i) {
+          setTimeout(() => burst(x, y, '#58d6ff', TS * (1.1 + n * 0.25), 1 + n * 0.6), i * 55);
+        }
+      }
       sfx.graze(val);
       if (w === myId) flashEdge('#58d6ff');
       break;
 
     case EVT.CHAIN:
-      pop('CHAIN x' + (val + 1), x, y, '#ffd166', 15);
+      // 연쇄는 번져나가는 것 자체가 보이므로 그 자리에 짧은 고리만
+      burst(x, y, '#ffd166', TS * 1.4, 3);
       sfx.chain();
       break;
 
-    case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); sfx.trap();   break;
-    case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); sfx.breaks(); break;
+    // 갇힌 건 캐릭터에 씌워진 물방울로 이미 보인다. 소리만 낸다
+    case EVT.TRAP:   sfx.trap(); break;
+    case EVT.BREAK:  burst(x, y, '#3fb950', TS * 1.6, 3); sfx.breaks(); break;
 
     // 갇힌 사람을 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
     case EVT.POP:
-      pop('POP!', x, y, '#ffd166', 20);
+      burst(x, y, '#ffd166', TS * 2.4, 4);
+      burst(x, y, '#ffffff', TS * 1.2, 2);
       killFeed.unshift({ text: 'P' + val + ' → P' + w,
                          born: performance.now(), me: (w === myId || val === myId) });
       killFeed = killFeed.slice(0, 6);
@@ -464,8 +479,7 @@ function onEvent(v) {
       break;
 
     case EVT.DEATH:
-      pop('DOWN', x, y, '#f85149', 15);
-      // 누가 죽었는지 목록에 남긴다. 24명이면 이게 없으면 판이 어떻게 도는지 모른다
+      burst(x, y, '#f85149', TS * 1.8, 3);
       sfx.death();
       break;
 
@@ -474,18 +488,18 @@ function onEvent(v) {
       break;
 
     case EVT.FLOOD_WARN:
-      floodBanner = { text: 'FLOOD IN ' + val, until: performance.now() + 2500 };
+      floodBanner = { text: val + '초 뒤 물이 찬다', until: performance.now() + 2500 };
       sfx.warn();
       break;
 
     case EVT.FLOOD:
-      floodBanner = { text: 'FLOODED', until: performance.now() + 1500 };
+      floodBanner = { text: '물이 찼다', until: performance.now() + 1500 };
       sfx.flood();
       break;
 
     // 최종 구역 안에서 물이 한 겹 차올랐다. 예고가 따로 없다. 보이는 게 예고다
     case EVT.RING:
-      floodBanner = { text: 'WATER RISING', until: performance.now() + 1800 };
+      floodBanner = { text: '물이 차오른다', until: performance.now() + 1800 };
       sfx.flood();
       break;
   }
@@ -727,23 +741,25 @@ function draw() {
     ctx.globalAlpha = 1;
 
     // 잠긴 구역 안이다. 숫자만 크게 (SPEC 2.8)
+    // 물에 잠긴 데 서 있다. 숫자만 크게 (SPEC 2.8)
     if (p.flags & PF.DROWNING) {
       ctx.fillStyle = '#ff5a5a';
-      ctx.font = 'bold ' + (TS * 1.2) + 'px system-ui';
+      ctx.font = 'bold ' + (TS * 1.3) + 'px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('!', cx, cy - TS * 0.7);
+      ctx.fillText('!', cx, cy - TS * 0.8);
     }
   }
 
-  // 뜨는 글자
-  pops = pops.filter(p => now - p.born < 900);
-  ctx.textAlign = 'center';
-  for (const p of pops) {
-    const t = (now - p.born) / 900;
-    ctx.globalAlpha = 1 - t;
-    ctx.fillStyle = p.color;
-    ctx.font = 'bold ' + p.size + 'px system-ui';
-    ctx.fillText(p.text, p.x * TS + TS / 2, p.y * TS - t * 22);
+  // 퍼지는 고리. 글자 대신 이걸로 무슨 일이 났는지 알린다
+  rings = rings.filter(r => now - r.born < 420);
+  for (const r of rings) {
+    const t = (now - r.born) / 420;
+    ctx.globalAlpha = (1 - t) * 0.9;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = r.width * (1 - t * 0.5);
+    ctx.beginPath();
+    ctx.arc(r.x * TS + TS / 2, r.y * TS + TS / 2, r.maxR * t, 0, 7);
+    ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
@@ -813,19 +829,17 @@ function draw() {
   if (phase === PHASE.COUNTDOWN) {
     const left = Math.max(1, Math.ceil((C.tickRate * 3 - phaseTicks) / C.tickRate));
     dimScreen(0.45);
-    bigText(String(left), '#fff', cv.height / 2 + 20, 64);
-    bigText('READY', '#8ab4ff', cv.height / 2 + 60, 18);
+    bigText(String(left), '#fff', cv.height / 2 + 16, 64);
   }
   else if (phase === PHASE.WAITING) {
     dimScreen(0.45);
-    bigText('WAITING', '#8ab4ff', cv.height / 2, 30);
-    bigText('한 명 더 들어와야 시작한다', '#c9d1d9', cv.height / 2 + 28, 14);
+    bigText('한 명 더 들어오면 시작한다', '#8ab4ff', cv.height / 2, 22);
   }
   else if (phase === PHASE.OVER) {
     dimScreen(0.55);
-    if (winner === 0xFF)      bigText('DRAW', '#ffd166', cv.height / 2, 40);
-    else if (winner === myId) bigText('WINNER', '#3fb950', cv.height / 2, 46);
-    else                      bigText('P' + winner + ' WINS', '#8ab4ff', cv.height / 2, 36);
+    if (winner === 0xFF)      bigText('무승부', '#ffd166', cv.height / 2, 40);
+    else if (winner === myId) bigText('이겼다', '#3fb950', cv.height / 2, 46);
+    else                      bigText('P' + winner + ' 승리', '#8ab4ff', cv.height / 2, 36);
 
     const left = Math.max(0, Math.ceil((C.tickRate * 5 - phaseTicks) / C.tickRate));
     bigText('다음 판까지 ' + left, '#c9d1d9', cv.height / 2 + 34, 14);
@@ -833,9 +847,8 @@ function draw() {
   else if (me && !(me.flags & PF.ALIVE)) {
     // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fillRect(0, cv.height / 2 - 26, cv.width, 52);
-    bigText('DOWN', '#f85149', cv.height / 2 - 2, 26);
-    bigText('관전 중 — 다음 판을 기다린다', '#c9d1d9', cv.height / 2 + 18, 13);
+    ctx.fillRect(0, cv.height / 2 - 20, cv.width, 40);
+    bigText('관전 중', '#f85149', cv.height / 2 + 6, 20);
   }
 
   // 스치고 살아난 순간. 화면 가장자리가 번쩍한다
