@@ -50,7 +50,7 @@ chmod +x build.sh          # 처음 한 번만
 | 폴더 | 맥 | 왜 |
 |---|---|---|
 | `2026-08-31-jobqueue/` | ⭕ | `win_compat.h` 가 Windows 이름을 대신 채워준다 |
-| 수신 버퍼 / 송신 버퍼 | ⭕ | 순수 C++ 다. Windows API 를 안 쓴다 |
+| `2026-09-01-recvbuffer/` `2026-09-01-sendbuffer/` | ⭕ | 순수 C++ 다. Windows API 를 안 쓴다 |
 | `d9-session/` `d10-iocp/` | ❌ | IOCP 는 맥에 없는 물건이다. 흉내낼 수 없다 |
 | `d10-select/` `d11-echo/` | ❌ | 소켓 이름이 다르다. 고쳐 쓰면 연습이 안 된다 |
 
@@ -84,9 +84,11 @@ git add -A && git commit -m "practice: 8/31 job queue 2차" && git push
 | `d10-iocp/` | IOCP 코어 | 8/28 |
 | `d9-session/` | 세션 생명주기, 참조 카운트 | 8/29 |
 | `2026-08-31-jobqueue/` | `Server/src/JobQueue.h` — 주문 꽂이 | 8/31 |
+| `2026-09-01-recvbuffer/` | `Server/src/RecvBuffer.h` — 커서 둘짜리 바구니 | 8/31 준비 |
+| `2026-09-01-sendbuffer/` | `Server/src/SendBuffer.h` — 진짜 링버퍼 | 8/31 준비 |
 
 날짜별로 폴더를 늘려간다. **잘 쳐진 결과물이 아니라 몇 번 만에 됐는지가 기록이다.**
 
-> `2026-08-31-jobqueue/` 는 앞의 것들과 다르다. 서버가 아니라 **채점기가 붙어 있다.**
+> 날짜가 붙은 세 폴더는 앞의 것들과 다르다. 서버가 아니라 **채점기가 붙어 있다.**
 > 파일 아래쪽 "확인용" 칸은 안 고치고, 위쪽 빈칸만 채운 뒤 실행하면
 > 잃어버린 주문 / 내용 깨짐 / 남은 참조를 세어서 `PASS` 나 `FAIL` 을 찍는다.
