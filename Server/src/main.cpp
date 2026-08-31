@@ -23,7 +23,53 @@
 //   [Session]  주소가 붙는 모든 것
 #include "Network.h"
 #include "GameConstants.h"
-#include "Game.h"
+#include "GameTick.h"
+
+// 이번 틱에 생긴 일을 전원에게 내보낸다.
+//
+// 지금은 거리를 안 본다. 9/3 에 AOI 를 붙이면 여기서 걸러진다.
+// 폭발 한 번에 EVT_BLAST 가 스무 개 넘게 나가므로, 그때 제일 먼저 줄어들 것이 이 줄이다.
+static void FlushEvents()
+{
+    for (int i = 0; i < g_game.event_count; ++i) {
+        const GameEvent& e = g_game.events[i];
+
+        char buf[EVENT_PACKET_SIZE];
+
+        PacketHeader h;
+        h.size = (uint16_t)EVENT_PACKET_SIZE;
+        h.id   = PKT_EVENT;
+        memcpy(buf, &h, HEADER_SIZE);
+
+        EventBody b;
+        b.type  = e.type;
+        b.x     = e.x;
+        b.y     = e.y;
+        b.who   = e.who;
+        b.value = e.value;
+        memcpy(buf + HEADER_SIZE, &b, sizeof(b));
+
+        Broadcast(buf, EVENT_PACKET_SIZE, nullptr);
+
+        // 클라이언트가 아직 없어서 로그가 유일한 화면이다.
+        // EVT_BLAST 는 한 번에 스무 줄씩 나와서 읽을 수 없으므로 뺀다
+        switch (e.type) {
+        case EVT_GRAZE:  printf("[Game] GRAZE      p%u at (%u,%u)\n", e.who, e.x, e.y); break;
+        case EVT_CHAIN:  printf("[Game] CHAIN x%u   at (%u,%u)\n", e.value, e.x, e.y); break;
+        case EVT_TRAP:   printf("[Game] TRAPPED    p%u at (%u,%u)\n", e.who, e.x, e.y); break;
+        case EVT_BREAK:  printf("[Game] BREAK OUT  p%u at (%u,%u)\n", e.who, e.x, e.y); break;
+        case EVT_DEATH:  printf("[Game] DEAD       p%u at (%u,%u)\n", e.who, e.x, e.y); break;
+        case EVT_ITEM:   printf("[Game] ITEM %u     p%u at (%u,%u)\n", e.value, e.who, e.x, e.y); break;
+        case EVT_BUBBLE: printf("[Game] BUBBLE     p%u at (%u,%u) range %u\n", e.who, e.x, e.y, e.value); break;
+        default: break;
+        }
+    }
+
+    // 내보냈으니 비운다.
+    // 비우는 걸 GameTick 앞쪽에서 하면, 그보다 앞 단계인 주문 처리에서 생긴 일
+    // (물풍선 설치)이 나가기 전에 지워진다
+    g_game.event_count = 0;
+}
 
 // 주문 하나를 처리한다. 이 함수는 틱 스레드에서만 불린다.
 static void HandleJob(const Job* j){
@@ -64,6 +110,16 @@ static void HandleJob(const Job* j){
                     }
                     const MoveBody* mb = (const MoveBody*)(j->data + HEADER_SIZE);
                     SetInput(s, mb->dx, mb->dy);
+                    break;
+                }
+
+                case PKT_PLACE: {
+                    // 어디에 놓을지는 안 받는다. 서버가 아는 자리에만 놓는다.
+                    // 좌표를 받으면 맵 반대편에도 놓겠다고 우길 수 있다
+                    int slot = FindPlayer(s);
+                    if (slot >= 0) {
+                        PlaceBubble(slot);
+                    }
                     break;
                 }
 
@@ -203,7 +259,8 @@ static DWORD WINAPI TickThread(LPVOID)
         }
 
         // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
-        UpdateGame();
+        GameTick();
+        FlushEvents();
 
         // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.
         // 클라이언트가 없어서 지금은 이게 유일한 화면이다

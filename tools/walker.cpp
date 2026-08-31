@@ -48,6 +48,18 @@ static bool SendMove(SOCKET s, int dx, int dy)
     return SendAll(s, buf, MOVE_PACKET_SIZE);
 }
 
+static bool SendPlace(SOCKET s)
+{
+    char buf[PLACE_PACKET_SIZE];
+
+    PacketHeader h;
+    h.size = (uint16_t)PLACE_PACKET_SIZE;
+    h.id   = PKT_PLACE;
+    memcpy(buf, &h, HEADER_SIZE);
+
+    return SendAll(s, buf, PLACE_PACKET_SIZE);
+}
+
 static DWORD WINAPI Walk(LPVOID param)
 {
     int id = (int)(INT_PTR)param;
@@ -79,7 +91,17 @@ static DWORD WINAPI Walk(LPVOID param)
             break;
         }
         printf("[walker %d] dir (%d,%d)\n", id, DIR_X[d], DIR_Y[d]);
-        Sleep(2000);
+
+        // 1초 걷다가 멈춰서 물풍선을 놓고, 다시 걷는다.
+        // 걸으면서 놓으면 걸친 상태에서 놓게 되어 어느 칸에 놓였는지 보기 어렵다
+        Sleep(1000);
+        SendMove(s, 0, 0);
+        Sleep(100);
+        SendPlace(s);
+        printf("[walker %d] place\n", id);
+        Sleep(200);
+        SendMove(s, DIR_X[d], DIR_Y[d]);
+        Sleep(900);
     }
 
     SendMove(s, 0, 0);   // 손을 뗀다
