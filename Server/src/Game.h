@@ -142,6 +142,16 @@ inline void MovePlayer(const GameMap& map, Player& p)
 
     int speed = MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP;
 
+    // 움직이기 전에 코너를 돌게 도와준다.
+    // 한 방향만 누르고 있을 때만이다. 두 방향을 누르고 있으면 본인이 조준하는 중이라
+    // 서버가 끼어들면 오히려 방해가 된다
+    if (p.dir_x != 0 && p.dir_y == 0) {
+        p.py = CornerAssistAxis(map, p.px, p.py, p.dir_x * speed, true, speed);
+    }
+    else if (p.dir_y != 0 && p.dir_x == 0) {
+        p.px = CornerAssistAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
+    }
+
     // 가로 먼저, 그다음 세로.
     // 한 축씩 따로 보는 이유는 벽에 비스듬히 부딪혔을 때
     // 막힌 축만 서고 나머지 축은 계속 가게 하기 위해서다. 벽을 타고 미끄러진다

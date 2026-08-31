@@ -250,6 +250,81 @@ static void Test6_MapDeterminism()
     Check(spawn_ok, "모든 스폰 자리가 통로다");
 }
 
+// ── 시험 7 : 모서리에 걸렸을 때 서버가 돌게 도와주나 ─────────
+static void Test7_CornerAssist()
+{
+    printf("\n=== 시험 7: 코너 보정 ===\n");
+
+    // 세로 벽을 세우고, 한 줄만 뚫어둔다.
+    // 플레이어는 뚫린 줄이 아니라 그 옆 줄에서 반쯤 어긋난 채로 달려온다
+    GameMap m;
+    MakeOpenMap(m);
+    for (int y = 1; y < MAP_H - 1; ++y) {
+        m.tile[y][8] = TILE_WALL;
+    }
+    m.tile[6][8] = TILE_EMPTY;   // (8,6) 한 칸만 통로
+
+    // 5번 줄에 있지만 6번 줄 경계 가까이 붙어 있다.
+    // 사람이 통로 한가운데를 정확히 맞춰 달리는 일은 없다
+    Player p = MakePlayer(3, 5);
+    p.py    = 5 * TILE_UNITS + (TILE_UNITS - 30);
+    p.dir_x = 1;
+    p.dir_y = 0;   // 아래는 안 누른다. 순수하게 서버가 도와주는지만 본다
+
+    int start_y = p.py;
+    bool passed = false;
+
+    for (int t = 0; t < 120; ++t) {
+        MovePlayer(m, p);
+        if (p.px / TILE_UNITS > 8) { passed = true; break; }
+    }
+
+    printf("  세로 %d -> %d 로 밀려서 가로 타일 %d 까지 갔다\n",
+           start_y, p.py, p.px / TILE_UNITS);
+
+    Check(passed, "옆으로 안 눌렀는데도 모서리를 돌아 통로를 지났다");
+    Check(p.py / TILE_UNITS == 6, "뚫린 줄로 정렬됐다");
+
+    // 반대쪽도 되어야 한다. 아니면 위아래가 비대칭이라 손맛이 이상해진다
+    GameMap m2;
+    MakeOpenMap(m2);
+    for (int y = 1; y < MAP_H - 1; ++y) {
+        m2.tile[y][8] = TILE_WALL;
+    }
+    m2.tile[4][8] = TILE_EMPTY;
+
+    Player q = MakePlayer(3, 5);
+    q.py    = 5 * TILE_UNITS + 30;   // 이번엔 위쪽 경계에 붙어 있다
+    q.dir_x = 1;
+
+    bool passed2 = false;
+    for (int t = 0; t < 120; ++t) {
+        MovePlayer(m2, q);
+        if (q.px / TILE_UNITS > 8) { passed2 = true; break; }
+    }
+    Check(passed2, "위쪽으로도 똑같이 돌아진다 (위아래 대칭)");
+
+    // 너무 멀리 어긋나 있으면 도와주면 안 된다.
+    // 다 도와주면 원하는 칸에 못 서고 미끄러운 게임이 된다
+    GameMap m3;
+    MakeOpenMap(m3);
+    for (int y = 1; y < MAP_H - 1; ++y) {
+        m3.tile[y][8] = TILE_WALL;
+    }
+    m3.tile[6][8] = TILE_EMPTY;
+
+    Player r = MakePlayer(3, 5);
+    r.py    = TileCenter(5);   // 칸 한가운데. 통로에서 한 칸 반 떨어져 있다
+    r.dir_x = 1;
+
+    bool passed3 = false;
+    for (int t = 0; t < 120; ++t) {
+        MovePlayer(m3, r);
+        if (r.px / TILE_UNITS > 8) { passed3 = true; break; }
+    }
+    Check(!passed3, "칸 한가운데면 안 도와준다 (다 도와주면 미끄러워진다)");
+}
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -260,6 +335,7 @@ int main(int argc, char** argv)
     Test4_Slide();
     Test5_Speed();
     Test6_MapDeterminism();
+    Test7_CornerAssist();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
 
