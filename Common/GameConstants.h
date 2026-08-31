@@ -59,11 +59,34 @@ enum TileType : uint8_t
 constexpr int SPAWN_PER_SECTOR = 3;
 constexpr int SPAWN_TOTAL      = SPAWN_PER_SECTOR * SECTOR_COLS * SECTOR_ROWS;
 
-// 파괴 가능 블록을 빈 칸 중 몇 퍼센트에 깔 것인가
-constexpr int BLOCK_FILL_PERCENT = 55;
+// 파괴 가능 블록을 빈 칸 중 몇 퍼센트에 깔 것인가.
+//
+// 블록은 아이템 상자이자 시계다. 부술수록 맵이 열리면서 게임이 가속한다.
+// 그래서 이 값 하나가 아이템 총량과 시작의 답답함을 동시에 정한다.
+// tools/maptest.exe 가 밀도별 표를 찍어준다. 50 은 그 표를 보고 고른 값이다.
+//
+//   블록 355개 -> 아이템 142개 -> 24명이 나눠서 한 사람당 대여섯 개
+//   스폰에서 밖으로 나가는 데 최대 3겹 (7.5초). 파밍 1분의 1/8
+constexpr int BLOCK_FILL_PERCENT = 50;
 
-// 스폰 자리 주변 몇 칸을 비워둘 것인가. 시작하자마자 갇히면 안 된다
-constexpr int SPAWN_CLEAR_RADIUS = 2;
+// 스폰 자리 주변 몇 칸을 비워둘 것인가.
+//
+// 1 이면 3x3 이다. 시작하자마자 블록 속에 서 있지 않게만 해준다.
+// 2 로 하면 스폰 27개가 맵의 38%를 먹어서 밀도를 조절할 수 없게 된다.
+// 살아나갈 길은 여기가 아니라 OpenDeathTraps 가 보장한다
+constexpr int SPAWN_CLEAR_RADIUS = 1;
+
+// 스폰 주변 반경 3 안의 블록 수를 이 폭 안으로 맞춘다.
+// 누구는 여덟 개고 누구는 둘이면 1분 뒤 아이템 차이가 그대로 실력 차이로 보인다.
+// 대칭은 예쁘라고 하는 게 아니라 억울함을 없애는 장치다 (SPEC 2.2)
+constexpr int SPAWN_BLOCK_TOLERANCE = 3;
+
+// 스폰에서 고속도로까지 뚫어주는 길이.
+//
+// 격자에서 x 나 y 가 홀수인 줄에는 기둥이 하나도 없다. 끝까지 뚫린 길이다.
+// 스폰을 거기 붙여두면 시작하자마자 땅부터 파지 않아도 된다.
+// 이걸 안 하면 밀도를 올릴 때마다 시작이 답답해져서, 아이템 수와 정면으로 부딪힌다
+constexpr int SPAWN_LANE_REACH = 4;
 
 // ── 이동 ───────────────────────────────────────────────────
 //

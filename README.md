@@ -126,6 +126,7 @@ build.bat ..\tools\probe.cpp
 | `movetest.exe` | 아니오 | 이동, 걸치기 임계값, 벽, 코너 보정, 맵 재현 |
 | `bubbletest.exe` | 아니오 | 퓨즈, 십자 폭발, 연쇄 지연, 갇힘, 아이템 |
 | `floodtest.exe` | 아니오 | 침수 일정, 익사, 탈출, 경계에서의 걸치기 |
+| `maptest.exe` | 아니오 | 맵 품질. 죽음의 칸, 뼈대 막다른 길, 파는 깊이, 스폰 공정성 |
 | `probe.exe` | 예 | 패킷 경계. 쪼개 보내기 / 몰아 보내기 / 브로드캐스트 |
 | `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
 | `walker.exe [사람수] [초]` | 예 | 실제로 걸어다니며 물풍선을 놓는다 |
@@ -142,9 +143,10 @@ build.bat ..\tools\probe.cpp
 movetest    25 PASS / 0 FAIL
 bubbletest  45 PASS / 0 FAIL
 floodtest   25 PASS / 0 FAIL
+maptest      7 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      15 PASS / 0 FAIL
-봇 24개 8초  접속 1740 = fully closed 1740, 에러 0
+봇 24개 8초  접속 1744 = fully closed 1744, 에러 0
 ```
 
 ---
