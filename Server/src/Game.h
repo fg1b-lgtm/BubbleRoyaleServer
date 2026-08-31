@@ -96,7 +96,17 @@ struct GameState
     bool spawn_used[SPAWN_TOTAL];
     int  player_count;
 
-    unsigned long long tick;
+    // ── 판의 생명주기 ──
+    uint8_t phase;
+    int     phase_ticks;    // 이 단계에 들어온 뒤 지난 틱
+    int     winner;         // ROUND_OVER 일 때 승자 자리. 없으면 -1
+    int     round_no;
+    bool    map_changed;    // 판이 새로 깔렸다. main 이 보고 WELCOME 을 다시 보낸다
+
+    unsigned int seed;        // 지금 판의 씨앗. 다음 판에서 굴린다
+    int          flood_scale; // 침수 배속. 판이 바뀌어도 유지한다
+
+    unsigned long long tick;  // PLAYING 인 동안에만 흐른다. 침수 시각의 기준
 
     GameEvent events[MAX_EVENT_PER_TICK];
     int       event_count;
@@ -177,6 +187,15 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     g_game.next_gen     = 1;
     g_game.tick         = 0;
     g_game.event_count  = 0;
+
+    g_game.seed        = seed;
+    g_game.flood_scale = flood_scale;
+    g_game.winner      = -1;
+    g_game.map_changed = true;   // 판이 새로 깔렸다. 붙어 있는 사람에게 다시 알려야 한다
+
+    g_game.phase       = ROUND_WAITING;
+    g_game.phase_ticks = 0;
+    g_game.round_no    = 0;
 
     for (int i = 0; i < PLAYER_MAX; ++i) {
         g_game.players[i].s = nullptr;
@@ -266,8 +285,12 @@ inline int AddPlayer(Session* s)
     p.invuln_ticks = 0;
     p.grazing      = false;
     p.flood_ticks  = 0;
-    p.alive        = true;
     p.spawn_slot   = spawn;
+
+    // 판이 도는 중에 들어오면 관전부터 한다.
+    // 남들이 1분 파밍한 판에 빈손으로 끼워 넣으면 들어오자마자 죽는다.
+    // 다음 판에서 같이 시작한다
+    p.alive = (g_game.phase == ROUND_WAITING || g_game.phase == ROUND_COUNTDOWN);
 
     ++g_game.player_count;
     return slot;
@@ -304,11 +327,26 @@ inline void RemovePlayer(Session* s)
     --g_game.player_count;
 }
 
+inline int AliveCount()
+{
+    int n = 0;
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (g_game.players[i].s != nullptr && g_game.players[i].alive) ++n;
+    }
+    return n;
+}
+
+inline void EnterPhase(uint8_t phase)
+{
+    g_game.phase       = phase;
+    g_game.phase_ticks = 0;
+}
+
 // 판을 새로 깔고 붙어 있는 사람을 다시 앉힌다.
 //
 // 세션은 그대로 두고 게임만 처음으로 돌린다. 연결을 끊지 않는다.
-// 끊으면 브라우저가 다시 붙느라 몇 초가 뜨고, 그 사이에 다시 물이 찬다.
-inline void RestartGame(unsigned int seed, int flood_scale)
+// 끊으면 브라우저가 다시 붙느라 몇 초가 뜨고, 그동안 다음 판이 이미 시작해 있다.
+inline void RestartGame()
 {
     Session* keep[PLAYER_MAX];
     int n = 0;
@@ -319,11 +357,22 @@ inline void RestartGame(unsigned int seed, int flood_scale)
         }
     }
 
-    InitGame(seed, flood_scale);
+    // 씨앗을 굴린다. 맵도 새로 나오지만 처음 씨앗만 알면 순서가 재현된다
+    unsigned int next = g_game.seed * 1103515245u + 12345u;
+    int    scale = g_game.flood_scale;
+    int    round = g_game.round_no;
+
+    // 다시 앉힐 때 산 채로 앉아야 하므로 먼저 단계를 돌려놓는다
+    g_game.phase = ROUND_WAITING;
+
+    InitGame(next, scale);
+    g_game.round_no = round + 1;
 
     for (int i = 0; i < n; ++i) {
         AddPlayer(keep[i]);
     }
+
+    EnterPhase(n >= ROUND_MIN_PLAYERS ? ROUND_COUNTDOWN : ROUND_WAITING);
 }
 
 // 입력을 받아둔다. 이번 틱에 바로 움직이지 않고 방향만 적어둔다.

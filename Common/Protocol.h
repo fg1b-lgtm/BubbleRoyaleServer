@@ -129,6 +129,12 @@ struct SnapshotHead
 {
     uint32_t tick;
     uint8_t  sectors[9];      // 구역 상태. SectorState
+
+    uint8_t  phase;           // RoundPhase
+    uint16_t phase_ticks;     // 이 단계에 들어온 뒤 지난 틱. 카운트다운을 여기서 그린다
+    uint8_t  winner;          // 0xFF = 없음 (무승부이거나 아직 안 끝남)
+    uint8_t  round_no;
+
     uint8_t  player_count;
     uint8_t  bubble_count;
 };

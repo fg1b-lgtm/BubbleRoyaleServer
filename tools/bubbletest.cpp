@@ -58,10 +58,12 @@ static int Join(int tx, int ty)
 }
 
 // 서버의 틱 루프와 같은 순서다. 내보낸 뒤 비우므로, 여기서는 돌기 전에 비운다
+// 규칙만 보는 시험이라 판 생명주기(기다림/카운트다운/결과)는 건너뛴다.
+// GameTick 대신 게임 판정 한 틱만 직접 부른다
 static void Tick()
 {
     g_game.event_count = 0;
-    GameTick();
+    PlayTick();
 }
 
 static int CountEvent(uint8_t type)

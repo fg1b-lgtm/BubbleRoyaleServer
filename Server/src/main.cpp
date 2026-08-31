@@ -25,10 +25,47 @@
 #include "GameConstants.h"
 #include "GameTick.h"
 
-// 지금 판의 씨앗과 침수 배속. 다시 시작할 때 다시 쓴다.
-// 소유 스레드 : tick (main 이 시작할 때 한 번 쓰고 그 뒤로는 틱 스레드만 만진다)
-static unsigned int g_map_seed    = 1234;
-static int          g_flood_scale = 1;
+// 자리가 없어서 못 앉은 사람. 보고는 있고 다음 판에 앉는다.
+//
+// 소유 스레드 : tick
+//   HandleJob 과 틱 루프에서만 만진다. 둘 다 틱 스레드라 자물쇠가 없다.
+//
+// 판에 자리가 없다고 연결을 끊어버리면 그 사람은 아무것도 못 본다.
+// 스냅샷은 어차피 전원에게 나가므로, 안 끊고 두면 관전이 저절로 된다.
+static Session* g_viewers[MAX_SESSION];
+static int      g_viewer_count = 0;
+
+static void AddViewer(Session* s)
+{
+    if (g_viewer_count >= MAX_SESSION) {
+        return;
+    }
+    g_viewers[g_viewer_count++] = s;
+}
+
+static void RemoveViewer(Session* s)
+{
+    for (int i = 0; i < g_viewer_count; ++i) {
+        if (g_viewers[i] == s) {
+            g_viewers[i] = g_viewers[--g_viewer_count];
+            return;
+        }
+    }
+}
+
+// 판이 새로 깔렸다. 기다리던 사람부터 앉힌다
+static void SeatViewers()
+{
+    for (int i = 0; i < g_viewer_count; ) {
+        int slot = AddPlayer(g_viewers[i]);
+        if (slot < 0) {
+            ++i;   // 아직도 자리가 없다
+            continue;
+        }
+        printf("[Tick] %s:%d seated as p%d\n", g_viewers[i]->ip, g_viewers[i]->port, slot);
+        g_viewers[i] = g_viewers[--g_viewer_count];
+    }
+}
 
 // 패킷 하나가 한도를 안 넘는지 컴파일할 때 확인한다.
 // 넘치면 돌려보기 전에 여기서 막힌다
@@ -107,6 +144,10 @@ static void SendSnapshot()
     for (int i = 0; i < 9; ++i) {
         sh.sectors[i] = g_game.sector_state[i / SECTOR_COLS][i % SECTOR_COLS];
     }
+    sh.phase       = g_game.phase;
+    sh.phase_ticks = (uint16_t)(g_game.phase_ticks > 65535 ? 65535 : g_game.phase_ticks);
+    sh.winner      = (uint8_t)(g_game.winner < 0 ? 0xFF : g_game.winner);
+    sh.round_no    = (uint8_t)(g_game.round_no & 0xFF);
     sh.player_count = 0;
     sh.bubble_count = 0;
 
@@ -220,8 +261,10 @@ static void HandleJob(const Job* j){
             // 판에 앉힌다. 이건 틱 스레드에서만 부른다. 그래서 g_game 에 자물쇠가 없다
             int slot = AddPlayer(s);
             if (slot < 0) {
-                printf("[Tick] %s:%d board is full\n", s->ip, s->port);
-                CloseSession(s);
+                // 끊지 않는다. 보고 있다가 다음 판에 앉는다
+                printf("[Tick] %s:%d board is full — spectating\n", s->ip, s->port);
+                AddViewer(s);
+                SendWelcome(s, 0xFF);
                 break;
             }
             Player& p = g_game.players[slot];
@@ -234,6 +277,7 @@ static void HandleJob(const Job* j){
         }
         case JobType::Leave:
             RemovePlayer(s);
+            RemoveViewer(s);
             printf("[Tick] %s:%d left\n", s->ip, s->port);
             break;
         case JobType::Packet: {
@@ -257,20 +301,10 @@ static void HandleJob(const Job* j){
                 }
 
                 case PKT_RESTART: {
-                    // 시험용. 판을 새로 깔고 붙어 있는 사람을 다시 앉힌다.
-                    // 씨앗을 굴려서 맵도 새로 나온다
-                    g_map_seed = g_map_seed * 1103515245u + 12345u;
-                    RestartGame(g_map_seed, g_flood_scale);
-
-                    printf("[Server] restart by %s:%d (seed %u, %d players)\n",
-                           s->ip, s->port, g_map_seed, g_game.player_count);
-
-                    // 판이 바뀌었으니 전원에게 다시 알려준다
-                    for (int i = 0; i < PLAYER_MAX; ++i) {
-                        if (g_game.players[i].s != nullptr) {
-                            SendWelcome(g_game.players[i].s, i);
-                        }
-                    }
+                    // 시험용. 기다리지 않고 지금 다음 판으로 넘어간다.
+                    // 판이 바뀐 건 map_changed 를 보고 틱 루프가 알려준다
+                    printf("[Server] restart by %s:%d\n", s->ip, s->port);
+                    RestartGame();
                     break;
                 }
 
@@ -420,13 +454,52 @@ static DWORD WINAPI TickThread(LPVOID)
         }
 
         // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
+        uint8_t phase_before = g_game.phase;
+
         GameTick();
+
+        // 판이 새로 깔렸으면 전원에게 판을 다시 보낸다.
+        // 게임 코드는 소켓을 모르므로 깃발만 세우고 여기서 처리한다
+        if (g_game.map_changed) {
+            g_game.map_changed = false;
+
+            SeatViewers();   // 자리를 못 잡고 보고 있던 사람부터 앉힌다
+
+            for (int i = 0; i < PLAYER_MAX; ++i) {
+                if (g_game.players[i].s != nullptr) {
+                    SendWelcome(g_game.players[i].s, i);
+                }
+            }
+            for (int i = 0; i < g_viewer_count; ++i) {
+                SendWelcome(g_viewers[i], 0xFF);
+            }
+        }
+
+        if (g_game.phase != phase_before) {
+            static const char* kName[4] = { "WAITING", "COUNTDOWN", "PLAYING", "OVER" };
+            printf("[Round %d] %s -> %s (%d players)\n",
+                   g_game.round_no, kName[phase_before], kName[g_game.phase],
+                   g_game.player_count);
+
+            if (g_game.phase == ROUND_OVER) {
+                if (g_game.winner >= 0) {
+                    printf("[Round %d] WINNER p%d\n", g_game.round_no, g_game.winner);
+                }
+                else {
+                    printf("[Round %d] DRAW\n", g_game.round_no);
+                }
+            }
+        }
+
         SendSnapshot();   // 위치가 먼저다. 이벤트는 그 위치에서 일어난 일이다
         FlushEvents();
 
         // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.
         // 클라이언트가 없어서 지금은 이게 유일한 화면이다
-        if (g_game.player_count > 0 && tick % TICK_RATE == 0) {
+        // 사람이 많으면 초당 24줄이 쏟아져서 읽을 수 없다.
+        // 손으로 확인할 때(두세 명)만 찍는다
+        if (g_game.player_count > 0 && g_game.player_count <= 4
+            && g_game.phase == ROUND_PLAYING && tick % TICK_RATE == 0) {
             for (int i = 0; i < PLAYER_MAX; ++i) {
                 Player& p = g_game.players[i];
                 if (p.s == nullptr) {
@@ -493,15 +566,19 @@ int main(int argc, char** argv)
 
     // 판을 깐다. 씨앗을 로그에 찍어두면 같은 판을 다시 만들 수 있다.
     // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
+    unsigned int map_seed   = 1234;
+    int          flood_scale = 1;
     if (argc > 1 && argv[1][0] == 'f') {
-        g_flood_scale = 10;
+        flood_scale = 10;
     }
 
-    InitGame(g_map_seed, g_flood_scale);
+    InitGame(map_seed, flood_scale);
     printf("[Server] map %dx%d generated (seed %u, %d spawns)\n",
-           MAP_W, MAP_H, g_map_seed, g_game.map.spawn_count);
+           MAP_W, MAP_H, map_seed, g_game.map.spawn_count);
     printf("[Server] flood x%d, first warning at %d s\n",
-           g_flood_scale, g_game.flood_warn[0] / TICK_RATE);
+           flood_scale, g_game.flood_warn[0] / TICK_RATE);
+    printf("[Server] round starts with %d players, %d s countdown\n",
+           ROUND_MIN_PLAYERS, ROUND_COUNTDOWN_TICKS / TICK_RATE);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);

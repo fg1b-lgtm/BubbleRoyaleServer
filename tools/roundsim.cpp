@@ -400,13 +400,18 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     int sample = 0;
 
     for (int t = 1; t <= MAX_TICKS; ++t) {
-        // 놓인 물풍선은 언제 터지든 위험한 걸로 본다.
-        // 사람도 남의 폭탄 옆에 서 있지 않는다
-        BuildDangerMap(BUBBLE_FUSE_TICKS + 1);
-        BuildEnemyMap();
+        if (g_game.phase == ROUND_PLAYING) {
+            // 놓인 물풍선은 언제 터지든 위험한 걸로 본다.
+            // 사람도 남의 폭탄 옆에 서 있지 않는다
+            BuildDangerMap(BUBBLE_FUSE_TICKS + 1);
+            BuildEnemyMap();
+
+            for (int i = 0; i < PLAYER_MAX; ++i) {
+                ThinkBot(i);
+            }
+        }
 
         for (int i = 0; i < PLAYER_MAX; ++i) {
-            ThinkBot(i);
             drowning_before[i] = g_game.players[i].flood_ticks;
             alive_before[i]    = g_game.players[i].alive;
         }
@@ -431,25 +436,24 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             }
         }
 
-        // 30초마다 한 번씩 찍는다
-        if (t % (TICK_RATE * 30) == 0 && sample < 8) {
-            int alive = 0;
-            for (int i = 0; i < PLAYER_MAX; ++i) if (g_game.players[i].alive) ++alive;
-
+        // 30초마다 한 번씩 찍는다. 판이 실제로 도는 시간 기준이다
+        // tick 이 0 인 틱(카운트다운이 막 끝난 틱)에도 나머지가 0 이라 한 번 더 찍힌다.
+        // 그러면 표가 통째로 한 칸씩 밀린다
+        if (g_game.phase == ROUND_PLAYING && g_game.tick > 0
+            && g_game.tick % (TICK_RATE * 30) == 0 && sample < 8) {
+            int alive = AliveCount();
             r.alive_at[sample] = alive;
             r.tiles_per_head[sample] = alive > 0 ? OpenTilesNotFlooded() / alive : 0;
             ++sample;
         }
 
-        int alive = 0;
-        for (int i = 0; i < PLAYER_MAX; ++i) if (g_game.players[i].alive) ++alive;
-        if (alive <= 1) {
-            r.ticks = t;
-            r.alive_end = alive;
+        r.ticks     = (int)g_game.tick;
+        r.alive_end = AliveCount();
+
+        // 판이 끝났다. 다음 판으로 넘어가기 전에 멈춘다
+        if (g_game.phase == ROUND_OVER) {
             break;
         }
-        r.ticks = t;
-        r.alive_end = alive;
     }
 
     for (int i = 0; i < PLAYER_MAX; ++i) {

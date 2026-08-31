@@ -46,6 +46,7 @@
 <div id="hud">
   <span id="conn" class="off">연결 안 됨</span>
   <span>tick <b id="tick">0</b></span>
+  <span>판 <b id="round">1</b></span>
   <span>생존 <b id="alive">0</b></span>
   <span>물풍선 <b id="sb">1</b></span>
   <span>물줄기 <b id="sp">2</b></span>
@@ -86,6 +87,11 @@ let players = new Map();   // id -> {x0,y0,x1,y1,jtx,jty,flags,bubble_lv,power_l
 let lastSnapAt = 0, snapInterval = 33;
 let curTick = 0;
 let floodBanner = null;
+
+// 판의 단계. 서버가 스냅샷마다 알려준다
+const PHASE = { WAITING:0, COUNTDOWN:1, PLAYING:2, OVER:3 };
+let phase = PHASE.WAITING, phaseTicks = 0, winner = 0xFF, roundNo = 0;
+let killFeed = [];   // {text, born}
 
 const cv  = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -211,6 +217,11 @@ function onSnapshot(v) {
   for (let i = 0; i < 9; ++i) sectors[i] = v.getUint8(o + i);
   o += 9;
 
+  phase      = v.getUint8(o++);
+  phaseTicks = v.getUint16(o, true); o += 2;
+  winner     = v.getUint8(o++);
+  roundNo    = v.getUint8(o++);
+
   const np = v.getUint8(o++);
   const nb = v.getUint8(o++);
 
@@ -255,6 +266,7 @@ function onSnapshot(v) {
   let alive = 0;
   for (const p of players.values()) if (p.flags & PF.ALIVE) ++alive;
   document.getElementById('alive').textContent = alive;
+  document.getElementById('round').textContent = roundNo + 1;
 
   const me = players.get(myId);
   if (me) {
@@ -305,7 +317,14 @@ function onEvent(v) {
 
     case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); break;
     case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); break;
-    case EVT.DEATH:  pop('DOWN',      x, y, '#f85149', 15); break;
+
+    case EVT.DEATH:
+      pop('DOWN', x, y, '#f85149', 15);
+      // 누가 죽었는지 목록에 남긴다. 24명이면 이게 없으면 판이 어떻게 도는지 모른다
+      killFeed.unshift({ text: 'P' + w + (w === myId ? ' (나)' : '') + ' DOWN',
+                         born: performance.now(), me: w === myId });
+      killFeed = killFeed.slice(0, 6);
+      break;
 
     case EVT.FLOOD_WARN:
       floodBanner = { text: 'FLOOD IN ' + val, until: performance.now() + 2500 };
@@ -371,6 +390,18 @@ const PLAYER_COLORS = [
   '#ff6b6b', '#4dabf7', '#51cf66', '#ffd43b', '#cc5de8', '#ff922b',
   '#20c997', '#f06595', '#748ffc', '#94d82d', '#ffa8a8', '#66d9e8',
 ];
+
+function dimScreen(a) {
+  ctx.fillStyle = 'rgba(0,0,0,' + a + ')';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
+function bigText(text, color, y, size) {
+  ctx.fillStyle = color;
+  ctx.font = 'bold ' + size + 'px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, cv.width / 2, y);
+}
 
 function sectorOf(tx, ty) {
   const sx = Math.min(2, Math.floor(tx / C.sectorW));
@@ -538,6 +569,50 @@ function draw() {
     ctx.fillStyle = '#ff7b72';
     ctx.font = 'bold 18px system-ui';
     ctx.fillText(floodBanner.text, cv.width / 2, 30);
+  }
+
+  // 킬 피드. 오른쪽 위에 쌓인다
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 12px system-ui';
+  killFeed = killFeed.filter(k => now - k.born < 6000);
+  for (let i = 0; i < killFeed.length; ++i) {
+    const k = killFeed[i];
+    ctx.globalAlpha = Math.max(0, 1 - (now - k.born) / 6000);
+    ctx.fillStyle = k.me ? '#f85149' : 'rgba(201,209,217,0.9)';
+    ctx.fillText(k.text, cv.width - 8, 20 + i * 15);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+
+  // 판의 단계. 카운트다운과 결과는 화면 한가운데를 덮는다
+  const me = players.get(myId);
+
+  if (phase === PHASE.COUNTDOWN) {
+    const left = Math.max(1, Math.ceil((C.tickRate * 3 - phaseTicks) / C.tickRate));
+    dimScreen(0.45);
+    bigText(String(left), '#fff', cv.height / 2 + 20, 64);
+    bigText('READY', '#8ab4ff', cv.height / 2 + 60, 18);
+  }
+  else if (phase === PHASE.WAITING) {
+    dimScreen(0.45);
+    bigText('WAITING', '#8ab4ff', cv.height / 2, 30);
+    bigText('한 명 더 들어와야 시작한다', '#c9d1d9', cv.height / 2 + 28, 14);
+  }
+  else if (phase === PHASE.OVER) {
+    dimScreen(0.55);
+    if (winner === 0xFF)      bigText('DRAW', '#ffd166', cv.height / 2, 40);
+    else if (winner === myId) bigText('WINNER', '#3fb950', cv.height / 2, 46);
+    else                      bigText('P' + winner + ' WINS', '#8ab4ff', cv.height / 2, 36);
+
+    const left = Math.max(0, Math.ceil((C.tickRate * 5 - phaseTicks) / C.tickRate));
+    bigText('다음 판까지 ' + left, '#c9d1d9', cv.height / 2 + 34, 14);
+  }
+  else if (me && !(me.flags & PF.ALIVE)) {
+    // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, cv.height / 2 - 26, cv.width, 52);
+    bigText('DOWN', '#f85149', cv.height / 2 - 2, 26);
+    bigText('관전 중 — 다음 판을 기다린다', '#c9d1d9', cv.height / 2 + 18, 13);
   }
 
   // 스치고 살아난 순간. 화면 가장자리가 번쩍한다

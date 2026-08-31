@@ -172,6 +172,25 @@ enum SectorState : uint8_t
     SECTOR_FLOODED = 2,   // 잠겼다. 여기 있으면 카운트다운이 돈다
 };
 
+// ── 판의 생명주기 ──────────────────────────────────────────
+//
+// 지금까지는 서버를 켜면 그냥 영원히 돌았다. "판이 시작하고 끝난다" 는 개념이 없었다.
+// 그래서 붙는 순간 이미 물이 차 있기도 하고, 죽으면 남은 시간이 통째로 빈다.
+//
+// 크아가 이 문제를 푸는 방식이 라운드제다. 죽어도 곧 다음 판이 온다.
+// SPEC 2.1 에 "24명, 라운드제" 라고 적어둔 그것이다.
+enum RoundPhase : uint8_t
+{
+    ROUND_WAITING   = 0,   // 사람이 모자라다. 기다린다
+    ROUND_COUNTDOWN = 1,   // 곧 시작. 아직 못 움직인다
+    ROUND_PLAYING   = 2,
+    ROUND_OVER      = 3,   // 승자 표시. 곧 다음 판
+};
+
+constexpr int ROUND_MIN_PLAYERS     = 2;
+constexpr int ROUND_COUNTDOWN_TICKS = TICK_RATE * 3;   // SPEC 2.2 의 3초 카운트다운
+constexpr int ROUND_OVER_TICKS      = TICK_RATE * 5;   // 결과를 보는 시간
+
 // ── 아이템 ─────────────────────────────────────────────────
 enum ItemType : uint8_t
 {

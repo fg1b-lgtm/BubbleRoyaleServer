@@ -146,8 +146,8 @@ bubbletest  45 PASS / 0 FAIL
 floodtest   25 PASS / 0 FAIL
 maptest      7 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
-wstest      15 PASS / 0 FAIL
-봇 24개 8초  접속 1744 = fully closed 1744, 에러 0
+wstest      16 PASS / 0 FAIL
+봇 26개 8초  접속 1891 = fully closed 1891, 에러 0
 ```
 
 ---

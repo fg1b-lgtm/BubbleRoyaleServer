@@ -34,6 +34,10 @@ inline int CountBubbles(int owner)
 // 풍선은 새 칸에 생긴다. 그 어긋남이 손맛을 망친다
 inline bool PlaceBubble(int slot)
 {
+    if (g_game.phase != ROUND_PLAYING) {
+        return false;   // 카운트다운 중이거나 판이 끝났다
+    }
+
     Player& p = g_game.players[slot];
 
     if (!p.alive || p.trap_ticks > 0) {
