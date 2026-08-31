@@ -101,23 +101,25 @@ constexpr int INVULN_TICKS = TICK_RATE;   // 1초
 //
 // SPEC 2.6 의 표를 그대로 옮긴 것이다. 전부 틱으로 적는다.
 //
-//   2:00 예고(3구역) -> 2:30 침수
-//   3:30 예고(2구역) -> 4:00
-//   4:30 예고(2구역) -> 5:00
-//   5:30 예고(1구역) -> 6:00
+//   0:00~1:00  자유 파밍. 첫 1분은 아무 일도 없다
+//   1:00 예고(3구역) -> 1:30 침수
+//   2:30 예고(3구역) -> 3:00 침수
+//   4:00 예고(2구역) -> 4:30 침수
 //
-// 바깥 여덟 구역이 3+2+2+1 로 잠기고 가운데 하나가 남는다.
+// 예고는 항상 침수 30초 전이다. 그 30초가 도망칠지 버틸지 정하는 시간이다.
+//
+// 바깥 여덟 구역이 3+3+2 로 잠기고 가운데 하나가 남는다.
 // 가운데가 남는 건 우연이 아니다. SPEC 2.5 의 "중앙 위험 구역" 과 같은 자리다.
 // 어차피 다 거기로 몰린다는 걸 알기 때문에 자리 잡기가 판단거리가 된다.
-constexpr int FLOOD_STAGES = 4;
+constexpr int FLOOD_STAGES = 3;
 
 constexpr int FLOOD_WARN_TICKS[FLOOD_STAGES] = {
-    TICK_RATE * 120, TICK_RATE * 210, TICK_RATE * 270, TICK_RATE * 330,
+    TICK_RATE * 60, TICK_RATE * 150, TICK_RATE * 240,
 };
 constexpr int FLOOD_FILL_TICKS[FLOOD_STAGES] = {
-    TICK_RATE * 150, TICK_RATE * 240, TICK_RATE * 300, TICK_RATE * 360,
+    TICK_RATE * 90, TICK_RATE * 180, TICK_RATE * 270,
 };
-constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 2, 2, 1 };
+constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 3, 2 };
 
 // 구역 상태
 enum SectorState : uint8_t
