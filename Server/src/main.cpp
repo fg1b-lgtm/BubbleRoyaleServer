@@ -25,6 +25,138 @@
 #include "GameConstants.h"
 #include "GameTick.h"
 
+// 패킷 하나가 한도를 안 넘는지 컴파일할 때 확인한다.
+// 넘치면 돌려보기 전에 여기서 막힌다
+static_assert(HEADER_SIZE + sizeof(SnapshotHead)
+              + PLAYER_MAX * sizeof(PlayerState)
+              + MAX_SNAPSHOT_BUBBLE * sizeof(BubbleState) <= MAX_PACKET_SIZE,
+              "snapshot packet is too big");
+static_assert(HEADER_SIZE + sizeof(MapRowHead) + 2 * MAP_W <= MAX_PACKET_SIZE,
+              "map row packet is too big");
+
+// 접속한 사람에게만 보낸다. 판이 어떻게 생겼는지와 게임 상수를 알려준다
+static void SendWelcome(Session* s, int slot)
+{
+    char buf[WELCOME_PACKET_SIZE];
+
+    PacketHeader h;
+    h.size = (uint16_t)WELCOME_PACKET_SIZE;
+    h.id   = PKT_WELCOME;
+    memcpy(buf, &h, HEADER_SIZE);
+
+    WelcomeBody w;
+    w.your_id            = (uint8_t)slot;
+    w.map_w              = (uint8_t)MAP_W;
+    w.map_h              = (uint8_t)MAP_H;
+    w.sector_w           = (uint8_t)SECTOR_W;
+    w.sector_h           = (uint8_t)SECTOR_H;
+    w.tick_rate          = (uint8_t)TICK_RATE;
+    w.tile_units         = (uint16_t)TILE_UNITS;
+    w.fuse_ticks         = (uint16_t)BUBBLE_FUSE_TICKS;
+    w.trap_ticks         = (uint16_t)TRAP_DURATION_TICKS;
+    w.flood_escape_ticks = (uint16_t)FLOOD_ESCAPE_TICKS;
+    w.blast_ticks        = (uint8_t)BLAST_DURATION_TICKS;
+    w.switch_num         = (uint8_t)TILE_SWITCH_NUM;
+    w.switch_den         = (uint8_t)TILE_SWITCH_DEN;
+    w.seed               = g_game.map.seed;
+    memcpy(buf + HEADER_SIZE, &w, sizeof(w));
+
+    SendPacket(s, buf, WELCOME_PACKET_SIZE);
+
+    // 판을 한 줄씩. 한 패킷에 다 담으면 한도를 넘는다
+    for (int y = 0; y < MAP_H; ++y) {
+        char row[HEADER_SIZE + sizeof(MapRowHead) + 2 * MAP_W];
+        int  len = (int)sizeof(row);
+
+        PacketHeader rh;
+        rh.size = (uint16_t)len;
+        rh.id   = PKT_MAPROW;
+        memcpy(row, &rh, HEADER_SIZE);
+
+        row[HEADER_SIZE] = (char)y;
+
+        char* tiles = row + HEADER_SIZE + sizeof(MapRowHead);
+        char* items = tiles + MAP_W;
+
+        for (int x = 0; x < MAP_W; ++x) {
+            tiles[x] = (char)g_game.map.tile[y][x];
+            items[x] = (char)g_game.item[y][x];
+        }
+
+        SendPacket(s, row, len);
+    }
+}
+
+// 매 틱 전원에게. 누가 어디 있고 물풍선이 어디 있나
+static void SendSnapshot()
+{
+    if (g_game.player_count == 0) {
+        return;
+    }
+
+    char buf[MAX_PACKET_SIZE];
+    int  pos = HEADER_SIZE + (int)sizeof(SnapshotHead);
+
+    SnapshotHead sh;
+    sh.tick = (uint32_t)g_game.tick;
+    for (int i = 0; i < 9; ++i) {
+        sh.sectors[i] = g_game.sector_state[i / SECTOR_COLS][i % SECTOR_COLS];
+    }
+    sh.player_count = 0;
+    sh.bubble_count = 0;
+
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        const Player& p = g_game.players[i];
+        if (p.s == nullptr) {
+            continue;
+        }
+
+        PlayerState ps;
+        ps.id    = (uint8_t)i;
+        ps.x     = (uint16_t)p.px;
+        ps.y     = (uint16_t)p.py;
+        ps.jtx   = (uint8_t)p.judge_tx;
+        ps.jty   = (uint8_t)p.judge_ty;
+        ps.flags = 0;
+        if (p.alive)            ps.flags |= PF_ALIVE;
+        if (p.trap_ticks   > 0) ps.flags |= PF_TRAPPED;
+        if (p.invuln_ticks > 0) ps.flags |= PF_INVULN;
+        if (p.flood_ticks  > 0) ps.flags |= PF_DROWNING;
+        ps.bubble_lv = (uint8_t)p.bubble_lv;
+        ps.power_lv  = (uint8_t)p.power_lv;
+        ps.speed_lv  = (uint8_t)p.speed_lv;
+
+        memcpy(buf + pos, &ps, sizeof(ps));
+        pos += (int)sizeof(ps);
+        ++sh.player_count;
+    }
+
+    for (int i = 0; i < MAX_BUBBLE && sh.bubble_count < MAX_SNAPSHOT_BUBBLE; ++i) {
+        const Bubble& b = g_game.bubbles[i];
+        if (!b.used) {
+            continue;
+        }
+
+        BubbleState bs;
+        bs.tx    = (uint8_t)b.tx;
+        bs.ty    = (uint8_t)b.ty;
+        bs.fuse  = (uint8_t)(b.fuse < 0 ? 0 : (b.fuse > 255 ? 255 : b.fuse));
+        bs.owner = (uint8_t)(b.owner < 0 ? 0xFF : b.owner);
+
+        memcpy(buf + pos, &bs, sizeof(bs));
+        pos += (int)sizeof(bs);
+        ++sh.bubble_count;
+    }
+
+    PacketHeader h;
+    h.size = (uint16_t)pos;
+    h.id   = PKT_SNAPSHOT;
+    memcpy(buf, &h, HEADER_SIZE);
+    memcpy(buf + HEADER_SIZE, &sh, sizeof(sh));
+
+    Broadcast(buf, pos, nullptr);
+}
+
 // 이번 틱에 생긴 일을 전원에게 내보낸다.
 //
 // 지금은 거리를 안 본다. 9/3 에 AOI 를 붙이면 여기서 걸러진다.
@@ -90,6 +222,9 @@ static void HandleJob(const Job* j){
             Player& p = g_game.players[slot];
             printf("[Tick] %s:%d entered as p%d at tile (%d,%d)\n",
                    s->ip, s->port, slot, p.judge_tx, p.judge_ty);
+
+            // 판이 어떻게 생겼는지는 접속한 사람에게만 보낸다
+            SendWelcome(s, slot);
             break;
         }
         case JobType::Leave:
@@ -263,6 +398,7 @@ static DWORD WINAPI TickThread(LPVOID)
 
         // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
         GameTick();
+        SendSnapshot();   // 위치가 먼저다. 이벤트는 그 위치에서 일어난 일이다
         FlushEvents();
 
         // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.

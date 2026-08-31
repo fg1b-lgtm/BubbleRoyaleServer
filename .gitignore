@@ -107,3 +107,6 @@ $RECYCLE.BIN/
 *.env
 .env.*
 secrets.*
+
+# Node
+node_modules/

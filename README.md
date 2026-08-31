@@ -43,8 +43,8 @@ C++ / IOCP 기반 실시간 멀티플레이 게임 서버.
 | 8/30 | **수신 버퍼 · 패킷 경계** | 쪼개 보내도 몰아 보내도 안 깨진다 | ✅ (8/29 완료) |
 | 8/31 | **워커 스레드 · 락 설계** | 스레드 4개에서 레이스 없이 돈다 | ✅ (8/30 완료) |
 | 8/31 | **틱 스레드 · Job Queue** | 패킷이 워커에서 틱 스레드로 넘어간다 | ✅ |
-| 9/1 | 게임 로직 코어 | 로그만으로 시뮬레이션이 돈다 | |
-| 9/2 | 침수 + 웹 클라 · ★체크포인트 | 두 명이 웹에서 서로를 잡는다 | |
+| 9/1 | 게임 로직 코어 | 로그만으로 시뮬레이션이 돈다 | ✅ (8/31 완료) |
+| 9/2 | 침수 + 웹 클라 · ★체크포인트 | 두 명이 웹에서 서로를 잡는다 | 침수 ✅ · 클라 ✅ · 대전 확인 남음 |
 | 9/3 | ★ AOI + 1차 측정 | 전후 수치가 표로 나온다 | |
 | 9/4 | 여유 기능 + 나머지 측정 | (버퍼 — 9/3이 밀리면 여기서 흡수) | |
 | 9/5 | ★ 기능 동결 · 문서 · 영상 | README만 읽고 빌드해서 돌릴 수 있다 | |
@@ -89,25 +89,63 @@ bin\x64\Debug\Client.exe
 
 로그 접두어는 두 가지다. 주소가 붙으면 `[Session]`, 서버 전체 얘기면 `[Server]`.
 
+### 웹으로 보기
+
+브라우저는 TCP 를 못 쓴다. 그래서 WebSocket 을 TCP 로 바꿔주는 다리를 하나 둔다.
+
+```
+브라우저 Canvas  --WebSocket-->  web/bridge.js  --TCP-->  Server.exe
+```
+
+```bat
+bin\x64\Debug\Server.exe fast
+node web\bridge.js
+```
+
+그다음 `http://127.0.0.1:8080` 을 연다. 창을 여러 개 열면 여러 명이 된다.
+`fast` 를 붙이면 6분짜리 침수 일정이 36초로 줄어든다. 손맛을 볼 때 쓴다.
+
+**`npm install` 이 필요 없다.** 다리는 Node 기본 모듈만 쓴다.
+WebSocket 악수와 프레임을 `bridge.js` 안에 직접 구현해 뒀다.
+
+**클라이언트는 게임 상수를 하나도 갖고 있지 않다.**
+타일 크기, 틱레이트, 퓨즈 시간, 걸치기 임계값을 전부 접속할 때 서버가 보내준다.
+같은 숫자를 `.js` 에 또 적으면 한쪽만 고쳤을 때 서버와 화면이 갈리기 때문이다.
+
 ### 검증 도구
 
-`tools/` 의 두 프로그램으로 확인한다. `practice/build.bat` 으로 빌드한다.
+`tools/` 로 확인한다. `.cpp` 는 `practice/build.bat` 으로 빌드한다.
 
 ```bat
 cd practice
 build.bat ..\tools\probe.cpp
-build.bat ..\tools\bot.cpp
 ```
 
-| 도구 | 무엇을 확인하나 |
-|---|---|
-| `probe.exe` | 패킷 경계. 1바이트씩 쪼개 보내기 / 몰아 보내기 / 둘이 섞인 경우 / 브로드캐스트 |
-| `bot.exe [봇수] [초]` | 부하와 레이스. 봇이 동시에 붙었다 끊기를 반복한다 |
+| 도구 | 서버가 필요한가 | 무엇을 확인하나 |
+|---|---|---|
+| `movetest.exe` | 아니오 | 이동, 걸치기 임계값, 벽, 코너 보정, 맵 재현 |
+| `bubbletest.exe` | 아니오 | 퓨즈, 십자 폭발, 연쇄 지연, 갇힘, 아이템 |
+| `floodtest.exe` | 아니오 | 침수 일정, 익사, 탈출, 경계에서의 걸치기 |
+| `probe.exe` | 예 | 패킷 경계. 쪼개 보내기 / 몰아 보내기 / 브로드캐스트 |
+| `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
+| `walker.exe [사람수] [초]` | 예 | 실제로 걸어다니며 물풍선을 놓는다 |
+| `node tools/wstest.js` | 예 + 다리 | 브라우저 없이 웹 경로 전체를 확인한다 |
+
+앞의 셋은 소켓을 안 쓴다. **게임 규칙만 꺼내서 두들기므로 서버를 켤 필요가 없다.**
 
 `bot.exe` 를 돌린 뒤 서버 로그에서 `connected` 수와 `fully closed` 수가 같아야 한다.
 다르면 세션이 샌 것이다.
 
-최근 확인: 봇 24개 12초에 접속 2855, 서버 `fully closed` 2855, 누수 0.
+최근 확인:
+
+```
+movetest    19 PASS / 0 FAIL
+bubbletest  41 PASS / 0 FAIL
+floodtest   23 PASS / 0 FAIL
+probe       10 PASS / 0 FAIL
+wstest      12 PASS / 0 FAIL
+봇 24개 8초  접속 1740 = fully closed 1740, 에러 0
+```
 
 ---
 
@@ -117,17 +155,27 @@ build.bat ..\tools\bot.cpp
 BubbleRoyale.sln
 ├─ Common/            서버와 클라이언트가 같이 보는 것
 │   ├─ Protocol.h        패킷 헤더 · 포트 · 패킷 종류
-│   └─ GameConstants.h   게임 규칙 상수 (9/1 부터 사용)
+│   └─ GameConstants.h   게임 규칙 상수. 값은 여기 하나만 있다
 ├─ Server/src/
-│   ├─ main.cpp          패킷 처리 + 워커 루프 + 시작/종료
+│   ├─ main.cpp          패킷 처리 + 워커 루프 + 스냅샷 + 시작/종료
 │   ├─ Session.h         Session / IoContext / 참조 카운트
 │   ├─ SessionManager.h  세션 목록 + 자물쇠 + CloseSession
 │   ├─ Network.h         PostRecv / StartSend / SendPacket / Broadcast
 │   ├─ RecvBuffer.h      받은 바이트를 쌓아두는 버퍼 (커서 두 개)
 │   ├─ SendBuffer.h      보낼 것을 쌓아두는 링버퍼
+│   ├─ JobQueue.h        워커가 꽂고 틱 스레드가 가져가는 주문 꽂이
+│   ├─ GameMap.h         45x39 판. 기둥 · 블록 · 스폰 · 조각 통로
+│   ├─ Movement.h        한 축 이동 · 걸치기 판정 · 코너 보정
+│   ├─ Game.h            자료구조 전부 + 사람 입장/퇴장/입력/이동
+│   ├─ Bubble.h          물풍선 · 폭발 · 연쇄 · 아이템 · 피격
+│   ├─ Flood.h           침수
+│   ├─ GameTick.h        한 틱에 무엇을 어떤 순서로 하는가
 │   └─ ServerConfig.h    워커 수 · 동시 접속 상한
 ├─ Client/src/        테스트용 콘솔 클라이언트
-├─ tools/             검증 도구 (probe, bot)
+├─ web/
+│   ├─ bridge.js         WebSocket ↔ TCP 다리 (Node 기본 모듈만)
+│   └─ index.html        Canvas 클라이언트
+├─ tools/             검증 도구
 ├─ practice/          학습용 재작성 연습 (아래 참고)
 ├─ devlog/            매일의 개발 로그
 ├─ SPEC.md            스펙 · 프로토콜 · 일별 완료 조건

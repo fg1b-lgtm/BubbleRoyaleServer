@@ -65,17 +65,35 @@ static bool RecvExact(SOCKET sock, char* dst, int len)
 static void ExpectReply(SOCKET sock, const char* expect)
 {
     PacketHeader h = {};
-    if (!RecvExact(sock, (char*)&h, HEADER_SIZE)) {
-        printf("[FAIL] 헤더를 못 받았다\n");
-        ++g_fail;
-        return;
-    }
-    int body = h.size - HEADER_SIZE;
+    int body = 0;
     char buf[MAX_PACKET_SIZE] = {};
-    if (body > 0 && !RecvExact(sock, buf, body)) {
-        printf("[FAIL] 몸통을 못 받았다\n");
-        ++g_fail;
-        return;
+
+    // 서버는 이제 스냅샷과 판 정보도 보낸다.
+    // 이 도구가 보는 것은 에코뿐이라 나머지는 읽고 버린다.
+    // 진짜 클라이언트도 모르는 종류는 이렇게 넘긴다
+    for (int skipped = 0; ; ++skipped) {
+        if (skipped > 4096) {
+            printf("[FAIL] 에코가 안 온다\n");
+            ++g_fail;
+            return;
+        }
+
+        if (!RecvExact(sock, (char*)&h, HEADER_SIZE)) {
+            printf("[FAIL] 헤더를 못 받았다\n");
+            ++g_fail;
+            return;
+        }
+
+        body = h.size - HEADER_SIZE;
+        if (body > 0 && !RecvExact(sock, buf, body)) {
+            printf("[FAIL] 몸통을 못 받았다\n");
+            ++g_fail;
+            return;
+        }
+
+        if (h.id == PKT_ECHO) {
+            break;
+        }
     }
 
     int want = (int)strlen(expect);

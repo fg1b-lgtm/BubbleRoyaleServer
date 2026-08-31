@@ -1,0 +1,521 @@
+<meta charset="utf-8">
+<title>Bubble Royale</title>
+<style>
+  :root {
+    --bg:    #0d1117;
+    --panel: #161b22;
+    --line:  #30363d;
+    --text:  #c9d1d9;
+    --dim:   #6e7681;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 "Pretendard", "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 16px; gap: 12px;
+  }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; font-weight: 600; }
+  h1 span { color: var(--dim); font-weight: 400; }
+  #wrap { position: relative; }
+  canvas { display: block; background: #05070a; border: 1px solid var(--line); border-radius: 4px; }
+  #hud {
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 14px; font-variant-numeric: tabular-nums;
+  }
+  #hud b { color: #fff; font-weight: 600; }
+  .off { color: #f85149; }
+  .on  { color: #3fb950; }
+  #help { color: var(--dim); font-size: 12px; }
+  kbd {
+    background: #21262d; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 3px; padding: 1px 5px; font: inherit; font-size: 11px; color: var(--text);
+  }
+</style>
+
+<h1>BUBBLE ROYALE <span>— web client</span></h1>
+
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <span id="conn" class="off">연결 안 됨</span>
+  <span>tick <b id="tick">0</b></span>
+  <span>생존 <b id="alive">0</b></span>
+  <span>물풍선 <b id="sb">1</b></span>
+  <span>물줄기 <b id="sp">2</b></span>
+  <span>속도 <b id="ss">0</b></span>
+</div>
+
+<div id="help">
+  <kbd>← ↑ → ↓</kbd> 또는 <kbd>WASD</kbd> 이동 &nbsp;·&nbsp; <kbd>Space</kbd> 물풍선
+</div>
+
+<script>
+// ── 프로토콜 번호. Common/Protocol.h 와 같아야 한다 ─────────
+// 게임 규칙 상수는 여기 안 적는다. 서버가 WELCOME 으로 보내준다.
+// 같은 숫자를 두 군데 적으면 한쪽만 고쳤을 때 서버와 화면이 갈린다.
+const PKT = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7 };
+const EVT = {
+  GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
+  FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13,
+};
+const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3 };
+const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3 };
+const SECT = { OPEN:0, WARNING:1, FLOODED:2 };
+const PF   = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8 };
+const HEADER_SIZE = 4;
+
+// ── 상태 ─────────────────────────────────────────────────────
+let C     = null;          // 서버가 준 게임 상수
+let myId  = -1;
+let tiles = null, items = null;
+let sectors = new Array(9).fill(SECT.OPEN);
+let bubbles = [];
+let blasts  = [];          // {x,y,until}
+let pops    = [];          // 화면에 뜨는 글자
+let players = new Map();   // id -> {x0,y0,x1,y1,jtx,jty,flags,bubble_lv,power_lv,speed_lv}
+let lastSnapAt = 0, snapInterval = 33;
+let curTick = 0;
+let floodBanner = null;
+
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let TS = 18;   // 타일 한 칸을 몇 픽셀로 그릴 것인가
+
+// ── 서버와 이야기하기 ────────────────────────────────────────
+let ws = null;
+
+function connect() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    document.getElementById('conn').textContent = '연결됨';
+    document.getElementById('conn').className = 'on';
+  };
+  ws.onclose = () => {
+    document.getElementById('conn').textContent = '끊김 — 3초 뒤 다시';
+    document.getElementById('conn').className = 'off';
+    setTimeout(connect, 3000);
+  };
+  // 다리가 패킷 하나를 프레임 하나로 잘라서 보낸다. 경계를 여기서 안 따져도 된다
+  ws.onmessage = (e) => onPacket(new DataView(e.data));
+}
+
+function send(bytes) {
+  if (ws && ws.readyState === 1) ws.send(bytes);
+}
+
+function sendMove(dx, dy) {
+  const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
+  b.setUint16(0, HEADER_SIZE + 2, true);
+  b.setUint16(2, PKT.MOVE, true);
+  b.setInt8(4, dx);
+  b.setInt8(5, dy);
+  send(b.buffer);
+}
+
+function sendPlace() {
+  const b = new DataView(new ArrayBuffer(HEADER_SIZE));
+  b.setUint16(0, HEADER_SIZE, true);
+  b.setUint16(2, PKT.PLACE, true);
+  send(b.buffer);
+}
+
+// ── 받은 패킷 풀기 ───────────────────────────────────────────
+function onPacket(v) {
+  const id = v.getUint16(2, true);
+
+  if (id === PKT.WELCOME)  return onWelcome(v);
+  if (id === PKT.MAPROW)   return onMapRow(v);
+  if (id === PKT.SNAPSHOT) return onSnapshot(v);
+  if (id === PKT.EVENT)    return onEvent(v);
+}
+
+function onWelcome(v) {
+  // WelcomeBody 를 적힌 순서대로 읽는다. 서버가 pack(1) 로 보내므로 빈칸이 없다
+  let o = HEADER_SIZE;
+  const u8  = () => v.getUint8(o++);
+  const u16 = () => { const n = v.getUint16(o, true); o += 2; return n; };
+  const u32 = () => { const n = v.getUint32(o, true); o += 4; return n; };
+
+  C = {
+    myId:      u8(),
+    mapW:      u8(),
+    mapH:      u8(),
+    sectorW:   u8(),
+    sectorH:   u8(),
+    tickRate:  u8(),
+    tileUnits: u16(),
+    fuse:      u16(),
+    trap:      u16(),
+    floodEsc:  u16(),
+    blast:     u8(),
+    switchNum: u8(),
+    switchDen: u8(),
+    seed:      u32(),
+  };
+  myId = C.myId;
+  snapInterval = 1000 / C.tickRate;
+
+  tiles = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
+  items = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
+
+  TS = Math.max(10, Math.min(20, Math.floor((window.innerWidth - 60) / C.mapW)));
+  cv.width  = C.mapW * TS;
+  cv.height = C.mapH * TS;
+
+  console.log('welcome', C);
+}
+
+function onMapRow(v) {
+  if (!C) return;
+  const y = v.getUint8(HEADER_SIZE);
+  let o = HEADER_SIZE + 1;
+  for (let x = 0; x < C.mapW; ++x) tiles[y][x] = v.getUint8(o + x);
+  o += C.mapW;
+  for (let x = 0; x < C.mapW; ++x) items[y][x] = v.getUint8(o + x);
+}
+
+function onSnapshot(v) {
+  if (!C) return;
+  let o = HEADER_SIZE;
+
+  curTick = v.getUint32(o, true); o += 4;
+  for (let i = 0; i < 9; ++i) sectors[i] = v.getUint8(o + i);
+  o += 9;
+
+  const np = v.getUint8(o++);
+  const nb = v.getUint8(o++);
+
+  const seen = new Set();
+  for (let i = 0; i < np; ++i) {
+    const id = v.getUint8(o);
+    const x  = v.getUint16(o + 1, true);
+    const y  = v.getUint16(o + 3, true);
+    const p  = players.get(id) || { x0: x, y0: y };
+
+    // 스냅샷은 초당 30번인데 화면은 60번 그린다.
+    // 지난 위치와 이번 위치 사이를 시간으로 나눠서 그리면 끊겨 보이지 않는다
+    p.x0 = (p.x1 === undefined) ? x : p.x1;
+    p.y0 = (p.y1 === undefined) ? y : p.y1;
+    p.x1 = x;
+    p.y1 = y;
+    p.jtx   = v.getUint8(o + 5);
+    p.jty   = v.getUint8(o + 6);
+    p.flags = v.getUint8(o + 7);
+    p.bubble_lv = v.getUint8(o + 8);
+    p.power_lv  = v.getUint8(o + 9);
+    p.speed_lv  = v.getUint8(o + 10);
+
+    players.set(id, p);
+    seen.add(id);
+    o += 11;
+  }
+  for (const id of players.keys()) if (!seen.has(id)) players.delete(id);
+
+  bubbles = [];
+  for (let i = 0; i < nb; ++i) {
+    bubbles.push({
+      tx: v.getUint8(o), ty: v.getUint8(o + 1),
+      fuse: v.getUint8(o + 2), owner: v.getUint8(o + 3),
+    });
+    o += 4;
+  }
+
+  lastSnapAt = performance.now();
+
+  document.getElementById('tick').textContent = curTick;
+  let alive = 0;
+  for (const p of players.values()) if (p.flags & PF.ALIVE) ++alive;
+  document.getElementById('alive').textContent = alive;
+
+  const me = players.get(myId);
+  if (me) {
+    document.getElementById('sb').textContent = 1 + me.bubble_lv;
+    document.getElementById('sp').textContent = 2 + me.power_lv;
+    document.getElementById('ss').textContent = me.speed_lv;
+  }
+}
+
+function pop(text, tx, ty, color, size) {
+  pops.push({ text, x: tx, y: ty, color, size: size || 13, born: performance.now() });
+}
+
+function onEvent(v) {
+  if (!C) return;
+  const t = v.getUint8(HEADER_SIZE);
+  const x = v.getUint8(HEADER_SIZE + 1);
+  const y = v.getUint8(HEADER_SIZE + 2);
+  const w = v.getUint8(HEADER_SIZE + 3);
+  const val = v.getUint8(HEADER_SIZE + 4);
+
+  switch (t) {
+    case EVT.BLAST:
+      blasts.push({ x, y, until: performance.now() + (C.blast / C.tickRate) * 1000 });
+      break;
+
+    case EVT.BLOCK:
+      tiles[y][x] = TILE.EMPTY;
+      break;
+
+    case EVT.DROP:
+      items[y][x] = val;
+      break;
+
+    case EVT.ITEM:
+      items[y][x] = ITEM.NONE;
+      break;
+
+    // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
+    case EVT.GRAZE:
+      pop('GRAZE', x, y, '#58d6ff', 17);
+      if (w === myId) flashEdge('#58d6ff');
+      break;
+
+    case EVT.CHAIN:
+      pop('CHAIN x' + (val + 1), x, y, '#ffd166', 15);
+      break;
+
+    case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); break;
+    case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); break;
+    case EVT.DEATH:  pop('DOWN',      x, y, '#f85149', 15); break;
+
+    case EVT.FLOOD_WARN:
+      floodBanner = { text: 'FLOOD IN ' + val, until: performance.now() + 2500 };
+      break;
+
+    case EVT.FLOOD:
+      floodBanner = { text: 'FLOODED', until: performance.now() + 1500 };
+      break;
+  }
+}
+
+// ── 화면 가장자리 번쩍 ───────────────────────────────────────
+let edgeFlash = null;
+function flashEdge(color) {
+  edgeFlash = { color, born: performance.now() };
+}
+
+// ── 입력 ─────────────────────────────────────────────────────
+const held = new Set();
+let sentX = 0, sentY = 0;
+
+function inputDir() {
+  let dx = 0, dy = 0;
+  if (held.has('ArrowLeft')  || held.has('a')) dx -= 1;
+  if (held.has('ArrowRight') || held.has('d')) dx += 1;
+  if (held.has('ArrowUp')    || held.has('w')) dy -= 1;
+  if (held.has('ArrowDown')  || held.has('s')) dy += 1;
+  return [dx, dy];
+}
+
+function pushInput() {
+  const [dx, dy] = inputDir();
+  // 바뀔 때만 보낸다. 매 프레임 보내면 방향 하나 누르는 데 초당 60개가 나간다
+  if (dx !== sentX || dy !== sentY) {
+    sentX = dx; sentY = dy;
+    sendMove(dx, dy);
+  }
+}
+
+addEventListener('keydown', (e) => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === ' ') { e.preventDefault(); sendPlace(); return; }
+  if (!held.has(k)) { held.add(k); pushInput(); }
+  if (k.startsWith('Arrow')) e.preventDefault();
+});
+
+addEventListener('keyup', (e) => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  held.delete(k);
+  pushInput();
+});
+
+addEventListener('blur', () => { held.clear(); pushInput(); });
+
+// ── 그리기 ───────────────────────────────────────────────────
+const PLAYER_COLORS = [
+  '#ff6b6b', '#4dabf7', '#51cf66', '#ffd43b', '#cc5de8', '#ff922b',
+  '#20c997', '#f06595', '#748ffc', '#94d82d', '#ffa8a8', '#66d9e8',
+];
+
+function sectorOf(tx, ty) {
+  const sx = Math.min(2, Math.floor(tx / C.sectorW));
+  const sy = Math.min(2, Math.floor(ty / C.sectorH));
+  return sy * 3 + sx;
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (!C) return;
+
+  const now = performance.now();
+  const a   = Math.min(1, (now - lastSnapAt) / snapInterval);   // 두 스냅샷 사이 위치
+
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // 바닥
+  for (let y = 0; y < C.mapH; ++y) {
+    for (let x = 0; x < C.mapW; ++x) {
+      const t = tiles[y][x];
+      ctx.fillStyle = t === TILE.WALL  ? '#2b3440'
+                    : t === TILE.BLOCK ? '#5a4632'
+                    : ((x + y) & 1) ? '#0f1620' : '#111a26';
+      ctx.fillRect(x * TS, y * TS, TS, TS);
+
+      if (t === TILE.BLOCK) {
+        ctx.fillStyle = '#6b5540';
+        ctx.fillRect(x * TS + 1, y * TS + 1, TS - 2, 2);
+      }
+    }
+  }
+
+  // 구역 상태. 잠긴 데는 물빛, 예고 중인 데는 붉은 테두리가 뛴다
+  for (let s = 0; s < 9; ++s) {
+    const sx = (s % 3) * C.sectorW * TS;
+    const sy = Math.floor(s / 3) * C.sectorH * TS;
+    const w  = C.sectorW * TS, h = C.sectorH * TS;
+
+    if (sectors[s] === SECT.FLOODED) {
+      ctx.fillStyle = 'rgba(40,120,200,0.30)';
+      ctx.fillRect(sx, sy, w, h);
+    }
+    else if (sectors[s] === SECT.WARNING) {
+      // 임박할수록 빠르게 깜빡인다. 등속으로 하면 시간이 안 느껴진다
+      const beat = 0.5 + 0.5 * Math.sin(now / 160);
+      ctx.fillStyle = 'rgba(40,120,200,0.10)';
+      ctx.fillRect(sx, sy, w, h);
+      ctx.strokeStyle = 'rgba(255,80,80,' + (0.25 + 0.55 * beat) + ')';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(sx + 2, sy + 2, w - 4, h - 4);
+    }
+  }
+
+  // 아이템
+  for (let y = 0; y < C.mapH; ++y) {
+    for (let x = 0; x < C.mapW; ++x) {
+      const it = items[y][x];
+      if (it === ITEM.NONE) continue;
+
+      ctx.fillStyle = it === ITEM.BUBBLE ? '#4dabf7'
+                    : it === ITEM.POWER  ? '#ff922b'
+                    :                      '#51cf66';
+      // 작고 잦은 것이라 연출을 줄인다. 크게 하면 3분 뒤에 피로해진다
+      ctx.beginPath();
+      ctx.arc(x * TS + TS / 2, y * TS + TS / 2, TS * 0.22, 0, 7);
+      ctx.fill();
+    }
+  }
+
+  // 물줄기
+  blasts = blasts.filter(b => b.until > now);
+  for (const b of blasts) {
+    const left = (b.until - now) / ((C.blast / C.tickRate) * 1000);
+    ctx.fillStyle = 'rgba(120,210,255,' + (0.25 + 0.55 * left) + ')';
+    ctx.fillRect(b.x * TS, b.y * TS, TS, TS);
+  }
+
+  // 물풍선
+  for (const b of bubbles) {
+    const cx = b.tx * TS + TS / 2;
+    const cy = b.ty * TS + TS / 2;
+
+    // 마지막 0.5초에 맥박이 빨라진다. 설치 후 2.5초가 체감상 제일 길다
+    const near = b.fuse < C.tickRate * 0.5;
+    const beat = Math.sin(now / (near ? 55 : 190));
+    const r    = TS * (0.34 + 0.06 * beat);
+
+    ctx.fillStyle = near ? 'rgba(255,140,140,0.9)' : 'rgba(120,190,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 7);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // 사람
+  for (const [id, p] of players) {
+    const px = p.x0 + (p.x1 - p.x0) * a;
+    const py = p.y0 + (p.y1 - p.y0) * a;
+    const cx = px / C.tileUnits * TS;
+    const cy = py / C.tileUnits * TS;
+    const dead = !(p.flags & PF.ALIVE);
+
+    // 판정 타일. 아주 희미하게. 눈에 걸리면 안 된다 (SPEC 2.3)
+    if (!dead) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.jtx * TS + 0.5, p.jty * TS + 0.5, TS - 1, TS - 1);
+    }
+
+    ctx.globalAlpha = dead ? 0.22 : ((p.flags & PF.INVULN) && (now / 90 | 0) % 2 ? 0.35 : 1);
+    ctx.fillStyle = PLAYER_COLORS[id % PLAYER_COLORS.length];
+    ctx.beginPath();
+    ctx.arc(cx, cy, TS * 0.34, 0, 7);
+    ctx.fill();
+
+    if (id === myId) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // 갇힘. 물방울이 씌워진다
+    if (p.flags & PF.TRAPPED) {
+      ctx.strokeStyle = 'rgba(150,210,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, TS * 0.5, 0, 7);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+
+    // 잠긴 구역 안이다. 숫자만 크게 (SPEC 2.8)
+    if (p.flags & PF.DROWNING) {
+      ctx.fillStyle = '#ff5a5a';
+      ctx.font = 'bold ' + (TS * 1.2) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('!', cx, cy - TS * 0.7);
+    }
+  }
+
+  // 뜨는 글자
+  pops = pops.filter(p => now - p.born < 900);
+  ctx.textAlign = 'center';
+  for (const p of pops) {
+    const t = (now - p.born) / 900;
+    ctx.globalAlpha = 1 - t;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold ' + p.size + 'px system-ui';
+    ctx.fillText(p.text, p.x * TS + TS / 2, p.y * TS - t * 22);
+  }
+  ctx.globalAlpha = 1;
+
+  // 침수 예고 띠
+  if (floodBanner && floodBanner.until > now) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 8, cv.width, 30);
+    ctx.fillStyle = '#ff7b72';
+    ctx.font = 'bold 18px system-ui';
+    ctx.fillText(floodBanner.text, cv.width / 2, 30);
+  }
+
+  // 스치고 살아난 순간. 화면 가장자리가 번쩍한다
+  if (edgeFlash && now - edgeFlash.born < 220) {
+    const t = 1 - (now - edgeFlash.born) / 220;
+    ctx.strokeStyle = edgeFlash.color;
+    ctx.globalAlpha = t * 0.9;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, cv.width - 6, cv.height - 6);
+    ctx.globalAlpha = 1;
+  }
+}
+
+connect();
+requestAnimationFrame(draw);
+</script>

@@ -18,10 +18,13 @@ constexpr int MAX_PACKET_SIZE = 1024;  // 이보다 크다고 하면 믿을 수 
 // 패킷 종류. 숫자로 쓰면 읽는 사람이 모르니 이름을 붙인다
 enum PacketId : uint16_t
 {
-    PKT_ECHO  = 1,
-    PKT_MOVE  = 2,   // 클라 -> 서버. 어느 쪽으로 가고 있는지
-    PKT_PLACE = 3,   // 클라 -> 서버. 물풍선을 놓겠다
-    PKT_EVENT = 4,   // 서버 -> 클라. 화면에 띄울 일이 생겼다
+    PKT_ECHO     = 1,
+    PKT_MOVE     = 2,   // 클라 -> 서버. 어느 쪽으로 가고 있는지
+    PKT_PLACE    = 3,   // 클라 -> 서버. 물풍선을 놓겠다
+    PKT_EVENT    = 4,   // 서버 -> 클라. 화면에 띄울 일이 생겼다
+    PKT_WELCOME  = 5,   // 서버 -> 클라. 접속 직후 한 번. 게임 상수까지 같이 준다
+    PKT_MAPROW   = 6,   // 서버 -> 클라. 접속 직후 판을 한 줄씩
+    PKT_SNAPSHOT = 7,   // 서버 -> 클라. 매 틱. 누가 어디 있나
 };
 
 // 화면에 띄울 일. SPEC 2.7 "어디서 재미가 나오나" 의 목록이 그대로 여기다.
@@ -45,6 +48,7 @@ enum EventType : uint8_t
     EVT_FLOOD_WARN = 10,   // 이 구역이 곧 잠긴다. value 가 몇 초 뒤인지
     EVT_FLOOD      = 11,   // 이 구역이 잠겼다
     EVT_DROWN      = 12,   // 잠긴 구역 안이다. 카운트다운이 시작됐다
+    EVT_DROP       = 13,   // 부서진 블록에서 아이템이 떨어졌다. value 가 ItemType
 };
 
 
@@ -78,8 +82,77 @@ struct EventBody
     uint8_t who;     // 누구 얘기인가. 사람과 상관없으면 0xFF
     uint8_t value;   // 이벤트마다 뜻이 다르다. 연쇄 단계, 아이템 종류 등
 };
+// PKT_WELCOME 의 몸통. 접속하면 딱 한 번 간다.
+//
+// 게임 상수를 여기 실어 보낸다. 클라이언트가 상수를 하나도 안 갖게 하려는 것이다.
+// 웹 클라는 JavaScript 라 GameConstants.h 를 못 읽는다.
+// 그렇다고 같은 숫자를 .js 에 또 적으면, 한쪽만 고쳤을 때 서버와 화면이 갈린다.
+// SPEC 1절에 "이 파일이 갈리면 그게 곧 버그다" 라고 적어둔 그 문제다.
+// 값을 하나만 두고 접속할 때 넘겨주면 갈릴 수가 없다.
+struct WelcomeBody
+{
+    uint8_t  your_id;
+    uint8_t  map_w, map_h;
+    uint8_t  sector_w, sector_h;
+    uint8_t  tick_rate;
+    uint16_t tile_units;           // 타일 하나가 몇 units 인가
+    uint16_t fuse_ticks;
+    uint16_t trap_ticks;
+    uint16_t flood_escape_ticks;
+    uint8_t  blast_ticks;
+    uint8_t  switch_num, switch_den;   // 걸치기 임계값. 화면에 판정 타일을 그리는 데 쓴다
+    uint32_t seed;
+};
+
+// PKT_MAPROW 의 몸통. 판을 한 줄씩 보낸다.
+//
+// 45 x 39 를 한 패킷에 담으면 3510 바이트라 MAX_PACKET_SIZE 를 넘는다.
+// 한계를 올리는 대신 줄 단위로 쪼갠다. 크기 검사를 느슨하게 만들지 않으려는 것이다.
+// 뒤에 tiles[map_w] 와 items[map_w] 가 이어 붙는다
+struct MapRowHead
+{
+    uint8_t y;
+};
+
+// PKT_SNAPSHOT 의 몸통 앞부분. 뒤에 사람과 물풍선이 이어 붙는다.
+//
+// 매 틱 전원에게 나간다. 지금은 거리를 안 본다.
+// 9/3 에 AOI 가 걸러낼 대상이 바로 이 패킷이고, 그 전후 숫자가 측정 결과가 된다.
+struct SnapshotHead
+{
+    uint32_t tick;
+    uint8_t  sectors[9];      // 구역 상태. SectorState
+    uint8_t  player_count;
+    uint8_t  bubble_count;
+};
+
+struct PlayerState
+{
+    uint8_t  id;
+    uint16_t x, y;        // units
+    uint8_t  jtx, jty;    // 판정 타일. 위치와 다르면 걸치는 중이다
+    uint8_t  flags;
+    uint8_t  bubble_lv, power_lv, speed_lv;
+};
+
+// PlayerState.flags 의 자리
+constexpr uint8_t PF_ALIVE    = 1 << 0;
+constexpr uint8_t PF_TRAPPED  = 1 << 1;
+constexpr uint8_t PF_INVULN   = 1 << 2;
+constexpr uint8_t PF_DROWNING = 1 << 3;
+
+struct BubbleState
+{
+    uint8_t tx, ty;
+    uint8_t fuse;     // 남은 틱. 마지막 0.5초에 맥박이 빨라지는 연출에 쓴다
+    uint8_t owner;
+};
 #pragma pack(pop)
 
 constexpr int MOVE_PACKET_SIZE  = HEADER_SIZE + (int)sizeof(MoveBody);
 constexpr int PLACE_PACKET_SIZE = HEADER_SIZE;   // 몸통이 없다. 놓는 자리는 서버가 안다
 constexpr int EVENT_PACKET_SIZE = HEADER_SIZE + (int)sizeof(EventBody);
+constexpr int WELCOME_PACKET_SIZE = HEADER_SIZE + (int)sizeof(WelcomeBody);
+
+// 스냅샷에 담을 수 있는 물풍선 수. 패킷 한도 안에 들어가야 한다
+constexpr int MAX_SNAPSHOT_BUBBLE = 120;

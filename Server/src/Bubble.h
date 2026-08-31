@@ -99,6 +99,8 @@ inline void BreakBlock(int tx, int ty)
     // 특수 아이템은 킬 드롭과 중앙에서만 나온다. 그 한 줄이 밸런스의 척추다 (SPEC 2.5)
     static const uint8_t kinds[3] = { ITEM_BUBBLE, ITEM_POWER, ITEM_ROLLER };
     g_game.item[ty][tx] = kinds[g_game.drop_rnd.Next(3)];
+
+    PushEvent(EVT_DROP, tx, ty, 0xFF, g_game.item[ty][tx]);
 }
 
 // 물풍선 하나를 터뜨린다
