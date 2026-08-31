@@ -57,6 +57,7 @@ enum EventType : uint8_t
     EVT_DROWN      = 12,   // 잠긴 구역 안이다. 카운트다운이 시작됐다
     EVT_DROP       = 13,   // 부서진 블록에서 아이템이 떨어졌다. value 가 ItemType
     EVT_RING       = 14,   // 최종 구역 안 물이 한 겹 차올랐다. value 가 남은 폭
+    EVT_POP        = 15,   // 갇힌 사람을 몸으로 부딪쳐 터뜨렸다. who 가 당한 쪽, value 가 터뜨린 쪽
 };
 
 

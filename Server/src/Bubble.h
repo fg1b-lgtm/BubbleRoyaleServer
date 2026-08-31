@@ -278,7 +278,10 @@ inline void ResolveHits()
         // 클라이언트가 알아서 못 만든다. 서버가 알려줘야 한다
         if (!judge_hit && body_hit) {
             if (!p.grazing) {
-                PushEvent(EVT_GRAZE, p.judge_tx, p.judge_ty, i, 0);
+                // 연속으로 걸치면 숫자가 올라간다. 보상은 숫자 그 자체다
+                ++p.graze_streak;
+                p.graze_timer = GRAZE_CHAIN_TICKS;
+                PushEvent(EVT_GRAZE, p.judge_tx, p.judge_ty, i, p.graze_streak);
             }
             p.grazing = true;
             continue;
@@ -293,22 +296,57 @@ inline void ResolveHits()
             continue;   // 빠져나온 직후다. 남은 물줄기에 다시 맞으면 억울하다
         }
 
-        uint16_t gen = g_game.blast_gen[p.judge_ty][p.judge_tx];
-
         if (p.trap_ticks > 0) {
-            // 이미 갇혀 있다. 나를 가둔 그 폭발이면 아무 일도 없고,
-            // 다른 폭발이면 죽는다. 연쇄가 마무리 수단이 되는 게 이 줄이다
-            if (gen != p.trap_gen) {
-                KillPlayer(i);
-            }
+            // 이미 갇혀 있다. 물줄기로는 더 어쩌지 못한다.
+            // 터뜨리려면 누가 몸으로 부딪쳐야 한다. 크아가 그렇다
             continue;
         }
 
-        p.trap_ticks = TRAP_DURATION_TICKS;
-        p.trap_gen   = gen;
-        p.dir_x      = 0;
-        p.dir_y      = 0;
+        p.trap_ticks   = TRAP_DURATION_TICKS;
+        p.graze_streak = 0;   // 맞았으면 연속은 거기서 끝이다
+        p.graze_timer  = 0;
+        p.dir_x        = 0;
+        p.dir_y        = 0;
         PushEvent(EVT_TRAP, p.judge_tx, p.judge_ty, i, 0);
+    }
+}
+
+// 갇힌 사람에게 몸으로 부딪치면 터진다.
+//
+// 이게 이 게임에서 마무리를 하는 유일한 방법이다.
+// 물줄기로 안 되고 거리를 좁혀야 하므로, 마무리하러 가는 것 자체가 위험을 진다.
+// 그래서 SPEC 2.7 이 말한 "잡으러 갈까" 가 진짜 판단거리가 된다.
+//
+// 갇힌 쪽도 기어서 도망칠 수 있으니 (TRAP_MOVE_SPEED) 쫓고 쫓기는 5초가 된다.
+inline void PopTrappedPlayers()
+{
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        Player& v = g_game.players[i];
+        if (v.s == nullptr || !v.alive || v.trap_ticks <= 0) {
+            continue;
+        }
+
+        for (int j = 0; j < PLAYER_MAX; ++j) {
+            if (i == j) {
+                continue;
+            }
+
+            Player& a = g_game.players[j];
+            // 갇힌 사람끼리는 서로 못 터뜨린다
+            if (a.s == nullptr || !a.alive || a.trap_ticks > 0) {
+                continue;
+            }
+
+            int dx = a.px - v.px; if (dx < 0) dx = -dx;
+            int dy = a.py - v.py; if (dy < 0) dy = -dy;
+            if (dx >= POP_TOUCH_DIST || dy >= POP_TOUCH_DIST) {
+                continue;
+            }
+
+            PushEvent(EVT_POP, v.judge_tx, v.judge_ty, i, j);
+            KillPlayer(i);
+            break;
+        }
     }
 }
 
@@ -332,6 +370,14 @@ inline void UpdateTimers()
 
         if (p.invuln_ticks > 0) {
             --p.invuln_ticks;
+        }
+
+        // 한동안 안 걸치면 연속이 끊긴다
+        if (p.graze_timer > 0) {
+            --p.graze_timer;
+            if (p.graze_timer == 0) {
+                p.graze_streak = 0;
+            }
         }
     }
 }

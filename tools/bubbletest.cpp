@@ -40,6 +40,10 @@ static void OpenBoard()
             g_game.item[y][x] = ITEM_NONE;
         }
     }
+
+    // 규칙 시험이라 판이 진행 중이라고 못 박는다.
+    // 안 하면 기다림 단계라 물풍선을 못 놓는다
+    g_game.phase = ROUND_PLAYING;
 }
 
 static int Join(int tx, int ty)
@@ -50,6 +54,7 @@ static int Join(int tx, int ty)
     }
 
     Player& p = g_game.players[slot];
+    p.alive    = true;   // 진행 중에 들어오면 관전이 되므로 여기서 되돌린다
     p.px       = TileCenter(tx);
     p.py       = TileCenter(ty);
     p.judge_tx = tx;
@@ -304,12 +309,16 @@ static void Test5_Trap()
     printf("  5초 동안 기어서 갈 수 있는 거리: 약 %d 칸\n", tiles);
     Check(tiles >= 2, "갇힌 5초 동안 두 칸은 갈 수 있다");
 
-    // 나를 가둔 그 물줄기로는 안 죽는다.
-    // 안 그러면 갇히는 순간 바로 죽어서 5초를 판단할 시간이 사라진다
+    // 물줄기로는 갇힌 사람을 더 어쩌지 못한다. 크아가 그렇다
     for (int t = 0; t < BLAST_DURATION_TICKS + 2; ++t) {
         Tick();
     }
-    Check(p.alive, "나를 가둔 물줄기로는 안 죽는다");
+    Check(p.alive, "갇힌 채로 물줄기 안에 있어도 안 죽는다");
+
+    // 다른 폭발이 와도 마찬가지다. 마무리는 몸으로만 된다
+    SetBlast(10, 10, 1, 99);
+    Tick();
+    Check(p.alive, "다른 물줄기로도 안 죽는다");
 
     // 5초를 버티면 스스로 나온다
     int broke = -1;
@@ -327,25 +336,66 @@ static void Test5_Trap()
     Check(p.invuln_ticks > 0, "나온 직후는 잠깐 무적이다");
 }
 
-// ── 시험 6 : 다른 폭발이면 죽는가 ────────────────────────────
-static void Test6_ChainKill()
+// ── 시험 6 : 몸으로 부딪쳐야 터진다 ──────────────────────────
+static void Test6_PopByTouch()
 {
-    printf("\n=== 시험 6: 갇힌 사람을 연쇄로 잡기 ===\n");
+    printf("\n=== 시험 6: 갇힌 사람을 몸으로 터뜨리기 ===\n");
 
     OpenBoard();
-    int me = Join(10, 10);
-    Player& p = g_game.players[me];
+    int victim = Join(10, 10);
+    int killer = Join(20, 10);   // 멀리 세워둔다
+
+    Player& v = g_game.players[victim];
+    Player& k = g_game.players[killer];
 
     SetBlast(10, 10, 0, 60);
     Tick();
-    Check(p.trap_ticks > 0, "먼저 갇혔다");
+    Check(v.trap_ticks > 0, "먼저 갇혔다");
 
-    // 다른 번호의 폭발이 같은 칸을 덮는다. 이게 연쇄가 마무리 수단이 되는 지점이다
-    SetBlast(10, 10, 1, 61);
+    // 아직 멀다. 아무 일도 없어야 한다
+    for (int t = 0; t < 5; ++t) Tick();
+    Check(v.alive, "멀리 있으면 아무 일도 없다");
+
+    // 몸이 닿기 직전까지 붙인다
+    k.px = v.px + POP_TOUCH_DIST + 4;
+    k.py = v.py;
+    k.judge_tx = JudgeAxis(k.px);
+    Tick();
+    printf("  %d units 떨어졌을 때: %s\n", POP_TOUCH_DIST + 4, v.alive ? "살아 있다" : "터졌다");
+    Check(v.alive, "접촉 거리 밖이면 안 터진다");
+
+    // 이제 닿는다
+    k.px = v.px + POP_TOUCH_DIST - 4;
+    k.judge_tx = JudgeAxis(k.px);
     Tick();
 
-    Check(!p.alive, "다른 폭발에 닿으면 죽는다");
-    Check(CountEvent(EVT_DEATH) == 1, "DEAD 가 떴다");
+    printf("  %d units 떨어졌을 때: %s\n", POP_TOUCH_DIST - 4, v.alive ? "살아 있다" : "터졌다");
+    Check(!v.alive, "몸이 닿으면 터진다");
+    Check(CountEvent(EVT_POP) == 1, "POP 이 떴다");
+    Check(CountEvent(EVT_DEATH) == 1, "DEAD 도 같이 떴다");
+}
+
+// ── 시험 6b : 갇힌 사람끼리는 못 터뜨린다 ────────────────────
+static void Test6b_TrappedCannotPop()
+{
+    printf("\n=== 시험 6b: 갇힌 사람끼리 ===\n");
+
+    OpenBoard();
+    int a = Join(10, 10);
+    int b = Join(11, 10);
+
+    SetBlast(10, 10, 0, 70);
+    SetBlast(11, 10, 0, 70);
+    Tick();
+
+    Check(g_game.players[a].trap_ticks > 0 && g_game.players[b].trap_ticks > 0,
+          "둘 다 갇혔다");
+
+    g_game.players[b].px = g_game.players[a].px + 10;   // 딱 붙여 놓는다
+    Tick();
+
+    Check(g_game.players[a].alive && g_game.players[b].alive,
+          "둘 다 갇혀 있으면 서로 못 터뜨린다");
 }
 
 // ── 시험 7 : 자기 물풍선에서 나가고 못 들어오는가 ────────────
@@ -465,7 +515,8 @@ int main()
     Test3_ChainDelay();
     Test4_Graze();
     Test5_Trap();
-    Test6_ChainKill();
+    Test6_PopByTouch();
+    Test6b_TrappedCannotPop();
     Test7_OwnBubble();
     Test8_Count();
     Test9_Drop();

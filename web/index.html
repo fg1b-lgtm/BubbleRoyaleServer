@@ -69,7 +69,7 @@
 const PKT = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7, RESTART:8 };
 const EVT = {
   GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
-  FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14,
+  FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15,
 };
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3 };
 const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3 };
@@ -178,13 +178,18 @@ const sfx = (() => {
     },
 
     // 이 게임의 정체성. 짧고 날카롭게
-    graze()  { tone(1300, 2100, 0.11, 'sine', 0.22); },
+    // 연속으로 성공할수록 음이 올라간다. 귀로도 숙련도가 들린다
+    graze(n) { const up = Math.min(n || 1, 5);
+               tone(1300 * (1 + (up - 1) * 0.12), 2100 * (1 + (up - 1) * 0.12),
+                    0.11, 'sine', 0.22); },
     chain()  { tone(700, 1300, 0.13, 'square', 0.10); },
     trap()   { tone(520, 300, 0.20, 'triangle', 0.16); },
     breaks() { tone(420, 950, 0.22, 'triangle', 0.16); },
     item()   { tone(950, 1500, 0.07, 'square', 0.07); },
     death()  { noise(0.35, 0.22, 400); tone(240, 55, 0.35, 'sine', 0.16); },
     drop()   { tone(600, 900, 0.06, 'sine', 0.05); },
+    // 마무리. 물풍선이 터지는 소리라 짧고 통통하게
+    pop()    { tone(1400, 300, 0.14, 'sine', 0.26); noise(0.12, 0.18, 1800); },
 
     warn()   { tone(200, 150, 0.35, 'sawtooth', 0.13); },
     flood()  { noise(0.6, 0.22, 500); },
@@ -434,9 +439,10 @@ function onEvent(v) {
       break;
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
+    // 연속으로 걸치면 숫자가 올라간다. 숫자 자체가 보상이다
     case EVT.GRAZE:
-      pop('GRAZE', x, y, '#58d6ff', 17);
-      sfx.graze();
+      pop(val > 1 ? 'GRAZE x' + val : 'GRAZE', x, y, '#58d6ff', val > 1 ? 20 : 17);
+      sfx.graze(val);
       if (w === myId) flashEdge('#58d6ff');
       break;
 
@@ -448,12 +454,18 @@ function onEvent(v) {
     case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); sfx.trap();   break;
     case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); sfx.breaks(); break;
 
+    // 갇힌 사람을 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
+    case EVT.POP:
+      pop('POP!', x, y, '#ffd166', 20);
+      killFeed.unshift({ text: 'P' + val + ' → P' + w,
+                         born: performance.now(), me: (w === myId || val === myId) });
+      killFeed = killFeed.slice(0, 6);
+      sfx.pop();
+      break;
+
     case EVT.DEATH:
       pop('DOWN', x, y, '#f85149', 15);
       // 누가 죽었는지 목록에 남긴다. 24명이면 이게 없으면 판이 어떻게 도는지 모른다
-      killFeed.unshift({ text: 'P' + w + (w === myId ? ' (나)' : '') + ' DOWN',
-                         born: performance.now(), me: w === myId });
-      killFeed = killFeed.slice(0, 6);
       sfx.death();
       break;
 
@@ -742,6 +754,44 @@ function draw() {
     ctx.fillStyle = '#ff7b72';
     ctx.font = 'bold 18px system-ui';
     ctx.fillText(floodBanner.text, cv.width / 2, 30);
+  }
+
+  // 미니맵. 3x3 구역 상태와 내가 어디 있는지.
+  //
+  // 지금은 판 전체가 보이니 없어도 되지만, 9/3 에 AOI 를 붙이면 화면이 한 구역으로
+  // 좁아진다. 그때 어느 구역이 잠겼는지 못 보면 도망칠 방향을 못 정한다
+  {
+    const cell = 14, gap = 2, pad = 8;
+    const mw = 3 * cell + 2 * gap;
+    const mx = pad, my = cv.height - mw - pad;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(mx - 4, my - 4, mw + 8, mw + 8);
+
+    for (let s = 0; s < 9; ++s) {
+      const gx = mx + (s % 3) * (cell + gap);
+      const gy = my + Math.floor(s / 3) * (cell + gap);
+
+      ctx.fillStyle = sectors[s] === SECT.FLOODED ? '#1b4f7a'
+                    : sectors[s] === SECT.WARNING
+                      ? ((now / 200 | 0) % 2 ? '#7a2b2b' : '#3a2020')
+                      : '#2b3440';
+      ctx.fillRect(gx, gy, cell, cell);
+    }
+
+    // 살아 있는 사람을 점으로. 내 것만 흰색
+    for (const [id, p] of players) {
+      if (!(p.flags & PF.ALIVE)) continue;
+      const s = sectorOf(p.jtx, p.jty);
+      const gx = mx + (s % 3) * (cell + gap) + cell / 2;
+      const gy = my + Math.floor(s / 3) * (cell + gap) + cell / 2;
+
+      ctx.fillStyle = (id === myId) ? '#fff' : 'rgba(255,255,255,0.45)';
+      ctx.beginPath();
+      ctx.arc(gx + (id % 3 - 1) * 3, gy + ((id / 3 | 0) % 3 - 1) * 3,
+              id === myId ? 2.5 : 1.5, 0, 7);
+      ctx.fill();
+    }
   }
 
   // 킬 피드. 오른쪽 위에 쌓인다

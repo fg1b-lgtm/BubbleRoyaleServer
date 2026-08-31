@@ -38,6 +38,10 @@ static void OpenBoard(unsigned int seed)
             g_game.item[y][x] = ITEM_NONE;
         }
     }
+
+    // 규칙 시험이라 판이 진행 중이라고 못 박는다.
+    // 안 하면 기다림 단계라 물풍선을 못 놓는다
+    g_game.phase = ROUND_PLAYING;
 }
 
 static int Join(int tx, int ty)
@@ -46,6 +50,7 @@ static int Join(int tx, int ty)
     if (slot < 0) return -1;
 
     Player& p = g_game.players[slot];
+    p.alive    = true;   // 진행 중에 들어오면 관전이 되므로 여기서 되돌린다
     p.px       = TileCenter(tx);
     p.py       = TileCenter(ty);
     p.judge_tx = tx;
@@ -367,6 +372,35 @@ static void Test8_Ring()
     Check(w2 * h2 <= 40, "둘이 남으면 반드시 만날 만큼 좁다");
 }
 
+// ── 시험 9 : 잠긴 구역의 아이템은 남는가 ─────────────────────
+//
+// 물이 찼다고 아이템이 사라지면 잠긴 구역에 들어갈 이유가 지름길뿐이다.
+// 남겨두면 "2초 안에 저것만 먹고 나올까" 가 판단거리가 된다 (SPEC 2.6)
+static void Test9_ItemsSurviveFlood()
+{
+    printf("\n=== 시험 9: 잠긴 구역의 아이템 ===\n");
+
+    OpenBoard(1234);
+
+    int sector = g_game.flood_order[0];
+    int tx, ty;
+    SectorCenter(sector, &tx, &ty);
+
+    g_game.item[ty][tx] = ITEM_POWER;
+
+    for (int t = 1; t <= g_game.flood_fill[0] + 30; ++t) {
+        Tick();
+    }
+
+    printf("  구역 %d 이 잠긴 뒤 그 칸의 아이템: %d\n", sector, g_game.item[ty][tx]);
+    Check(IsUnderWater(tx, ty), "그 칸은 물에 잠겼다");
+    Check(g_game.item[ty][tx] == ITEM_POWER, "아이템은 그대로 남아 있다");
+
+    int tiles = FLOOD_ESCAPE_TICKS * MOVE_SPEED_BASE / TILE_UNITS;
+    printf("  2초 동안 갈 수 있는 거리 %d 칸. 그 안이면 먹고 나올 만하다\n", tiles);
+    Check(tiles >= 4, "먹고 나올 만한 거리가 나온다");
+}
+
 int main()
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -379,6 +413,7 @@ int main()
     Test6_ReEnter();
     Test7_StraddleBoundary();
     Test8_Ring();
+    Test9_ItemsSurviveFlood();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

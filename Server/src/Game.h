@@ -33,11 +33,12 @@ struct Player
     int power_lv;        // 물줄기 아이템 수. 폭발이 뻗는 길이가 늘어난다
     int speed_lv;        // 롤러 수
 
-    int      trap_ticks;    // 0 보다 크면 갇혀 있다. 움직일 수 없다
-    uint16_t trap_gen;      // 나를 가둔 그 폭발의 번호. 같은 폭발로는 안 죽는다
+    int      trap_ticks;    // 0 보다 크면 갇혀 있다. 아주 느리게만 움직인다
     int      invuln_ticks;  // 갇힘에서 빠져나온 직후 잠깐 무적
 
     bool grazing;        // 지난 틱에 걸치기로 피하는 중이었나. 같은 걸 두 번 안 띄우려고
+    int  graze_streak;   // 연속 몇 번째 걸치기인가. GRAZE x2 의 숫자
+    int  graze_timer;    // 남은 틱. 0 이 되면 연속이 끊긴다
     int  flood_ticks;   // 잠긴 구역 안에서 남은 시간. 0 이면 안 잠긴 데 있다
     bool alive;
 
@@ -294,9 +295,10 @@ inline int AddPlayer(Session* s)
     p.power_lv     = 0;
     p.speed_lv     = 0;
     p.trap_ticks   = 0;
-    p.trap_gen     = 0;
     p.invuln_ticks = 0;
     p.grazing      = false;
+    p.graze_streak = 0;
+    p.graze_timer  = 0;
     p.flood_ticks  = 0;
     p.spawn_slot   = spawn;
 

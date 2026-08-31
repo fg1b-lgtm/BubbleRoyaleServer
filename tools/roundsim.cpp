@@ -75,21 +75,26 @@ static bool Passable(int x, int y)
 }
 
 // 목표에 닿는 첫 걸음 방향을 찾는다. 못 찾으면 false
-enum class Goal { Safe, Item, Center, Block, Enemy };
+enum class Goal { Safe, Item, Center, Block, Enemy, Prey };
 
 // 지금 살아 있는 사람이 어느 칸에 있나. 사냥할 때 쓴다
 static int g_enemy_at[MAP_H][MAP_W];
+// 그중 갇혀 있는 사람. 몸으로 부딪치면 터진다
+static int g_prey_at[MAP_H][MAP_W];
 
 static void BuildEnemyMap()
 {
     for (int y = 0; y < MAP_H; ++y)
-        for (int x = 0; x < MAP_W; ++x)
+        for (int x = 0; x < MAP_W; ++x) {
             g_enemy_at[y][x] = -1;
+            g_prey_at[y][x]  = -1;
+        }
 
     for (int i = 0; i < PLAYER_MAX; ++i) {
         const Player& p = g_game.players[i];
         if (p.s == nullptr || !p.alive) continue;
         g_enemy_at[p.judge_ty][p.judge_tx] = i;
+        if (p.trap_ticks > 0) g_prey_at[p.judge_ty][p.judge_tx] = i;
     }
 }
 
@@ -138,6 +143,10 @@ static bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             break;
         case Goal::Enemy:
             hit = (g_enemy_at[y][x] >= 0 && g_enemy_at[y][x] != me);
+            break;
+        case Goal::Prey:
+            // 갇힌 적. 물줄기로는 못 죽이니 직접 가서 부딪쳐야 한다
+            hit = (g_prey_at[y][x] >= 0 && g_prey_at[y][x] != me) && !g_danger[y][x];
             break;
         }
 
@@ -299,6 +308,13 @@ static void ThinkBot(int slot)
 
     int range = BLAST_BASE_RANGE + p.power_lv;
 
+    // 2.5) 갇힌 적이 가까이 있으면 마무리하러 간다.
+    //      물줄기로는 못 죽인다. 몸으로 가야 한다
+    if (p.trap_ticks == 0 && FindStep(tx, ty, Goal::Prey, 12, &dx, &dy, slot)) {
+        p.dir_x = dx; p.dir_y = dy;
+        return;
+    }
+
     // 3) 사거리 안에 적이 있으면 놓는다. 이게 없으면 아무도 안 죽어서 판이 안 끝난다
     int enemy_dist = 0;
     bool enemy_near = FindStep(tx, ty, Goal::Enemy, range, &dx, &dy, slot, &enemy_dist);
@@ -414,24 +430,26 @@ static void PlayRound(unsigned int seed, RoundResult& r)
         for (int i = 0; i < PLAYER_MAX; ++i) {
             drowning_before[i] = g_game.players[i].flood_ticks;
             alive_before[i]    = g_game.players[i].alive;
+
         }
 
         g_game.event_count = 0;
         GameTick();
 
+        // 자기 물풍선에 갇히는 건 봇이 서툴다는 뜻이다. 게임 문제와 구분해서 센다
+        for (int e = 0; e < g_game.event_count; ++e) {
+            const GameEvent& ev = g_game.events[e];
+            if (ev.type == EVT_TRAP && g_game.blast_owner[ev.y][ev.x] == (int8_t)ev.who) {
+                ++r.by_self;
+            }
+        }
+
         for (int i = 0; i < PLAYER_MAX; ++i) {
             if (alive_before[i] && !g_game.players[i].alive) {
-                if (drowning_before[i] == 1) {
-                    ++r.by_water;
-                }
-                else {
-                    ++r.by_bubble;
-                    // 그 칸을 덮은 물줄기가 누구 것이었나
-                    const Player& d = g_game.players[i];
-                    if (g_game.blast_owner[d.judge_ty][d.judge_tx] == (int8_t)i) {
-                        ++r.by_self;
-                    }
-                }
+                // 죽는 길은 둘뿐이다. 물에 잠기거나, 갇힌 채로 터뜨려지거나.
+                // 물줄기 자체는 사람을 못 죽인다. 가두기만 한다
+                if (drowning_before[i] == 1) ++r.by_water;
+                else                         ++r.by_bubble;
                 if (r.first_kill_tick < 0) r.first_kill_tick = t;
             }
         }
@@ -514,11 +532,12 @@ int main(int argc, char** argv)
 
     printf("\n--- 누가 죽이나 ---\n");
     long long dead = bubble + water;
-    printf("  물풍선 %lld명 (%lld%%)   물 %lld명 (%lld%%)\n",
+    printf("  터뜨려짐 %lld명 (%lld%%)   익사 %lld명 (%lld%%)\n",
            bubble / rounds, dead ? bubble * 100 / dead : 0,
            water / rounds,  dead ? water * 100 / dead : 0);
-    printf("  그중 자기 물풍선에 죽은 것: %lld명 (%lld%%)\n",
-           self_kill / rounds, bubble ? self_kill * 100 / bubble : 0);
+    printf("  (물줄기는 사람을 못 죽인다. 가두기만 하고, 마무리는 몸으로 한다)\n");
+    printf("  자기 물풍선에 갇힌 횟수: %lld  <- 봇이 서툴다는 뜻이지 게임 문제가 아니다\n",
+           self_kill / rounds);
 
     printf("\n--- 압박 곡선 (30초마다) ---\n");
     printf("  시각    생존   한 명당 칸\n");
