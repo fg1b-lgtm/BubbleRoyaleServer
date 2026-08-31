@@ -12,6 +12,9 @@ rem          Windows), so UTF-8 Korean text here breaks parsing.
 rem          Korean explanation lives in practice\README.md instead.
 rem  NOTE 2: %ProgramFiles(x86)% is avoided on purpose - the ")"
 rem          inside it terminates if/for blocks early in cmd.
+rem  NOTE 3: %~dp0 already ends with a backslash, so /I"%~dp0" would
+rem          make the trailing backslash escape the closing quote and
+rem          cl loses the source file name. /I"%~dp0." is the fix.
 rem ---------------------------------------------------------------
 
 if "%~1"=="" (
@@ -59,7 +62,7 @@ echo.
 echo === compiling %~1 ===
 echo.
 
-cl /nologo /W4 /std:c++17 /utf-8 /EHsc /Zi /I"%~dp0..\Common" /D_CONSOLE /DWIN32_LEAN_AND_MEAN /DNOMINMAX "%~1" /Fe:"bin\%~n1.exe" /Fo:"bin\%~n1.obj" /Fd:"bin\%~n1.pdb" /link ws2_32.lib mswsock.lib
+cl /nologo /W4 /std:c++17 /utf-8 /EHsc /Zi /I"%~dp0..\Common" /I"%~dp0." /D_CONSOLE /DWIN32_LEAN_AND_MEAN /DNOMINMAX "%~1" /Fe:"bin\%~n1.exe" /Fo:"bin\%~n1.obj" /Fd:"bin\%~n1.pdb" /link ws2_32.lib mswsock.lib
 
 if errorlevel 1 (
     echo.

@@ -12,6 +12,9 @@
 *.h         text eol=crlf
 *.md        text eol=lf
 
+# 셸 스크립트는 항상 LF. CRLF 로 나가면 맥에서 bad interpreter 가 난다
+*.sh        text eol=lf
+
 # 바이너리
 *.png       binary
 *.jpg       binary

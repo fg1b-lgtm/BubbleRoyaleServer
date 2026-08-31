@@ -21,7 +21,10 @@
 //   막힌 줄만 원본을 열어본다. 전체를 다시 보지 않는다.
 //   컴파일 에러가 나는 건 정상이다. 그 에러 목록이 아직 안 익은 곳의 지도다.
 
-#include <winsock2.h>
+// win_compat.h 는 Windows 면 <winsock2.h> 를 그대로 부르고,
+// 맥이면 SRWLOCK / Interlocked / CreateThread 를 같은 이름의 껍데기로 채워준다.
+// 그래서 이 파일은 양쪽에서 똑같이 컴파일된다.
+#include "win_compat.h"
 #include <cstdio>
 #include <cstring>
 #include "Protocol.h"
