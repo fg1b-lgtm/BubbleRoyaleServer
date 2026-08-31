@@ -280,6 +280,28 @@ inline void RemovePlayer(Session* s)
     --g_game.player_count;
 }
 
+// 판을 새로 깔고 붙어 있는 사람을 다시 앉힌다.
+//
+// 세션은 그대로 두고 게임만 처음으로 돌린다. 연결을 끊지 않는다.
+// 끊으면 브라우저가 다시 붙느라 몇 초가 뜨고, 그 사이에 다시 물이 찬다.
+inline void RestartGame(unsigned int seed, int flood_scale)
+{
+    Session* keep[PLAYER_MAX];
+    int n = 0;
+
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (g_game.players[i].s != nullptr) {
+            keep[n++] = g_game.players[i].s;
+        }
+    }
+
+    InitGame(seed, flood_scale);
+
+    for (int i = 0; i < n; ++i) {
+        AddPlayer(keep[i]);
+    }
+}
+
 // 입력을 받아둔다. 이번 틱에 바로 움직이지 않고 방향만 적어둔다.
 // 실제 이동은 GameTick 이 한 번에 한다. 그래야 모두가 같은 시각에 움직인다
 inline void SetInput(Session* s, int dx, int dy)

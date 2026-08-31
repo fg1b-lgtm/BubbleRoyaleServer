@@ -28,6 +28,11 @@
   .off { color: #f85149; }
   .on  { color: #3fb950; }
   #help { color: var(--dim); font-size: 12px; }
+  button {
+    background: #21262d; color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #2d333b; border-color: #484f58; }
   kbd {
     background: #21262d; border: 1px solid var(--line); border-bottom-width: 2px;
     border-radius: 3px; padding: 1px 5px; font: inherit; font-size: 11px; color: var(--text);
@@ -45,17 +50,20 @@
   <span>물풍선 <b id="sb">1</b></span>
   <span>물줄기 <b id="sp">2</b></span>
   <span>속도 <b id="ss">0</b></span>
+  <button id="restart">다시 시작</button>
 </div>
 
 <div id="help">
-  <kbd>← ↑ → ↓</kbd> 또는 <kbd>WASD</kbd> 이동 &nbsp;·&nbsp; <kbd>Space</kbd> 물풍선
+  <kbd>← ↑ → ↓</kbd> 또는 <kbd>WASD</kbd> 이동 &nbsp;·&nbsp;
+  <kbd>Space</kbd> 물풍선 &nbsp;·&nbsp;
+  <kbd>R</kbd> 다시 시작 <span style="opacity:.6">(맵도 새로 나온다)</span>
 </div>
 
 <script>
 // ── 프로토콜 번호. Common/Protocol.h 와 같아야 한다 ─────────
 // 게임 규칙 상수는 여기 안 적는다. 서버가 WELCOME 으로 보내준다.
 // 같은 숫자를 두 군데 적으면 한쪽만 고쳤을 때 서버와 화면이 갈린다.
-const PKT = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7 };
+const PKT = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7, RESTART:8 };
 const EVT = {
   GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
   FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13,
@@ -123,6 +131,14 @@ function sendPlace() {
   send(b.buffer);
 }
 
+// 시험용. 판을 새로 깔고 처음부터 다시 돌린다
+function sendRestart() {
+  const b = new DataView(new ArrayBuffer(HEADER_SIZE));
+  b.setUint16(0, HEADER_SIZE, true);
+  b.setUint16(2, PKT.RESTART, true);
+  send(b.buffer);
+}
+
 // ── 받은 패킷 풀기 ───────────────────────────────────────────
 function onPacket(v) {
   const id = v.getUint16(2, true);
@@ -158,6 +174,15 @@ function onWelcome(v) {
   };
   myId = C.myId;
   snapInterval = 1000 / C.tickRate;
+
+  // 다시 시작하면 WELCOME 이 또 온다. 지난 판의 흔적을 지운다
+  bubbles = [];
+  blasts  = [];
+  pops    = [];
+  players.clear();
+  sectors.fill(SECT.OPEN);
+  edgeFlash = null;
+  floodBanner = { text: 'NEW ROUND', until: performance.now() + 1500 };
 
   tiles = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
   items = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
@@ -323,6 +348,7 @@ function pushInput() {
 addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === ' ') { e.preventDefault(); sendPlace(); return; }
+  if (k === 'r') { sendRestart(); return; }
   if (!held.has(k)) { held.add(k); pushInput(); }
   if (k.startsWith('Arrow')) e.preventDefault();
 });
@@ -334,6 +360,11 @@ addEventListener('keyup', (e) => {
 });
 
 addEventListener('blur', () => { held.clear(); pushInput(); });
+
+document.getElementById('restart').addEventListener('click', () => {
+  sendRestart();
+  document.getElementById('restart').blur();   // 눌린 채로 두면 Space 가 버튼으로 간다
+});
 
 // ── 그리기 ───────────────────────────────────────────────────
 const PLAYER_COLORS = [

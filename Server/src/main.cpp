@@ -25,6 +25,11 @@
 #include "GameConstants.h"
 #include "GameTick.h"
 
+// 지금 판의 씨앗과 침수 배속. 다시 시작할 때 다시 쓴다.
+// 소유 스레드 : tick (main 이 시작할 때 한 번 쓰고 그 뒤로는 틱 스레드만 만진다)
+static unsigned int g_map_seed    = 1234;
+static int          g_flood_scale = 1;
+
 // 패킷 하나가 한도를 안 넘는지 컴파일할 때 확인한다.
 // 넘치면 돌려보기 전에 여기서 막힌다
 static_assert(HEADER_SIZE + sizeof(SnapshotHead)
@@ -251,6 +256,24 @@ static void HandleJob(const Job* j){
                     break;
                 }
 
+                case PKT_RESTART: {
+                    // 시험용. 판을 새로 깔고 붙어 있는 사람을 다시 앉힌다.
+                    // 씨앗을 굴려서 맵도 새로 나온다
+                    g_map_seed = g_map_seed * 1103515245u + 12345u;
+                    RestartGame(g_map_seed, g_flood_scale);
+
+                    printf("[Server] restart by %s:%d (seed %u, %d players)\n",
+                           s->ip, s->port, g_map_seed, g_game.player_count);
+
+                    // 판이 바뀌었으니 전원에게 다시 알려준다
+                    for (int i = 0; i < PLAYER_MAX; ++i) {
+                        if (g_game.players[i].s != nullptr) {
+                            SendWelcome(g_game.players[i].s, i);
+                        }
+                    }
+                    break;
+                }
+
                 case PKT_PLACE: {
                     // 어디에 놓을지는 안 받는다. 서버가 아는 자리에만 놓는다.
                     // 좌표를 받으면 맵 반대편에도 놓겠다고 우길 수 있다
@@ -470,18 +493,15 @@ int main(int argc, char** argv)
 
     // 판을 깐다. 씨앗을 로그에 찍어두면 같은 판을 다시 만들 수 있다.
     // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
-    const unsigned int map_seed = 1234;
-
-    int flood_scale = 1;
     if (argc > 1 && argv[1][0] == 'f') {
-        flood_scale = 10;
+        g_flood_scale = 10;
     }
 
-    InitGame(map_seed, flood_scale);
+    InitGame(g_map_seed, g_flood_scale);
     printf("[Server] map %dx%d generated (seed %u, %d spawns)\n",
-           MAP_W, MAP_H, map_seed, g_game.map.spawn_count);
+           MAP_W, MAP_H, g_map_seed, g_game.map.spawn_count);
     printf("[Server] flood x%d, first warning at %d s\n",
-           flood_scale, g_game.flood_warn[0] / TICK_RATE);
+           g_flood_scale, g_game.flood_warn[0] / TICK_RATE);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
