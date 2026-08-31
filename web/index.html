@@ -51,13 +51,15 @@
   <span>물풍선 <b id="sb">1</b></span>
   <span>물줄기 <b id="sp">2</b></span>
   <span>속도 <b id="ss">0</b></span>
+  <span id="sound" class="on">소리 켜짐</span>
   <button id="restart">다시 시작</button>
 </div>
 
 <div id="help">
   <kbd>← ↑ → ↓</kbd> 또는 <kbd>WASD</kbd> 이동 &nbsp;·&nbsp;
   <kbd>Space</kbd> 물풍선 &nbsp;·&nbsp;
-  <kbd>R</kbd> 다시 시작 <span style="opacity:.6">(맵도 새로 나온다)</span>
+  <kbd>R</kbd> 다시 시작 &nbsp;·&nbsp;
+  <kbd>M</kbd> 소리 <span style="opacity:.6">(소리는 파일 없이 브라우저가 만들어 낸다)</span>
 </div>
 
 <script>
@@ -67,7 +69,7 @@
 const PKT = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7, RESTART:8 };
 const EVT = {
   GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
-  FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13,
+  FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14,
 };
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3 };
 const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3 };
@@ -92,6 +94,110 @@ let floodBanner = null;
 const PHASE = { WAITING:0, COUNTDOWN:1, PLAYING:2, OVER:3 };
 let phase = PHASE.WAITING, phaseTicks = 0, winner = 0xFF, roundNo = 0;
 let killFeed = [];   // {text, born}
+let lastBeep = -1;
+let ring = { on: false, x0: 0, y0: 0, x1: 0, y1: 0 };
+
+// ── 소리 ─────────────────────────────────────────────────────
+//
+// 파일을 하나도 안 쓴다. 브라우저에서 그때그때 만들어 낸다.
+// 에셋이 없으니 출처와 라이선스를 적을 것도 없고 (SPEC 13절),
+// 받는 사람이 따로 내려받을 것도 없다.
+//
+// 연출 중에 제일 값싸고 제일 크게 체감되는 게 소리다.
+// 물풍선이 터지는데 아무 소리도 안 나는 게 지금 제일 크게 비어 있던 감각이다.
+const sfx = (() => {
+  let ac = null;
+  let muted = false;
+  let lastBoom = 0;
+
+  // 브라우저는 사용자가 뭔가 누르기 전에는 소리를 못 내게 막는다
+  function ctx() {
+    if (!ac) {
+      try { ac = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { return null; }
+    }
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  }
+
+  // 음 하나. from 에서 to 로 미끄러진다
+  function tone(from, to, dur, type, gain) {
+    const a = ctx();
+    if (!a || muted) return;
+
+    const o = a.createOscillator();
+    const g = a.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(from, a.currentTime);
+    if (to !== from) o.frequency.exponentialRampToValueAtTime(to, a.currentTime + dur);
+
+    g.gain.setValueAtTime(gain, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+
+    o.connect(g); g.connect(a.destination);
+    o.start(); o.stop(a.currentTime + dur);
+  }
+
+  // 잡음 한 덩어리. 폭발과 물소리는 음정이 아니라 잡음이다
+  function noise(dur, gain, cutoff) {
+    const a = ctx();
+    if (!a || muted) return;
+
+    const n = Math.floor(a.sampleRate * dur);
+    const buf = a.createBuffer(1, n, a.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; ++i) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+
+    const src = a.createBufferSource();
+    src.buffer = buf;
+
+    const f = a.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(cutoff, a.currentTime);
+
+    const g = a.createGain();
+    g.gain.setValueAtTime(gain, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + dur);
+
+    src.connect(f); f.connect(g); g.connect(a.destination);
+    src.start();
+  }
+
+  return {
+    toggle() { muted = !muted; return muted; },
+    isMuted() { return muted; },
+    wake() { ctx(); },
+
+    // 폭발은 한 번에 칸이 스무 개씩 온다. 소리는 한 번만 낸다
+    boom() {
+      const now = performance.now();
+      if (now - lastBoom < 80) return;
+      lastBoom = now;
+      noise(0.28, 0.30, 900);
+      tone(180, 60, 0.22, 'sine', 0.18);
+    },
+
+    // 이 게임의 정체성. 짧고 날카롭게
+    graze()  { tone(1300, 2100, 0.11, 'sine', 0.22); },
+    chain()  { tone(700, 1300, 0.13, 'square', 0.10); },
+    trap()   { tone(520, 300, 0.20, 'triangle', 0.16); },
+    breaks() { tone(420, 950, 0.22, 'triangle', 0.16); },
+    item()   { tone(950, 1500, 0.07, 'square', 0.07); },
+    death()  { noise(0.35, 0.22, 400); tone(240, 55, 0.35, 'sine', 0.16); },
+    drop()   { tone(600, 900, 0.06, 'sine', 0.05); },
+
+    warn()   { tone(200, 150, 0.35, 'sawtooth', 0.13); },
+    flood()  { noise(0.6, 0.22, 500); },
+    drown()  { tone(300, 120, 0.5, 'sawtooth', 0.18); },
+
+    tick()   { tone(800, 800, 0.06, 'square', 0.10); },
+    start()  { tone(600, 1200, 0.18, 'square', 0.14); },
+    win()    { tone(700, 900, 0.12, 'square', 0.16);
+               setTimeout(() => tone(900, 1200, 0.12, 'square', 0.16), 130);
+               setTimeout(() => tone(1200, 1600, 0.25, 'square', 0.16), 260); },
+    lose()   { tone(400, 200, 0.4, 'triangle', 0.12); },
+  };
+})();
 
 const cv  = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -217,10 +323,29 @@ function onSnapshot(v) {
   for (let i = 0; i < 9; ++i) sectors[i] = v.getUint8(o + i);
   o += 9;
 
+  const prevPhase = phase;
   phase      = v.getUint8(o++);
   phaseTicks = v.getUint16(o, true); o += 2;
   winner     = v.getUint8(o++);
   roundNo    = v.getUint8(o++);
+
+  // 최종 구역 안에서 좁아지는 안전 사각형. 0xFF 면 아직 안 쓴다
+  ring.x0 = v.getUint8(o++);
+  ring.y0 = v.getUint8(o++);
+  ring.x1 = v.getUint8(o++);
+  ring.y1 = v.getUint8(o++);
+  ring.on = (ring.x0 !== 0xFF);
+
+  // 카운트다운은 1초마다 딸깍, 시작하면 삑
+  if (phase === PHASE.COUNTDOWN) {
+    const sec = Math.floor(phaseTicks / C.tickRate);
+    if (sec !== lastBeep) { lastBeep = sec; sfx.tick(); }
+  }
+  if (prevPhase !== phase) {
+    if (phase === PHASE.PLAYING) sfx.start();
+    if (phase === PHASE.OVER)    (winner === myId ? sfx.win() : sfx.lose());
+    lastBeep = -1;
+  }
 
   const np = v.getUint8(o++);
   const nb = v.getUint8(o++);
@@ -291,6 +416,7 @@ function onEvent(v) {
   switch (t) {
     case EVT.BLAST:
       blasts.push({ x, y, until: performance.now() + (C.blast / C.tickRate) * 1000 });
+      sfx.boom();
       break;
 
     case EVT.BLOCK:
@@ -299,24 +425,28 @@ function onEvent(v) {
 
     case EVT.DROP:
       items[y][x] = val;
+      sfx.drop();
       break;
 
     case EVT.ITEM:
       items[y][x] = ITEM.NONE;
+      if (w === myId) sfx.item();
       break;
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
     case EVT.GRAZE:
       pop('GRAZE', x, y, '#58d6ff', 17);
+      sfx.graze();
       if (w === myId) flashEdge('#58d6ff');
       break;
 
     case EVT.CHAIN:
       pop('CHAIN x' + (val + 1), x, y, '#ffd166', 15);
+      sfx.chain();
       break;
 
-    case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); break;
-    case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); break;
+    case EVT.TRAP:   pop('TRAPPED',   x, y, '#8ab4ff'); sfx.trap();   break;
+    case EVT.BREAK:  pop('BREAK OUT', x, y, '#3fb950'); sfx.breaks(); break;
 
     case EVT.DEATH:
       pop('DOWN', x, y, '#f85149', 15);
@@ -324,14 +454,27 @@ function onEvent(v) {
       killFeed.unshift({ text: 'P' + w + (w === myId ? ' (나)' : '') + ' DOWN',
                          born: performance.now(), me: w === myId });
       killFeed = killFeed.slice(0, 6);
+      sfx.death();
+      break;
+
+    case EVT.DROWN:
+      if (w === myId) sfx.drown();
       break;
 
     case EVT.FLOOD_WARN:
       floodBanner = { text: 'FLOOD IN ' + val, until: performance.now() + 2500 };
+      sfx.warn();
       break;
 
     case EVT.FLOOD:
       floodBanner = { text: 'FLOODED', until: performance.now() + 1500 };
+      sfx.flood();
+      break;
+
+    // 최종 구역 안에서 물이 한 겹 차올랐다. 예고가 따로 없다. 보이는 게 예고다
+    case EVT.RING:
+      floodBanner = { text: 'WATER RISING', until: performance.now() + 1800 };
+      sfx.flood();
       break;
   }
 }
@@ -366,8 +509,19 @@ function pushInput() {
 
 addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+  // 브라우저는 사용자가 뭔가 누르기 전에는 소리를 못 내게 막는다.
+  // 첫 키 입력에서 깨운다
+  sfx.wake();
+
   if (k === ' ') { e.preventDefault(); sendPlace(); return; }
   if (k === 'r') { sendRestart(); return; }
+  if (k === 'm') {
+    const off = sfx.toggle();
+    document.getElementById('sound').textContent = off ? '소리 꺼짐' : '소리 켜짐';
+    document.getElementById('sound').className = off ? 'off' : 'on';
+    return;
+  }
   if (!held.has(k)) { held.add(k); pushInput(); }
   if (k.startsWith('Arrow')) e.preventDefault();
 });
@@ -381,6 +535,7 @@ addEventListener('keyup', (e) => {
 addEventListener('blur', () => { held.clear(); pushInput(); });
 
 document.getElementById('restart').addEventListener('click', () => {
+  sfx.wake();
   sendRestart();
   document.getElementById('restart').blur();   // 눌린 채로 두면 Space 가 버튼으로 간다
 });
@@ -453,6 +608,24 @@ function draw() {
       ctx.lineWidth = 3;
       ctx.strokeRect(sx + 2, sy + 2, w - 4, h - 4);
     }
+  }
+
+  // 최종 구역 안에서 계속 차오르는 물.
+  // 사각형 바깥을 네 줄기로 덮는다. 칸마다 그리면 매 프레임 1755번이라 아깝다
+  if (ring.on) {
+    ctx.fillStyle = 'rgba(40,120,200,0.34)';
+    const x0 = ring.x0 * TS, y0 = ring.y0 * TS;
+    const x1 = (ring.x1 + 1) * TS, y1 = (ring.y1 + 1) * TS;
+
+    ctx.fillRect(0, 0, cv.width, y0);                    // 위
+    ctx.fillRect(0, y1, cv.width, cv.height - y1);       // 아래
+    ctx.fillRect(0, y0, x0, y1 - y0);                    // 왼쪽
+    ctx.fillRect(x1, y0, cv.width - x1, y1 - y0);        // 오른쪽
+
+    // 물가에 선을 하나. 어디까지가 안전한지가 한눈에 보여야 한다
+    ctx.strokeStyle = 'rgba(120,200,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
   }
 
   // 아이템

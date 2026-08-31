@@ -164,6 +164,19 @@ constexpr int FLOOD_FILL_TICKS[FLOOD_STAGES] = {
 };
 constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 3, 2 };
 
+// 최종 구역 안에서 계속 차오르는 물.
+//
+// 구역 단위 침수만으로는 판이 안 끝난다.
+// 최종 1구역이 143칸인데, 넷이 남으면 한 명당 36칸이다. 크아의 두 배라 서로 못 만난다.
+// 봇 시뮬레이션에서 10판 중 1판이 10분 무승부로 끝난 게 그것 때문이다.
+//
+// 사람은 칸보다 빨리 준다. 그래서 구역을 다 잠근 뒤에도 계속 좁혀야 한다.
+//   15x13 -> 13x11 -> 11x9 -> 9x7 -> 7x5
+//   둘이 남았을 때 7x5 면 한 명당 12칸이라 반드시 만난다
+constexpr int RING_STEP_TICKS = TICK_RATE * 20;   // 20초마다 한 겹
+constexpr int RING_MIN_W      = 7;
+constexpr int RING_MIN_H      = 5;
+
 // 구역 상태
 enum SectorState : uint8_t
 {

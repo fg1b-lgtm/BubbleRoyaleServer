@@ -333,6 +333,40 @@ static void Test7_StraddleBoundary()
     Check(p.alive, "경계에 걸쳐 있으면 안 죽는다");
 }
 
+// ── 시험 8 : 최종 구역 안에서 계속 좁아지는가 ────────────────
+static void Test8_Ring()
+{
+    printf("\n=== 시험 8: 최종 구역 수위 상승 ===\n");
+
+    OpenBoard(1234);
+
+    // 구역이 다 잠길 때까지 돌린다
+    int last = g_game.flood_fill[FLOOD_STAGES - 1];
+    for (int t = 1; t <= last + 5; ++t) Tick();
+
+    Check(g_game.ring_on, "구역을 다 잠그면 안쪽 물이 시작된다");
+
+    int w0 = g_game.ring_x1 - g_game.ring_x0 + 1;
+    int h0 = g_game.ring_y1 - g_game.ring_y0 + 1;
+    printf("  시작 크기 %d x %d (조각 크기 %d x %d)\n", w0, h0, SECTOR_W, SECTOR_H);
+    Check(w0 == SECTOR_W && h0 == SECTOR_H, "최종 조각 크기에서 시작한다");
+
+    // 한 겹 좁아질 때까지
+    for (int t = 0; t < g_game.ring_step + 2; ++t) Tick();
+    int w1 = g_game.ring_x1 - g_game.ring_x0 + 1;
+    printf("  %d초 뒤 %d x %d\n", RING_STEP_TICKS / TICK_RATE,
+           w1, g_game.ring_y1 - g_game.ring_y0 + 1);
+    Check(w1 < w0, "시간이 지나면 좁아진다");
+
+    // 끝까지 좁혀본다
+    for (int t = 0; t < g_game.ring_step * 12; ++t) Tick();
+    int w2 = g_game.ring_x1 - g_game.ring_x0 + 1;
+    int h2 = g_game.ring_y1 - g_game.ring_y0 + 1;
+    printf("  끝까지 좁히면 %d x %d = %d 칸\n", w2, h2, w2 * h2);
+    Check(w2 == RING_MIN_W && h2 == RING_MIN_H, "최소 크기에서 멈춘다");
+    Check(w2 * h2 <= 40, "둘이 남으면 반드시 만날 만큼 좁다");
+}
+
 int main()
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -344,6 +378,7 @@ int main()
     Test5_Escape();
     Test6_ReEnter();
     Test7_StraddleBoundary();
+    Test8_Ring();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

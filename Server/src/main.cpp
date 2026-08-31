@@ -148,6 +148,20 @@ static void SendSnapshot()
     sh.phase_ticks = (uint16_t)(g_game.phase_ticks > 65535 ? 65535 : g_game.phase_ticks);
     sh.winner      = (uint8_t)(g_game.winner < 0 ? 0xFF : g_game.winner);
     sh.round_no    = (uint8_t)(g_game.round_no & 0xFF);
+
+    if (g_game.ring_on) {
+        sh.ring_x0 = (uint8_t)g_game.ring_x0;
+        sh.ring_y0 = (uint8_t)g_game.ring_y0;
+        sh.ring_x1 = (uint8_t)g_game.ring_x1;
+        sh.ring_y1 = (uint8_t)g_game.ring_y1;
+    }
+    else {
+        sh.ring_x0 = 0xFF;   // 아직 안 쓴다
+        sh.ring_y0 = 0xFF;
+        sh.ring_x1 = 0xFF;
+        sh.ring_y1 = 0xFF;
+    }
+
     sh.player_count = 0;
     sh.bubble_count = 0;
 
@@ -241,6 +255,7 @@ static void FlushEvents()
         case EVT_BUBBLE: printf("[Game] BUBBLE     p%u at (%u,%u) range %u\n", e.who, e.x, e.y, e.value); break;
         case EVT_FLOOD_WARN: printf("[Game] FLOOD IN %u  sector %u\n", e.value, e.x); break;
         case EVT_FLOOD:      printf("[Game] FLOODED    sector %u\n", e.x); break;
+        case EVT_RING:       printf("[Game] WATER RISING  safe area %u wide\n", e.value); break;
         case EVT_DROWN:      printf("[Game] DROWNING   p%u at (%u,%u) %u sec\n", e.who, e.x, e.y, e.value); break;
         default: break;
         }

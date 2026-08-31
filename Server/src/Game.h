@@ -93,6 +93,13 @@ struct GameState
     int     flood_warn[FLOOD_STAGES];                 // 예고 시각. 배속을 걸 수 있게 복사해 둔다
     int     flood_fill[FLOOD_STAGES];                 // 잠기는 시각
 
+    // 구역을 다 잠근 뒤 최종 구역 안에서 계속 좁아지는 안전 사각형.
+    // 양끝을 포함하는 타일 좌표다. ring_on 이 false 면 아직 안 쓴다
+    bool    ring_on;
+    int     ring_x0, ring_y0, ring_x1, ring_y1;
+    int     ring_next;                                // 다음으로 좁아지는 시각
+    int     ring_step;                                // 한 겹 좁아지는 간격. 배속이 걸린다
+
     bool spawn_used[SPAWN_TOTAL];
     int  player_count;
 
@@ -163,6 +170,12 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
 
     g_game.flood_outer = 0;
     g_game.flood_done  = 0;
+
+    g_game.ring_on = false;
+    g_game.ring_x0 = 0; g_game.ring_y0 = 0;
+    g_game.ring_x1 = MAP_W - 1; g_game.ring_y1 = MAP_H - 1;
+    g_game.ring_next = 0;
+    g_game.ring_step = RING_STEP_TICKS / flood_scale;
 
     for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
         for (int sx = 0; sx < SECTOR_COLS; ++sx) {

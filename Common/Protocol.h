@@ -56,6 +56,7 @@ enum EventType : uint8_t
     EVT_FLOOD      = 11,   // 이 구역이 잠겼다
     EVT_DROWN      = 12,   // 잠긴 구역 안이다. 카운트다운이 시작됐다
     EVT_DROP       = 13,   // 부서진 블록에서 아이템이 떨어졌다. value 가 ItemType
+    EVT_RING       = 14,   // 최종 구역 안 물이 한 겹 차올랐다. value 가 남은 폭
 };
 
 
@@ -134,6 +135,10 @@ struct SnapshotHead
     uint16_t phase_ticks;     // 이 단계에 들어온 뒤 지난 틱. 카운트다운을 여기서 그린다
     uint8_t  winner;          // 0xFF = 없음 (무승부이거나 아직 안 끝남)
     uint8_t  round_no;
+
+    // 최종 구역 안에서 좁아지는 안전 사각형. 양끝 포함.
+    // ring_x0 이 0xFF 면 아직 안 쓴다
+    uint8_t  ring_x0, ring_y0, ring_x1, ring_y1;
 
     uint8_t  player_count;
     uint8_t  bubble_count;

@@ -143,7 +143,7 @@ build.bat ..\tools\probe.cpp
 ```
 movetest    25 PASS / 0 FAIL
 bubbletest  45 PASS / 0 FAIL
-floodtest   25 PASS / 0 FAIL
+floodtest   30 PASS / 0 FAIL
 maptest      7 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      16 PASS / 0 FAIL

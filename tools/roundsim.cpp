@@ -126,7 +126,7 @@ static bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             hit = (g_game.item[y][x] != ITEM_NONE) && !g_danger[y][x];
             break;
         case Goal::Center:
-            hit = (SectorStateAt(x, y) != SECTOR_FLOODED) && !g_danger[y][x]
+            hit = !IsUnderWater(x, y) && !g_danger[y][x]
                   && (abs(x - cx) + abs(y - cy) < abs(sx - cx) + abs(sy - cy));
             break;
         case Goal::Block:
@@ -290,7 +290,7 @@ static void ThinkBot(int slot)
     }
 
     // 2) 잠긴 구역이면 가운데로
-    if (SectorStateAt(tx, ty) == SECTOR_FLOODED) {
+    if (IsUnderWater(tx, ty)) {
         if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy)) {
             p.dir_x = dx; p.dir_y = dy;
             return;
@@ -368,7 +368,7 @@ static int OpenTilesNotFlooded()
     for (int y = 0; y < MAP_H; ++y) {
         for (int x = 0; x < MAP_W; ++x) {
             if (g_game.map.tile[y][x] == TILE_WALL) continue;
-            if (SectorStateAt(x, y) == SECTOR_FLOODED) continue;
+            if (IsUnderWater(x, y)) continue;
             ++n;
         }
     }

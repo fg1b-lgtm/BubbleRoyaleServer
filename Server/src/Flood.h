@@ -31,6 +31,72 @@ inline uint8_t SectorStateAt(int tx, int ty)
     return g_game.sector_state[sector / SECTOR_COLS][sector % SECTOR_COLS];
 }
 
+// 이 칸이 물에 잠겼나.
+//
+// 구역 단위 침수와, 최종 구역 안에서 계속 좁아지는 사각형을 같이 본다.
+// 이 함수 하나만 보면 되도록 묶어둔다
+inline bool IsUnderWater(int tx, int ty)
+{
+    if (SectorStateAt(tx, ty) == SECTOR_FLOODED) {
+        return true;
+    }
+    if (g_game.ring_on) {
+        if (tx < g_game.ring_x0 || tx > g_game.ring_x1) return true;
+        if (ty < g_game.ring_y0 || ty > g_game.ring_y1) return true;
+    }
+    return false;
+}
+
+// 구역을 다 잠갔으면 최종 구역 안에서 계속 좁힌다.
+//
+// 여기가 없으면 판이 안 끝난다. 최종 1구역은 마지막 서너 명한테 너무 넓다
+inline void UpdateRing()
+{
+    // 아직 구역이 남았다
+    if (g_game.flood_done < g_game.flood_outer) {
+        return;
+    }
+
+    if (!g_game.ring_on) {
+        // 최종 구역(가운데) 경계에서 시작한다
+        int sx = SECTOR_COLS / 2;
+        int sy = SECTOR_ROWS / 2;
+
+        g_game.ring_on = true;
+        g_game.ring_x0 = sx * SECTOR_W;
+        g_game.ring_y0 = sy * SECTOR_H;
+        g_game.ring_x1 = g_game.ring_x0 + SECTOR_W - 1;
+        g_game.ring_y1 = g_game.ring_y0 + SECTOR_H - 1;
+        g_game.ring_next = (int)g_game.tick + g_game.ring_step;
+        return;
+    }
+
+    if ((int)g_game.tick < g_game.ring_next) {
+        return;
+    }
+    g_game.ring_next = (int)g_game.tick + g_game.ring_step;
+
+    bool shrank = false;
+
+    if (g_game.ring_x1 - g_game.ring_x0 + 1 > RING_MIN_W) {
+        ++g_game.ring_x0;
+        --g_game.ring_x1;
+        shrank = true;
+    }
+    if (g_game.ring_y1 - g_game.ring_y0 + 1 > RING_MIN_H) {
+        ++g_game.ring_y0;
+        --g_game.ring_y1;
+        shrank = true;
+    }
+
+    if (shrank) {
+        // 예고 없이 좁아진다. 눈에 보이는 것이 예고라서 따로 알릴 게 없다.
+        // 몇 칸짜리로 줄었는지를 value 에 실어 보낸다
+        PushEvent(EVT_RING, g_game.ring_x0, g_game.ring_y0, 0xFF,
+                  (uint8_t)(g_game.ring_x1 - g_game.ring_x0 + 1));
+    }
+}
+
 // 몇 단계까지 잠겼는지로 이번에 건드릴 구역 범위를 정한다
 inline void FloodStageRange(int stage, int* from, int* count)
 {
@@ -74,7 +140,10 @@ inline void UpdateFlood()
         }
     }
 
-    // 2) 잠긴 구역 안에 있는 사람
+    // 2) 구역을 다 잠갔으면 최종 구역 안에서 계속 좁힌다
+    UpdateRing();
+
+    // 3) 물에 잠긴 데 있는 사람
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& p = g_game.players[i];
         if (p.s == nullptr || !p.alive) {
@@ -83,7 +152,7 @@ inline void UpdateFlood()
 
         // 몸이 있는 칸이 아니라 판정 칸으로 본다.
         // 물줄기와 같은 기준이라야 걸치기가 침수 경계에서도 똑같이 통한다
-        bool inside = (SectorStateAt(p.judge_tx, p.judge_ty) == SECTOR_FLOODED);
+        bool inside = IsUnderWater(p.judge_tx, p.judge_ty);
 
         if (!inside) {
             p.flood_ticks = 0;   // 빠져나왔다
