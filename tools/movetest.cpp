@@ -309,16 +309,13 @@ static void Test7_NoSlide()
     Check(!passed, "옆을 안 눌렀으면 통로를 못 지난다 (안 밀어준다)");
     Check(p.px + PLAYER_HALF < 8 * TILE_UNITS, "벽 앞에서 몸이 닿는 데까지만 간다");
 
-    // **줄이 안 바뀌는 것**이 규칙이다. 자리가 아니라 줄이다.
+    // 막힌 방향을 누르고 있으면 **한 점도 안 움직여야 한다.**
     //
-    // 줄 맞춤이 내 칸 한가운데로 당기므로 세로 값 자체는 움직인다.
-    // 그건 미끄러진 게 아니라 제자리를 잡은 것이다.
-    // 미끄러졌다는 건 **다른 줄로 넘어갔다**는 뜻이고, 그건 절대 안 된다
-    printf("  줄 %d -> %d, 칸 안 위치 %d -> %d (한가운데가 %d)\n",
-           start_y / TILE_UNITS, p.py / TILE_UNITS,
-           start_y % TILE_UNITS, p.py % TILE_UNITS, TILE_UNITS / 2);
-    Check(p.py / TILE_UNITS == start_y / TILE_UNITS, "다른 줄로 안 넘어간다");
-    Check(p.py % TILE_UNITS == TILE_UNITS / 2, "내 줄 한가운데로 맞춰진다");
+    // 줄 맞춤은 "좁은 데로 들어가려 할 때" 만 일한다.
+    // 가려는 칸 자체가 벽이면 맞춰봐야 못 지나가므로 아무것도 안 한다.
+    // 못 가는 방향을 누르고 있는데 몸이 옆으로 흐르면 그건 조작이 아니라 미끄러짐이다
+    printf("  막힌 방향을 누르는 동안 세로 %d -> %d\n", start_y, p.py);
+    Check(p.py == start_y, "막혔으면 옆으로 한 점도 안 밀린다");
 
     // 도와주지 않을 뿐이지 막는 게 아니다.
     //

@@ -43,7 +43,9 @@ let foamKey = '';          // 구역 상태가 바뀔 때만 다시 계산한다
 // 바깥 세 칸은 안개를 씌운다. 지형은 보이고 사람은 안 보인다.
 // "저기가 있다는 건 알지만 누가 있는지는 모른다" 가 그림으로 설명된다
 let camSector = 0;
-let view = { x0: 0, y0: 0, w: 21, h: 19 };
+// x0,y0 는 지금 화면이 보고 있는 자리(픽셀). tx,ty 는 가야 할 자리.
+// 둘을 나눠두고 매 프레임 조금씩 따라가게 하면 화면이 미끄러지듯 넘어간다
+let view = { x0: 0, y0: 0, tx: 0, ty: 0, w: 21, h: 19 };
 let noiseCv = null;
 
 // 시간. 멈춤(hit stop) 동안 gameTime 이 안 흐른다
@@ -124,6 +126,13 @@ const PLAYER_COLORS = [
 ];
 const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 
+// 머리 장식. 색과 **다른 주기로** 돌린다.
+//
+// 색 24개 중에는 반드시 비슷한 게 생긴다. 빨강 계열만 넷이다.
+// 장식이 6가지고 색이 24가지인데 주기가 다르므로,
+// 색이 같은 사람끼리는 장식이 다르고 장식이 같은 사람끼리는 색이 다르다
+const crestOf = (id) => id % 6;
+
 // ── 화면 크기 ────────────────────────────────────────────────
 //
 // 타일 크기를 화면에 맞춰 고른다. 24 픽셀쯤이 캐릭터 얼굴이 보이는 최소 크기다.
@@ -192,8 +201,17 @@ function resize() {
 function rebuild() {
   if (!G.C || !floorCtx) return;
 
+  // 지울 때는 **판 전체 크기**로 지운다.
+  //
+  // 카메라를 구역만 보이게 좁히면서 W 가 화면 크기(21칸)가 됐는데,
+  // 미리 그려두는 종이는 판 전체(45칸)다. W 로 지우면 왼쪽 21칸만 지워지고
+  // 오른쪽은 옛 그림이 그대로 남는다.
+  // 그게 "부순 벽이 그대로 보인다" 의 정체였다
+  const mw = G.C.mapW * Art.V.TS;
+  const mh = G.C.mapH * Art.V.TS;
+
   if (floorDirty) {
-    floorCtx.clearRect(0, 0, W, H);
+    floorCtx.clearRect(0, 0, mw, mh);
     Art.buildFloor(floorCtx, G.tiles, G.C.mapW, G.C.mapH);
     floorDirty = false;
   }
@@ -203,7 +221,7 @@ function rebuild() {
     for (const y of dirtyRows) {
       const r = rowCv[y];
       if (!r) continue;
-      r.g.clearRect(0, 0, W, rowH);
+      r.g.clearRect(0, 0, mw, rowH);
       Art.buildRow(r.g, G.tiles, G.C.mapW, y);
     }
     dirtyRows.clear();
@@ -250,7 +268,7 @@ function rebuildFoam() {
 // 경계에서 화면이 덜덜 떨리지 않게 히스테리시스를 둔다.
 // 판정 칸은 경계를 넘는 순간 바뀌는데, 카메라까지 그러면
 // 경계에 서서 조금만 움직여도 화면이 왔다 갔다 한다
-function updateCamera() {
+function updateCamera(dt) {
   const me = G.players.get(G.myId);
   let target = (me && (me.flags & PF.ALIVE)) ? me : null;
 
@@ -261,24 +279,34 @@ function updateCamera() {
   }
   if (!target) return;
 
+  const T  = Art.V.TS;
   const sw = G.C.sectorW, sh = G.C.sectorH;
+
+  // **발을 들인 순간 바로 바꾼다.**
+  //
+  // 처음에는 경계를 두 칸 넘어야 바뀌게 했다(히스테리시스). 화면이 안 떨리라고.
+  // 그런데 그러면 구역을 넘었는데도 화면이 안 따라와서, 이미 새 구역에 서 있는데
+  // 옛 구역을 보고 있게 된다. 그 사이에 안 보이는 사람에게 맞는다.
+  //
+  // 떨림은 다른 방법으로 막는다. 목표만 즉시 바꾸고 **화면은 미끄러지듯 따라간다.**
+  // 경계에서 왔다 갔다 해도 화면이 부드럽게 흔들릴 뿐 깜빡이지 않는다
   const sx = Math.min(2, Math.floor(target.jtx / sw));
   const sy = Math.min(2, Math.floor(target.jty / sh));
-  const want = sy * 3 + sx;
+  camSector = sy * 3 + sx;
 
-  if (want !== camSector) {
-    // 새 구역 안쪽으로 히스테리시스만큼 들어와야 실제로 옮긴다
-    const inX = target.jtx - sx * sw;
-    const inY = target.jty - sy * sh;
-    const h = G.C.camHyst;
-    const deepX = (sx === (camSector % 3)) || (inX >= h && inX < sw - h);
-    const deepY = (sy === ((camSector / 3) | 0)) || (inY >= h && inY < sh - h);
-    if (deepX && deepY) camSector = want;
-  }
+  view.tx = Math.max(0, Math.min(G.C.mapW - view.w, sx * sw - G.C.peek)) * T;
+  view.ty = Math.max(0, Math.min(G.C.mapH - view.h, sy * sh - G.C.peek)) * T;
 
-  const cx = camSector % 3, cy = (camSector / 3) | 0;
-  view.x0 = Math.max(0, Math.min(G.C.mapW - view.w, cx * sw - G.C.peek));
-  view.y0 = Math.max(0, Math.min(G.C.mapH - view.h, cy * sh - G.C.peek));
+  // 목표까지 남은 거리의 일정 비율씩 좁힌다.
+  // 한 프레임에 정해진 픽셀만큼 가게 하면 프레임이 흔들릴 때 속도가 달라진다.
+  // 비율로 좁히면 처음엔 빠르고 도착할수록 느려져서 저절로 감속이 붙는다
+  const k = 1 - Math.pow(0.001, dt / 1000);   // 1초면 99.9% 따라간다
+  view.x0 += (view.tx - view.x0) * k;
+  view.y0 += (view.ty - view.y0) * k;
+
+  // 반 픽셀 남았으면 붙여버린다. 안 그러면 영원히 조금씩 남아서 흐릿하게 그려진다
+  if (Math.abs(view.tx - view.x0) < 0.5) view.x0 = view.tx;
+  if (Math.abs(view.ty - view.y0) < 0.5) view.y0 = view.ty;
 }
 
 // ── 한 프레임 ────────────────────────────────────────────────
@@ -295,7 +323,7 @@ function frame(ts) {
 
   rebuild();
   rebuildFoam();
-  updateCamera();
+  updateCamera(dt);
   drawWorld(gameTime, dt);
   drawHUD(gameTime);
 }
@@ -312,7 +340,7 @@ function drawWorld(now, dt) {
   // 여기서부터는 **판 좌표**로 그린다. 카메라만큼 옮겨두면
   // 아래 코드는 화면이 어디를 보고 있는지 몰라도 된다
   ctx.save();
-  ctx.translate(-view.x0 * T, -view.y0 * T);
+  ctx.translate(-Math.round(view.x0), -Math.round(view.y0));
 
   ctx.drawImage(floorCv, 0, 0, G.C.mapW * T, G.C.mapH * T);
 
@@ -423,8 +451,8 @@ function drawWorld(now, dt) {
   const me = G.players.get(G.myId);
 
   // 화면에 안 걸치는 줄은 건너뛴다. 39줄이 아니라 20줄만 그린다
-  const yStart = Math.max(0, view.y0 - 1);
-  const yEnd   = Math.min(rows, view.y0 + view.h + 1);
+  const yStart = Math.max(0, Math.floor(view.y0 / T) - 1);
+  const yEnd   = Math.min(rows, Math.ceil(view.y0 / T) + view.h + 1);
 
   for (let y = yStart; y < yEnd; ++y) {
     ctx.drawImage(rowCv[y].cv, 0, y * T - Art.V.TOP, G.C.mapW * T, rowH);
@@ -467,12 +495,12 @@ function drawWorld(now, dt) {
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+    ctx.rect(view.x0, view.y0, view.w * T, view.h * T);
     ctx.rect(sx, sy, sw, sh);
     ctx.clip('evenodd');
 
     ctx.fillStyle = 'rgba(150,175,200,0.30)';
-    ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+    ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
 
     // 천천히 흐르는 안개 덩어리 둘
     for (let i = 0; i < 2; ++i) {
@@ -483,7 +511,7 @@ function drawWorld(now, dt) {
       g2.addColorStop(0, 'rgba(200,215,235,0.18)');
       g2.addColorStop(1, 'rgba(200,215,235,0)');
       ctx.fillStyle = g2;
-      ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+      ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
     }
 
     // 잡티. 미리 만들어둔 64x64 를 타일처럼 깐다
@@ -492,7 +520,7 @@ function drawWorld(now, dt) {
       if (pat) {
         ctx.globalAlpha = 0.55;
         ctx.fillStyle = pat;
-        ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+        ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
         ctx.globalAlpha = 1;
       }
     }
@@ -576,6 +604,7 @@ function drawPlayer(id, p, alpha, now, T) {
 
   Art.drawChar(ctx, px, py, r, colorOf(id), {
     face: p.face | 0,
+    crest: crestOf(id),
     moving: !!p.moving && !dead,
     walk: p.walk || 0,
     t: now,
@@ -877,17 +906,16 @@ function drawHUD(now) {
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, (1 - t) * 3);
-    const y = 66 + i * 26;
+    const y = 66 + i * 30;
     const x = W - 10 - 150 + (1 - slide) * 40;
 
-    panel(x, y, 150, 22, 5);
-    ctx.fillStyle = colorOf(k.killer);
-    ctx.beginPath(); ctx.arc(x + 14, y + 11, 4, 0, 7); ctx.fill();
-    label('P' + k.killer, x + 24, y + 15, 11, '#fff');
-    label('▸', x + 66, y + 15, 11, 'rgba(255,255,255,0.4)');
-    ctx.fillStyle = colorOf(k.victim);
-    ctx.beginPath(); ctx.arc(x + 88, y + 11, 4, 0, 7); ctx.fill();
-    label('P' + k.victim, x + 98, y + 15, 11, 'rgba(255,255,255,0.7)');
+    panel(x, y, 150, 26, 5);
+    Art.drawFace(ctx, x + 18, y + 14, 7, colorOf(k.killer), crestOf(k.killer));
+    label('P' + k.killer, x + 30, y + 18, 11, '#fff');
+    label('▸', x + 66, y + 18, 12, 'rgba(255,255,255,0.4)');
+    Art.drawFace(ctx, x + 92, y + 14, 7, colorOf(k.victim), crestOf(k.victim));
+    ctx.globalAlpha *= 0.7;
+    label('P' + k.victim, x + 104, y + 18, 11, 'rgba(255,255,255,0.9)');
     ctx.restore();
   }
 
@@ -994,7 +1022,7 @@ function drawResults(now) {
 
   const rows = statRows();
   const show = Math.min(rows.length, 8);
-  const rowH = 26;
+  const rowH = 28;
   const pw = Math.min(420, W - 40);
   const px = (W - pw) / 2;
   const py = H * 0.28;
@@ -1027,9 +1055,8 @@ function drawResults(now) {
     const medal = r.place === 1 ? '#ffd166' : r.place === 2 ? '#d0d7e2' : r.place === 3 ? '#d08c5a' : 'rgba(255,255,255,0.45)';
     label(String(r.place), px + 20, y + 17, r.place <= 3 ? 15 : 13, medal, 'left');
 
-    ctx.fillStyle = colorOf(r.id);
-    ctx.beginPath(); ctx.arc(px + 56, y + 11, 5, 0, 7); ctx.fill();
-    label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 68, y + 16, 12,
+    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(r.id), crestOf(r.id));
+    label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 72, y + 16, 12,
           mine ? '#fff' : 'rgba(255,255,255,0.78)');
 
     label(String(r.kills), px + 210, y + 16, 13, r.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');

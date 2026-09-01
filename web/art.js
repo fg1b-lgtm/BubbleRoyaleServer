@@ -427,6 +427,129 @@ const Art = (() => {
   //   기울기   가는 쪽으로 몸이 기운다. 이게 없으면 미끄러지는 것처럼 보인다
   //   눌림     걸을 때 위아래로 눌렸다 펴진다. 발만 움직이면 인형이 된다
   //   눈       가끔 깜빡이고, 물풍선이 가까우면 커진다
+  // 머리 장식 여섯 가지.
+  //
+  // 색 스물네 개 중에는 반드시 비슷한 게 생긴다. 장식을 따로 돌리면
+  // 색이 같아도 머리가 달라서 구분이 된다.
+  // 그리고 장식은 **실루엣**이라 안개 너머나 작은 미니맵에서도 읽힌다
+  function drawCrest(g, kind, lean, hy, hr, base, shade, lit, line) {
+    g.lineJoin = 'round';
+    g.strokeStyle = css(line);
+    g.lineWidth = Math.max(1, hr * 0.16);
+
+    if (kind === 0) {
+      // 더듬이 둘. 걸을 때 살짝 흔들리라고 끝을 둥글게
+      g.fillStyle = css(shade);
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.ellipse(lean + s * hr * 0.82, hy - hr * 0.34, hr * 0.22, hr * 0.30, s * 0.5, 0, 7);
+        g.fill(); g.stroke();
+      }
+    }
+    else if (kind === 1) {
+      // 모자. 챙이 앞으로 나와 있다
+      g.fillStyle = css(shade);
+      g.beginPath();
+      g.ellipse(lean, hy - hr * 0.52, hr * 1.02, hr * 0.46, 0, Math.PI, 0);
+      g.fill(); g.stroke();
+      g.fillStyle = css(darker(shade, 0.2));
+      g.beginPath();
+      g.ellipse(lean, hy - hr * 0.50, hr * 1.15, hr * 0.16, 0, 0, 7);
+      g.fill(); g.stroke();
+    }
+    else if (kind === 2) {
+      // 리본. 좌우 고리 둘에 가운데 매듭
+      g.fillStyle = css(lit);
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.ellipse(lean + s * hr * 0.62, hy - hr * 0.78, hr * 0.36, hr * 0.26, s * 0.4, 0, 7);
+        g.fill(); g.stroke();
+      }
+      g.fillStyle = css(base);
+      g.beginPath();
+      g.arc(lean, hy - hr * 0.80, hr * 0.18, 0, 7);
+      g.fill(); g.stroke();
+    }
+    else if (kind === 3) {
+      // 뿔 둘
+      g.fillStyle = css(lit);
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.moveTo(lean + s * hr * 0.40, hy - hr * 0.72);
+        g.quadraticCurveTo(lean + s * hr * 0.92, hy - hr * 1.36,
+                           lean + s * hr * 0.86, hy - hr * 0.62);
+        g.closePath();
+        g.fill(); g.stroke();
+      }
+    }
+    else if (kind === 4) {
+      // 머리띠와 구슬
+      g.strokeStyle = css(lit);
+      g.lineWidth = Math.max(1.5, hr * 0.22);
+      g.beginPath();
+      g.ellipse(lean, hy - hr * 0.10, hr * 1.0, hr * 0.98, 0, Math.PI * 1.15, Math.PI * 1.85);
+      g.stroke();
+      g.fillStyle = css(lit);
+      g.strokeStyle = css(line);
+      g.lineWidth = Math.max(1, hr * 0.14);
+      g.beginPath();
+      g.arc(lean, hy - hr * 1.02, hr * 0.22, 0, 7);
+      g.fill(); g.stroke();
+    }
+    else {
+      // 왕관. 뾰족한 셋
+      g.fillStyle = css(lit);
+      g.beginPath();
+      g.moveTo(lean - hr * 0.72, hy - hr * 0.60);
+      g.lineTo(lean - hr * 0.72, hy - hr * 1.10);
+      g.lineTo(lean - hr * 0.36, hy - hr * 0.80);
+      g.lineTo(lean,             hy - hr * 1.30);
+      g.lineTo(lean + hr * 0.36, hy - hr * 0.80);
+      g.lineTo(lean + hr * 0.72, hy - hr * 1.10);
+      g.lineTo(lean + hr * 0.72, hy - hr * 0.60);
+      g.closePath();
+      g.fill(); g.stroke();
+    }
+  }
+
+  // 얼굴만. 킬 피드와 결과표에 쓴다.
+  //
+  // "P3" 이라고 쓰면 그건 번호고, 얼굴을 그리면 그건 **그 사람**이다.
+  // 판에서 본 머리 장식이 표에도 그대로 나오면 누가 누구인지가 바로 이어진다
+  function drawFace(g, cx, cy, hr, hex, crest) {
+    const base = rgb(hex);
+    const lit  = lighter(base, 0.30);
+    const shade = darker(base, 0.30);
+    const line = darker(base, 0.62);
+
+    g.lineJoin = 'round';
+    g.lineWidth = Math.max(1, hr * 0.16);
+
+    drawCrest(g, crest | 0, cx, cy, hr, base, shade, lit, line);
+
+    g.fillStyle = css(base);
+    g.strokeStyle = css(line);
+    g.beginPath();
+    g.arc(cx, cy, hr, 0, 7);
+    g.fill(); g.stroke();
+
+    g.fillStyle = 'rgba(255,255,255,0.30)';
+    g.beginPath();
+    g.ellipse(cx - hr * 0.34, cy - hr * 0.40, hr * 0.32, hr * 0.22, -0.6, 0, 7);
+    g.fill();
+
+    for (let i = 0; i < 2; ++i) {
+      const s = i ? 1 : -1;
+      g.fillStyle = '#fff';
+      g.beginPath(); g.arc(cx + s * hr * 0.34, cy + hr * 0.12, hr * 0.26, 0, 7); g.fill();
+      g.fillStyle = '#161a1f';
+      g.beginPath(); g.arc(cx + s * hr * 0.34, cy + hr * 0.16, hr * 0.13, 0, 7); g.fill();
+    }
+  }
+
   function drawChar(g, cx, cy, r, hex, o) {
     const face = o.face | 0;
     const walk = o.walk || 0;
@@ -515,15 +638,14 @@ const Art = (() => {
     const hr = r * 0.76;
     const hy = -r * 0.34 + lean * 0.2;
 
-    // 귀 둘. 실루엣을 만든다. 멀리서 봐도 사람인 걸 알게 하는 건 색이 아니라 윤곽이다
-    g.fillStyle = css(shade);
-    g.strokeStyle = css(line);
-    for (let i = 0; i < 2; ++i) {
-      const s = i ? 1 : -1;
-      g.beginPath();
-      g.ellipse(lean + s * hr * 0.82, hy - hr * 0.30, hr * 0.24, hr * 0.30, s * 0.5, 0, 7);
-      g.fill(); g.stroke();
-    }
+    // 머리 장식. **스물넷을 색만으로는 못 가른다.**
+    //
+    // 색을 스물네 개 쓰면 비슷한 게 반드시 생긴다. 빨강 계열만 넷이다.
+    // 그래서 여섯 가지 장식을 색과 따로 돌린다. 색이 같아도 머리가 다르고,
+    // 머리가 같아도 색이 다르다. 둘 다 같으려면 24명을 넘겨야 한다.
+    //
+    // 그리고 이건 실루엣이다. **멀리서 사람을 알아보는 건 색이 아니라 윤곽이다**
+    drawCrest(g, o.crest | 0, lean, hy, hr, base, shade, lit, line);
 
     const headGrad = g.createRadialGradient(lean - hr * 0.35, hy - hr * 0.40, hr * 0.15,
                                             lean, hy, hr * 1.1);
@@ -746,7 +868,7 @@ const Art = (() => {
   return {
     PLACES, WORLDS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
-    drawChar, drawBubble, drawItem,
+    drawChar, drawFace, drawBubble, drawItem,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };

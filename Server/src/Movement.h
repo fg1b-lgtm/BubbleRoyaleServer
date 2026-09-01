@@ -105,27 +105,61 @@ inline int CornerAssistAxis(const GameMap& map,
 
 // 줄 맞춤. 가는 축과 직각인 축을 지금 칸 한가운데로 당긴다.
 //
-// 코너 보정을 끄고 나니 통로를 못 지나가게 됐다.
-// 통로가 한 칸인데 몸이 0.8 이라, 들어가려면 중심이 칸의 가운데 20% 안에 있어야 한다.
-// 키보드로 그걸 맞출 수는 없다.
+// 왜 필요한가.
+//   코너 보정을 끄고 나니 통로를 못 지나가게 됐다.
+//   통로가 한 칸(256)인데 몸이 204 라, 들어가려면 중심이 가운데 52칸(20%) 안에
+//   있어야 한다. 키보드로 그건 못 맞춘다.
 //
-// 그렇다고 옆 칸으로 밀어주면 벽에 비빌 때마다 다른 줄로 미끄러진다.
-// 그래서 **내 칸 안에서만** 당긴다. 줄은 절대 안 바뀐다.
-// 줄을 바꾸는 건 여전히 사람이 직접 누른다.
-inline int CenterAxis(int side_pos, int speed)
+// 코너 보정과 다른 점은 하나뿐이고 그게 전부다.
+//   코너 보정 : **옆 칸으로** 민다      -> 벽에 비비면 다른 줄로 미끄러진다
+//   줄 맞춤   : **내 칸 한가운데로** 당긴다 -> 줄을 절대 안 벗어난다
+//
+// **언제 당기나가 중요하다.**
+//   처음에는 한 방향만 누르고 있으면 늘 당겼다. 그랬더니 아무것도 없는 데서
+//   걷는데도 자꾸 옆으로 밀렸다. 트인 데서는 굳이 줄을 맞출 이유가 없다.
+//
+//   그래서 **가려는 칸의 옆이 막혀 있을 때만** 당긴다.
+//   좁은 데로 들어가려 할 때만 줄을 맞춰주는 것이다. 트인 데서는 아무 일도 없다.
+inline int CenterAxis(const GameMap& map, int move_pos, int side_pos,
+                      int step, bool moving_is_x, int speed)
 {
-    if (LANE_SNAP_PERCENT <= 0) {
+    if (LANE_SNAP_PERCENT <= 0 || step == 0) {
         return side_pos;
     }
 
-    int t      = side_pos / TILE_UNITS;
-    int center = t * TILE_UNITS + TILE_UNITS / 2;
+    // 이번 틱에 가려는 쪽 몸 끝이 닿을 칸
+    int edge  = (step > 0) ? move_pos + speed + PLAYER_HALF
+                           : move_pos - speed - PLAYER_HALF;
+    int ahead = edge / TILE_UNITS;
+    int st    = side_pos / TILE_UNITS;
+
+    // 가려는 칸 자체가 벽이면 줄을 맞춰봐야 소용없다. 그냥 선다.
+    //
+    // 이걸 빼먹었더니 벽에 대고 누르고 있는 동안 옆으로 스르륵 밀렸다.
+    // 못 가는 방향을 누르고 있는데 몸이 움직이면 그건 조작이 아니라 미끄러짐이다.
+    // **막혔으면 그 자리에 선다.**
+    bool ahead_open = moving_is_x ? !map.IsSolid(ahead, st)
+                                  : !map.IsSolid(st, ahead);
+    if (!ahead_open) {
+        return side_pos;
+    }
+
+    // 가려는 칸의 옆이 막혀 있나. 좁은 데로 들어갈 때만 맞춰준다
+    bool narrow = moving_is_x
+        ? (map.IsSolid(ahead, st - 1) || map.IsSolid(ahead, st + 1))
+        : (map.IsSolid(st - 1, ahead) || map.IsSolid(st + 1, ahead));
+
+    if (!narrow) {
+        return side_pos;   // 트인 데다. 안 건드린다
+    }
+
+    int center = st * TILE_UNITS + TILE_UNITS / 2;
     int d      = center - side_pos;
 
-    int step = speed * LANE_SNAP_PERCENT / 100;
-    if (step < 1) step = 1;
-    if (d >  step) d =  step;
-    if (d < -step) d = -step;
+    int pull = speed * LANE_SNAP_PERCENT / 100;
+    if (pull < 1) pull = 1;
+    if (d >  pull) d =  pull;
+    if (d < -pull) d = -pull;
 
     return side_pos + d;
 }

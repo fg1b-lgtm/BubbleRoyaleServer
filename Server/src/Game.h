@@ -528,11 +528,11 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // 한 방향만 누르고 있을 때만이다.
     // 두 방향을 누르고 있으면 본인이 조준하는 중이라 끼어들면 방해가 된다
     if (p.dir_x != 0 && p.dir_y == 0) {
-        p.py = CenterAxis(p.py, speed);
+        p.py = CenterAxis(map, p.px, p.py, p.dir_x * speed, true, speed);
         p.py = CornerAssistAxis(map, p.px, p.py, p.dir_x * speed, true, speed);
     }
     else if (p.dir_y != 0 && p.dir_x == 0) {
-        p.px = CenterAxis(p.px, speed);
+        p.px = CenterAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
         p.px = CornerAssistAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
     }
 
