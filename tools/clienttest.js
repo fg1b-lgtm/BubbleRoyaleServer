@@ -206,8 +206,9 @@ function pkt(id, bodyLen, fillBody) {
 }
 const feed = (v) => api.onPacket(v);
 
-// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로 (21 + 조각 9 = 30 바이트)
-feed(pkt(5, 30, (v, o) => {
+// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
+// (21 + peek 1 + 조각 9 = 31 바이트)
+feed(pkt(5, 31, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -221,10 +222,11 @@ feed(pkt(5, 30, (v, o) => {
     v.setUint8(o + 14, 15);          // blast ticks
     v.setUint8(o + 15, 80);          // body_num
     v.setUint8(o + 16, 100);         // body_den
-    v.setUint32(o + 17, 1234, true); // seed
+    v.setUint8(o + 17, 3);           // peek_tiles
+    v.setUint32(o + 18, 1234, true); // seed
     // 아홉 자리에 조각 번호. 열 가지 장소가 다 한 번씩은 그려지게 섞어 넣는다
     const kinds = [0, 3, 7, 2, 9, 5, 6, 8, 1];
-    for (let i = 0; i < 9; ++i) v.setUint8(o + 21 + i, kinds[i]);
+    for (let i = 0; i < 9; ++i) v.setUint8(o + 22 + i, kinds[i]);
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
@@ -261,7 +263,7 @@ for (let y = 0; y < MAP_H; ++y) {
 //   p2 갇힘                     p3 물에 잠김 + 무적
 function snapshot(tick, phase, ringOn) {
     const np = 4, nb = 2;
-    return pkt(7, 24 + np * 11 + nb * 4, (v, o) => {
+    return pkt(7, 28 + np * 11 + nb * 4, (v, o) => {
         v.setUint32(o, tick, true);
         for (let i = 0; i < 9; ++i) v.setUint8(o + 4 + i, i === 0 ? 2 : (i === 1 ? 1 : 0));
         v.setUint8(o + 13, phase);
@@ -272,8 +274,12 @@ function snapshot(tick, phase, ringOn) {
         v.setUint8(o + 19, ringOn ? 13 : 0xFF);
         v.setUint8(o + 20, ringOn ? 29 : 0xFF);
         v.setUint8(o + 21, ringOn ? 25 : 0xFF);
-        v.setUint8(o + 22, np);
-        v.setUint8(o + 23, nb);
+        v.setUint8(o + 22, np);          // alive_count
+        v.setUint8(o + 23, 0x0F);        // alive_mask: 0~3번이 살아 있다
+        v.setUint8(o + 24, 0);
+        v.setUint8(o + 25, 0);
+        v.setUint8(o + 26, np);
+        v.setUint8(o + 27, nb);
 
         const FLAGS = [
             1 | 16 | (2 << 5),   // 살아 있음 + 걷는 중 + 오른쪽
@@ -282,7 +288,7 @@ function snapshot(tick, phase, ringOn) {
             1 | 8 | 4,           // 물에 잠김 + 무적 + 아래
         ];
         for (let i = 0; i < np; ++i) {
-            const p = o + 24 + i * 11;
+            const p = o + 28 + i * 11;
             v.setUint8(p, i);
             v.setUint16(p + 1, (7 + i * 3) * 256 + tick * 40, true);
             v.setUint16(p + 3, (9 + i) * 256, true);
@@ -294,7 +300,7 @@ function snapshot(tick, phase, ringOn) {
             v.setUint8(p + 10, i);
         }
         for (let i = 0; i < nb; ++i) {
-            const b = o + 24 + np * 11 + i * 4;
+            const b = o + 28 + np * 11 + i * 4;
             v.setUint8(b, 10 + i * 4);
             v.setUint8(b + 1, 12);
             v.setUint8(b + 2, i === 0 ? 70 : 5);   // 하나는 갓 놓은 것, 하나는 터지기 직전

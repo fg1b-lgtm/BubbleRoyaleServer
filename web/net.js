@@ -34,7 +34,11 @@ const G = {
   ring: { on:false, x0:0, y0:0, x1:0, y1:0 },
 
   phase: PHASE.WAITING, phaseTicks: 0, winner: 0xFF, roundNo: 0, tick: 0,
+
+  // 살아 있는 사람 수와 누가 살아 있나. 둘 다 서버가 전역으로 보내준다.
+  // AOI 로 걸러진 players 를 세면 내 구역 사람만 세게 된다
   aliveCount: 0,
+  aliveMask: [0, 0, 0],
 
   lastSnapAt: 0, snapInterval: 33,
   connected: false,
@@ -64,7 +68,7 @@ function onWelcome(v) {
   G.C = {
     myId: u8(), mapW: u8(), mapH: u8(), sectorW: u8(), sectorH: u8(),
     tickRate: u8(), tileUnits: u16(), fuse: u16(), trap: u16(),
-    floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(), seed: u32(),
+    floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(), peek: u8(), seed: u32(),
     sectorKind: [],
   };
   // 아홉 자리에 어떤 조각이 깔렸나. 규칙이 아니라 **화면용**이다.
@@ -116,6 +120,13 @@ function onSnapshot(v) {
   G.ring.y1 = v.getUint8(o++);
   G.ring.on = (G.ring.x0 !== 0xFF);
 
+  // 생존자는 전역이다. 뒤에 붙는 사람 목록은 AOI 로 걸러져서 내 구역만 오지만,
+  // 몇 명이 남았는지는 전부 세어서 온다
+  G.aliveCount = v.getUint8(o++);
+  const mask = [v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2)];
+  o += 3;
+  G.aliveMask = mask;
+
   const np = v.getUint8(o++);
   const nb = v.getUint8(o++);
 
@@ -155,7 +166,14 @@ function onSnapshot(v) {
     seen.add(id);
     o += 11;
   }
-  for (const id of G.players.keys()) if (!seen.has(id)) G.players.delete(id);
+  // 안 온 사람은 **지우지 않고 안 보이는 것으로 표시만 한다.**
+  //
+  // AOI 를 켜면 옆 구역으로 간 사람이 목록에서 빠진다. 지워버리면
+  // 결과 화면에서 그 사람이 통째로 사라진다. 판이 끝나고 순위를 매길 때
+  // "옆 구역에서 죽은 사람" 이 없는 것으로 나오면 그건 틀린 표다.
+  //
+  // 그리는 건 보이는 사람만 그린다. 기억만 남긴다
+  for (const [id, p] of G.players) p.visible = seen.has(id);
 
   G.bubbles = [];
   for (let i = 0; i < nb; ++i) {
@@ -165,9 +183,6 @@ function onSnapshot(v) {
     });
     o += 4;
   }
-
-  G.aliveCount = 0;
-  for (const p of G.players.values()) if (p.flags & PF.ALIVE) ++G.aliveCount;
 
   G.lastSnapAt = performance.now();
   Hooks.snapshot(prevPhase);

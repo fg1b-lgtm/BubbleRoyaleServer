@@ -77,7 +77,8 @@ ws.onmessage = (e) => {
         welcome = {
             myId: u8(), mapW: u8(), mapH: u8(), sectorW: u8(), sectorH: u8(),
             tickRate: u8(), tileUnits: u16(), fuse: u16(), trap: u16(),
-            floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(), seed: u32(),
+            floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(),
+            peek: u8(), seed: u32(),
         };
         ++welcomeCount;
         seeds.add(welcome.seed);
@@ -89,19 +90,19 @@ ws.onmessage = (e) => {
     else if (id === PKT.SNAPSHOT) {
         ++snapshots;
 
-        // SnapshotHead 는 24 바이트다. 하나라도 틀리면 그 뒤가 전부 밀린다.
+        // SnapshotHead 는 28 바이트다. 하나라도 틀리면 그 뒤가 전부 밀린다.
         //   tick 4 | sectors 9 | phase 1 | phase_ticks 2 | winner 1 | round_no 1
-        //   ring 4 | player_count 1 | bubble_count 1
+        //   ring 4 | alive_count 1 | alive_mask 3 | player_count 1 | bubble_count 1
         //
         // 예전에 여기를 18, 19 로 적어놨었다. ring 이 생기면서 밀린 건데,
         // 안 쓸 때 ring 이 0xFF 라 "사람 255명" 으로 읽혔고
         // "사람이 하나 이상 있다" 는 검사가 늘 통과해서 5일 동안 안 들켰다.
         // 시험이 통과한다고 시험이 맞는 건 아니다
-        const HEAD = HEADER_SIZE + 24;
+        const HEAD = HEADER_SIZE + 28;
 
         phases.add(v.getUint8(HEADER_SIZE + 13));
-        const np = v.getUint8(HEADER_SIZE + 22);
-        const nb = v.getUint8(HEADER_SIZE + 23);
+        const np = v.getUint8(HEADER_SIZE + 26);
+        const nb = v.getUint8(HEADER_SIZE + 27);
         if (np > maxPlayers) maxPlayers = np;
         if (nb > maxBubbles) maxBubbles = nb;
 

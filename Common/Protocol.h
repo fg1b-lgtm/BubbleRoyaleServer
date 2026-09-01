@@ -110,6 +110,9 @@ struct WelcomeBody
     uint16_t flood_escape_ticks;
     uint8_t  blast_ticks;
     uint8_t  body_num, body_den;   // 캐릭터 몸 크기. 화면에 실제 크기로 그려야 걸치기가 보인다
+
+    // AOI 가 구역 밖 몇 칸까지 보여주나. 화면이 "내가 아는 데" 를 그리는 데 쓴다
+    uint8_t  peek_tiles;
     uint32_t seed;
 
     // 아홉 자리에 어떤 조각이 깔렸나 (SectorTemplates.h 의 번호).
@@ -150,6 +153,17 @@ struct SnapshotHead
     // 최종 구역 안에서 좁아지는 안전 사각형. 양끝 포함.
     // ring_x0 이 0xFF 면 아직 안 쓴다
     uint8_t  ring_x0, ring_y0, ring_x1, ring_y1;
+
+    // 살아 있는 사람 수와 누가 살아 있나 (0번이 최하위 비트).
+    //
+    // AOI 를 켜면 뒤에 붙는 사람 목록이 **내 구역 사람만** 들어온다.
+    // 그러면 화면이 "생존 3" 이라고 쓰게 된다. 실제로는 열둘이 남았는데.
+    //
+    // 생존자 수는 SPEC 4절이 전역이라고 못 박은 것이다. 4바이트뿐이고
+    // 초당 30번이라 12만 바이트를 아끼면서 이걸 아끼는 건 앞뒤가 안 맞는다.
+    // **AOI 는 크고 잦은 것만 거른다. 작고 중요한 건 그냥 보낸다**
+    uint8_t  alive_count;
+    uint8_t  alive_mask[3];
 
     uint8_t  player_count;
     uint8_t  bubble_count;

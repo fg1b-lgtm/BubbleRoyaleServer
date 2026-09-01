@@ -71,9 +71,6 @@ function markDead(id) {
 
 // 판이 끝났다. 살아남은 사람을 앞에 놓고 등수를 매긴다
 function finishStats() {
-  let alive = 0;
-  for (const [id, p] of G.players) if (p.flags & PF.ALIVE) ++alive;
-
   const total = G.players.size;
   for (const [id, p] of G.players) {
     const st = statOf(id);
@@ -91,7 +88,7 @@ function statRows() {
       id,
       place: st.place || 99,
       kills: st.kills,
-      alive: !!(p.flags & PF.ALIVE),
+      alive: !!(G.aliveMask[id >> 3] & (1 << (id & 7))),
       items: (p.bubble_lv || 0) + (p.power_lv || 0) + (p.speed_lv || 0),
       secs: st.diedTick < 0 ? G.tick / G.C.tickRate : st.diedTick / G.C.tickRate,
     });
@@ -322,6 +319,7 @@ function drawWorld(now, dt) {
   const alpha = Math.min(1, (now - snapAtGame) / G.snapInterval);
 
   for (const [id, p] of G.players) {
+    if (p.visible === false) continue;   // AOI 로 안 온 사람. 기억만 있고 지금은 안 보인다
     const py = p.y0 + (p.y1 - p.y0) * alpha;
     const r = Math.max(0, Math.min(rows - 1, Math.floor(py / G.C.tileUnits)));
     (bucketP[r] || (bucketP[r] = [])).push([id, p]);
@@ -386,6 +384,36 @@ function drawWorld(now, dt) {
     eg.addColorStop(1, 'rgba(200,40,40,' + (0.25 + 0.25 * pulse) + ')');
     ctx.fillStyle = eg;
     ctx.fillRect(0, 0, W, H);
+  }
+
+  // ── 안 보이는 데 ───────────────────────────────────────────
+  //
+  // 서버가 AOI 로 **내 구역 사람만** 보내준다 (SPEC 4절).
+  // 그런데 화면은 판 전체를 보여준다. 그대로 두면 옆 구역 사람이 그냥 사라져서
+  // 버그로 보인다. 안 보내는 데를 **안 보이게 그려야** 앞뒤가 맞는다.
+  //
+  // 어둡게 덮되 완전히 가리지는 않는다. 지형과 물은 계속 보여야
+  // 어디로 도망칠지 정할 수 있다. 사람만 모르는 것이다.
+  //
+  // 죽어서 관전 중이면 안 덮는다. 그때는 서버도 전부 보내준다
+  if (me && (me.flags & PF.ALIVE)) {
+    const sw = G.C.sectorW * T, sh = G.C.sectorH * T;
+    const sx = Math.min(2, Math.floor(me.jtx / G.C.sectorW)) * sw;
+    const sy = Math.min(2, Math.floor(me.jty / G.C.sectorH)) * sh;
+    const m  = G.C.peek * T;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(4,8,14,0.52)';
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.rect(sx - m, sy - m, sw + m * 2, sh + m * 2);
+    ctx.fill('evenodd');
+
+    // 내가 아는 데의 경계. 여기까지가 내 눈이다
+    ctx.strokeStyle = 'rgba(180,220,255,0.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - m + 1, sy - m + 1, sw + m * 2 - 2, sh + m * 2 - 2);
+    ctx.restore();
   }
 
   FX.drawFlash(ctx, now, W, H);
@@ -586,9 +614,11 @@ function drawHUD(now) {
     const total = n * pw + (n - 1) * gap;
     let x = W / 2 + 78 - total;
     for (let i = 0; i < n; ++i) {
-      const p = G.players.get(i);
-      const alive = p && (p.flags & PF.ALIVE);
-      ctx.fillStyle = !p ? 'rgba(255,255,255,0.08)'
+      // 서버가 보내준 전역 마스크를 쓴다. 내 구역 사람만 보고 그리면
+      // 옆 구역 사람이 전부 죽은 것처럼 보인다
+      const alive = !!(G.aliveMask[i >> 3] & (1 << (i & 7)));
+      const known = alive || roundStats.has(i) || G.players.has(i);
+      ctx.fillStyle = !known ? 'rgba(255,255,255,0.08)'
                     : alive ? (i === G.myId ? '#ffffff' : colorOf(i))
                     : 'rgba(255,255,255,0.14)';
       ctx.fillRect(x, 20, pw, alive ? 10 : 5);
@@ -659,7 +689,7 @@ function drawHUD(now) {
     }
 
     for (const [id, p] of G.players) {
-      if (!(p.flags & PF.ALIVE)) continue;
+      if (!(p.flags & PF.ALIVE) || p.visible === false) continue;
       const s = Math.min(2, Math.floor(p.jty / G.C.sectorH)) * 3
               + Math.min(2, Math.floor(p.jtx / G.C.sectorW));
       const gx = mx + (s % 3) * (cell + gap) + cell / 2;

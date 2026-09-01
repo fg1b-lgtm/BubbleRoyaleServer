@@ -143,15 +143,20 @@ build.bat ..\tools\probe.cpp
 최근 확인:
 
 ```
-movetest    25 PASS / 0 FAIL
-bubbletest  58 PASS / 0 FAIL
+movetest    28 PASS / 0 FAIL
+bubbletest  59 PASS / 0 FAIL
 floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest  15 PASS / 0 FAIL
-roundsim    20판 전부 결판, 평균 1분 49초
-봇 24개 12초  접속 666 = left 666 = fully closed 666, 에러 0
+clienttest  22 PASS / 0 FAIL
+roundsim    20판 전부 결판, 평균 2분 52초
+봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
+
+AOI 전후 (walker 12명 30초, 봇 12)
+  초당 바이트  116,400 -> 29,316   (-75%)
+  최대 패킷      2,076 ->     673   (-68%)
+  스냅샷 생성       30 ->     242   (8.1배)
 ```
 
 ---
@@ -176,6 +181,8 @@ BubbleRoyale.sln
 │   ├─ Game.h            자료구조 전부 + 사람 입장/퇴장/입력/이동
 │   ├─ Bubble.h          물풍선 · 폭발 · 연쇄 · 아이템 · 피격
 │   ├─ Flood.h           침수
+│   ├─ Bot.h             봇 두뇌. roundsim 과 서버가 같이 쓴다
+│   ├─ Aoi.h             누구에게 무엇을 보낼 것인가 + 송신량 계측
 │   ├─ SectorTemplates.h 손으로 그린 맵 조각 10종
 │   ├─ GameTick.h        한 틱에 무엇을 어떤 순서로 하는가
 │   └─ ServerConfig.h    워커 수 · 동시 접속 상한

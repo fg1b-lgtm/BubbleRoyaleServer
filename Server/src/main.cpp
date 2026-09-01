@@ -23,7 +23,7 @@
 //   [Session]  주소가 붙는 모든 것
 #include "Network.h"
 #include "GameConstants.h"
-#include "Bot.h"
+#include "Aoi.h"
 
 // 자리가 없어서 못 앉은 사람. 보고는 있고 다음 판에 앉는다.
 //
@@ -100,6 +100,7 @@ static void SendWelcome(Session* s, int slot)
     w.blast_ticks        = (uint8_t)BLAST_DURATION_TICKS;
     w.body_num           = (uint8_t)PLAYER_BODY_NUM;
     w.body_den           = (uint8_t)PLAYER_BODY_DEN;
+    w.peek_tiles         = (uint8_t)PEEK_TILES;
     w.seed               = g_game.map.seed;
 
     // 아홉 자리에 어떤 조각이 깔렸는지. 화면이 구역마다 다르게 그리는 데 쓴다
@@ -135,15 +136,20 @@ static void SendWelcome(Session* s, int slot)
     }
 }
 
-// 매 틱 전원에게. 누가 어디 있고 물풍선이 어디 있나
-static void SendSnapshot()
+// 매 틱. 누가 어디 있고 물풍선이 어디 있나.
+//
+// **구역마다 한 번 만들어서 그 구역 사람들에게 돌려 쓴다.**
+// 같은 구역에 있으면 똑같은 것을 보기 때문이다. 사람마다 만들면 24번,
+// 구역마다 만들면 최대 9번(+관전 1번)이다.
+//
+// 무엇을 담나 (SPEC 4절)
+//   사람      그 구역에 있는 사람만.       크고 잦아서 여기가 제일 크게 줄어든다
+//   물풍선    구역 + 가장자리 밖 세 칸.    넘어가자마자 죽으면 억울하다
+//
+// watch 가 -1 이면 관전자다. 죽은 사람과 자리 없는 사람. 전부 보여준다
+static int BuildSnapshot(char* buf, int watch)
 {
-    if (g_game.player_count == 0) {
-        return;
-    }
-
-    char buf[MAX_PACKET_SIZE];
-    int  pos = HEADER_SIZE + (int)sizeof(SnapshotHead);
+    int pos = HEADER_SIZE + (int)sizeof(SnapshotHead);
 
     SnapshotHead sh;
     sh.tick = (uint32_t)g_game.tick;
@@ -168,6 +174,17 @@ static void SendSnapshot()
         sh.ring_y1 = 0xFF;
     }
 
+    // 생존자는 전역이다. 내가 못 보는 데서 죽어도 숫자는 맞아야 한다
+    sh.alive_count  = (uint8_t)AliveCount();
+    sh.alive_mask[0] = 0;
+    sh.alive_mask[1] = 0;
+    sh.alive_mask[2] = 0;
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (Occupied(g_game.players[i]) && g_game.players[i].alive) {
+            sh.alive_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
+        }
+    }
+
     sh.player_count = 0;
     sh.bubble_count = 0;
 
@@ -175,6 +192,11 @@ static void SendSnapshot()
         const Player& p = g_game.players[i];
         if (!Occupied(p)) {
             continue;   // 빈 자리. 봇은 세션이 없어도 나간다
+        }
+
+        // 사람 위치는 그 구역만. AOI 의 주 대상이다
+        if (g_aoi_on && watch >= 0 && !VisibleTo(watch, p.judge_tx, p.judge_ty, 0)) {
+            continue;
         }
 
         PlayerState ps;
@@ -204,6 +226,10 @@ static void SendSnapshot()
         if (!b.used) {
             continue;
         }
+        // 물풍선은 가장자리 밖 세 칸까지 보여준다
+        if (g_aoi_on && watch >= 0 && !VisibleTo(watch, b.tx, b.ty, PEEK_TILES)) {
+            continue;
+        }
 
         BubbleState bs;
         bs.tx    = (uint8_t)b.tx;
@@ -222,13 +248,54 @@ static void SendSnapshot()
     memcpy(buf, &h, HEADER_SIZE);
     memcpy(buf + HEADER_SIZE, &sh, sizeof(sh));
 
-    Broadcast(buf, pos, nullptr);
+    ++g_net.builds;
+    return pos;
 }
 
-// 이번 틱에 생긴 일을 전원에게 내보낸다.
+static void SendSnapshot()
+{
+    if (g_game.player_count == 0) {
+        return;
+    }
+
+    char buf[MAX_PACKET_SIZE];
+
+    if (!g_aoi_on) {
+        int len = BuildSnapshot(buf, -1);
+        SendToAll(buf, len);
+        return;
+    }
+
+    // 어느 구역에 사람이 앉아 있는지 먼저 센다.
+    // 아무도 안 보는 구역은 만들 이유가 없다. 아홉 구역에 두 명이면 두 번만 만든다
+    bool need[SECTOR_SLOTS] = {};
+    bool need_watcher = false;
+
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (g_game.players[i].s == nullptr) continue;
+        int w = WatchSectorOf(i);
+        if (w < 0) need_watcher = true;
+        else       need[w] = true;
+    }
+
+    for (int sct = 0; sct < SECTOR_SLOTS; ++sct) {
+        if (!need[sct]) continue;
+        int len = BuildSnapshot(buf, sct);
+        SendToSector(sct, buf, len);
+    }
+
+    // 관전자. 죽은 사람과 자리 없는 사람은 판 전체를 본다
+    if (need_watcher) {
+        int len = BuildSnapshot(buf, -1);
+        SendToSector(-1, buf, len);
+    }
+}
+
+// 이번 틱에 생긴 일을 내보낸다.
 //
 // 지금은 거리를 안 본다. 9/3 에 AOI 를 붙이면 여기서 걸러진다.
-// 폭발 한 번에 EVT_BLAST 가 스무 개 넘게 나가므로, 그때 제일 먼저 줄어들 것이 이 줄이다.
+// 이벤트마다 갈 데가 다르다. 그 표가 Aoi.h 의 RouteEvent 다 (SPEC 4절).
+// 폭발 한 번에 EVT_BLAST 가 사거리만큼 나가므로 여기가 두 번째로 큰 줄기다.
 static void FlushEvents()
 {
     for (int i = 0; i < g_game.event_count; ++i) {
@@ -249,7 +316,7 @@ static void FlushEvents()
         b.value = e.value;
         memcpy(buf + HEADER_SIZE, &b, sizeof(b));
 
-        Broadcast(buf, EVENT_PACKET_SIZE, nullptr);
+        RouteEvent(e.type, e.x, e.y, e.who, buf, EVENT_PACKET_SIZE);
 
         // 클라이언트가 아직 없어서 로그가 유일한 화면이다.
         // EVT_BLAST 는 한 번에 스무 줄씩 나와서 읽을 수 없으므로 뺀다
@@ -491,17 +558,33 @@ static DWORD WINAPI TickThread(LPVOID)
     while (g_tick_running == 1) {
         ++tick;
 
-        // 1) 꽂힌 주문을 통째로 가져온다
-        Job* jobs  = nullptr;
-        int  count = SwapJobs(&jobs);
+        // 1) 꽂힌 주문을 통째로 가져온다. 통이 둘이다
+        Job*     jobs  = nullptr;
+        LifeJob* lives = nullptr;
+        int      lcount = 0;
+        int      count  = SwapJobs(&jobs, &lives, &lcount);
 
-        // 2) 순서대로 처리한다. 여긴 나 혼자다
+        // 2) 입·퇴장을 먼저 처리한다.
+        //
+        //    입장이 그 사람 패킷보다 먼저여야 한다. 안 그러면 자리도 없는데
+        //    이동 주문이 먼저 와서 그냥 버려진다.
+        //    퇴장이 남은 패킷보다 먼저 처리되는 건 괜찮다. 자리가 이미 비어서 무시된다
+        Job tmp;
+        for (int i = 0; i < lcount; ++i) {
+            tmp.type = lives[i].type;
+            tmp.s    = lives[i].s;
+            tmp.len  = 0;
+            HandleJob(&tmp);
+            Release(lives[i].s);
+        }
+
+        // 3) 그다음 패킷. 여긴 나 혼자다
         for (int i = 0; i < count; ++i) {
             HandleJob(&jobs[i]);
             Release(jobs[i].s);   // 꽂을 때 든 참조를 여기서 놓는다
         }
 
-        // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
+        // 4) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
         uint8_t phase_before = g_game.phase;
 
         // 봇은 입력원이다. 사람이 보낸 주문을 처리한 다음, 게임을 돌리기 전에 둔다.
@@ -550,6 +633,27 @@ static DWORD WINAPI TickThread(LPVOID)
 
         SendSnapshot();   // 위치가 먼저다. 이벤트는 그 위치에서 일어난 일이다
         FlushEvents();
+
+        // 1초에 한 번, 얼마나 오갔는지 찍는다.
+        //
+        // AOI 를 켜고 끈 두 줄을 나란히 놓는 것이 SPEC 9.1 의 표다.
+        // "줄었을 것이다" 가 아니라 **얼마나 줄었는지**를 말할 수 있어야 한다.
+        //
+        // builds 도 같이 찍는다. AOI 는 공짜가 아니라 대역폭을 CPU 로 바꾸는 것이라,
+        // 무엇을 얼마에 샀는지가 같이 보여야 한다
+        if (tick % TICK_RATE == 0) {
+            int humans = HumanCount();
+            if (humans > 0) {
+                printf("[Net] aoi=%d players=%d(+%d bots)  %lld pkt/s  %lld B/s  "
+                       "builds %lld/s  dropped pkt %lld life %lld\n",
+                       g_aoi_on ? 1 : 0, humans, BotCount(),
+                       g_net.packets, g_net.bytes, g_net.builds,
+                       g_job_dropped, g_life_dropped);
+            }
+            g_net.packets = 0;
+            g_net.bytes   = 0;
+            g_net.builds  = 0;
+        }
 
         // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.
         // 클라이언트가 없어서 지금은 이게 유일한 화면이다
@@ -613,6 +717,7 @@ static void ShutdownWorkers(HANDLE* workers, int count)
 // Server.exe fast       침수 일정만 10배로 당긴다. 손맛 볼 때 6분을 기다릴 수는 없다
 // Server.exe bots 0     봇을 안 채운다. 사람끼리만 하고 싶을 때
 // Server.exe bots 24    자리를 꽉 채운다
+// Server.exe aoi 0      AOI 를 끄고 전원에게 다 보낸다. **전후를 재려고 남겨둔 스위치다**
 int main(int argc, char** argv)
 {
     // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
@@ -631,6 +736,9 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; ++i) {
         if (argv[i][0] == 'f') {
             flood_scale = 10;
+        }
+        else if (argv[i][0] == 'a' && i + 1 < argc) {
+            g_aoi_on = (atoi(argv[++i]) != 0);
         }
         else if (argv[i][0] == 'b' && i + 1 < argc) {
             g_bot_target = atoi(argv[++i]);
