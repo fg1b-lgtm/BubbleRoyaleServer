@@ -114,6 +114,11 @@ function FakeAudioContext() {
         length: n,
         getChannelData: () => new Float32Array(n),
     });
+    // 녹음물을 푸는 것. 진짜로 풀 필요는 없고 버퍼 하나를 돌려주면 된다
+    this.decodeAudioData = () => Promise.resolve({
+        length: 4800, duration: 0.1, sampleRate: 48000,
+        getChannelData: () => new Float32Array(4800),
+    });
 }
 
 // ── 가짜 브라우저 ────────────────────────────────────────────
@@ -143,6 +148,15 @@ sandbox.window = {
     innerWidth: 1440, innerHeight: 900, devicePixelRatio: 2,
     AudioContext: FakeAudioContext,
 };
+// 소리 파일을 받아 오는 것. 진짜로 안 받고 무엇을 달라고 했는지만 적어둔다
+const fetched = [];
+sandbox.fetch = (url) => {
+    fetched.push(url);
+    return Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(64)) });
+};
+sandbox.setImmediate = setImmediate;
+sandbox.Promise = Promise;
+
 sandbox.WebSocket = function () {
     this.readyState = 1;
     this.binaryType = '';
@@ -191,8 +205,8 @@ function pkt(id, bodyLen, fillBody) {
 }
 const feed = (v) => api.onPacket(v);
 
-// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로 (21 바이트)
-feed(pkt(5, 21, (v, o) => {
+// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로 (21 + 조각 9 = 30 바이트)
+feed(pkt(5, 30, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -207,11 +221,22 @@ feed(pkt(5, 21, (v, o) => {
     v.setUint8(o + 15, 80);          // body_num
     v.setUint8(o + 16, 100);         // body_den
     v.setUint32(o + 17, 1234, true); // seed
+    // 아홉 자리에 조각 번호. 열 가지 장소가 다 한 번씩은 그려지게 섞어 넣는다
+    const kinds = [0, 3, 7, 2, 9, 5, 6, 8, 1];
+    for (let i = 0; i < 9; ++i) v.setUint8(o + 21 + i, kinds[i]);
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
 check(api.Art.V.TS >= 14, '화면 크기에 맞춰 타일 크기를 골랐다 (' + api.Art.V.TS + 'px)');
 check(api.Art.V.WH > 0, '벽에 높이가 있다 (' + api.Art.V.WH + 'px)');
+
+// 구역마다 다른 장소로 그려야 한다. 아홉 자리에 서로 다른 조각을 넣어 보냈으니
+// 이름이 아홉 개 다 달라야 한다
+const names = api.Art.placeNames();
+console.log('  이 판의 장소: ' + names.join(' · '));
+check(names.length === 9, '구역 아홉 곳이 서로 다른 장소로 그려진다');
+check(api.Art.placeAt(2, 2).name !== api.Art.placeAt(40, 2).name,
+      '왼쪽 위 구역과 오른쪽 위 구역의 색이 다르다');
 
 // 판. 벽과 상자와 빈칸이 골고루 나오게 깐다
 for (let y = 0; y < MAP_H; ++y) {
@@ -289,80 +314,92 @@ function event(type, x, y, who, value) {
 api.Sound.wake();
 check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
 
-let crashed = null;
-try {
-    for (let t = 0; t < 4; ++t) {
-        now = 1000 + t * 16;
-        feed(snapshot(t, 2, false));
-        api.frame(now);
-    }
+// 소리 파일은 받아서 푸는 데 시간이 걸린다. 여기서부터는 기다렸다 이어간다.
+// 안 기다리면 아직 안 온 소리를 내려다 조용히 지나가서, 시험이 아무것도 안 재게 된다
+(async () => {
+  for (let i = 0; i < 20; ++i) await new Promise(r => setImmediate(r));
 
-    // 이벤트 열다섯 종류를 다 먹인다. 종류마다 그리는 코드와 소리가 다르다
-    for (let type = 1; type <= 15; ++type) {
-        feed(event(type, 11, 12, 0, 2));
-    }
-    now += 16; api.frame(now);
+  console.log('  소리 파일 ' + fetched.length + ' 개를 받았다 ('
+              + (api.Sound.progress() * 100).toFixed(0) + '% 풀림)');
+  check(fetched.length >= 20, '소리를 파일에서 받아 온다 (만들어 내지 않는다)');
+  check(fetched.every(u => u.endsWith('.ogg')), '받는 것이 전부 소리 파일이다');
 
-    // 최종 구역 물 + 단계별 화면
-    feed(snapshot(9, 2, true));
-    now += 16; api.frame(now);
+  let crashed = null;
+  try {
+      for (let t = 0; t < 4; ++t) {
+          now = 1000 + t * 16;
+          feed(snapshot(t, 2, false));
+          api.frame(now);
+      }
 
-    for (const phase of [0, 1, 3]) {
-        now += 16;
-        feed(snapshot(9, phase, true));
-        api.frame(now);
-    }
+      // 이벤트 열다섯 종류를 다 먹인다. 종류마다 그리는 코드와 소리가 다르다
+      for (let type = 1; type <= 15; ++type) {
+          feed(event(type, 11, 12, 0, 2));
+      }
+      now += 16; api.frame(now);
 
-    // 조각이 다 사라질 만큼 시간을 흘려보낸다
-    for (let i = 0; i < 8; ++i) { now += 200; api.frame(now); }
-} catch (e) {
-    crashed = e;
-}
+      // 최종 구역 물 + 단계별 화면
+      feed(snapshot(9, 2, true));
+      now += 16; api.frame(now);
 
-console.log();
-if (crashed) {
-    check(false, '패킷을 먹이고 여러 프레임을 그려도 안 터진다: ' + crashed.message);
-    console.log(crashed.stack);
-} else {
-    check(true, '패킷을 먹이고 여러 프레임을 그려도 안 터진다');
-}
+      for (const phase of [0, 1, 3]) {
+          now += 16;
+          feed(snapshot(9, phase, true));
+          api.frame(now);
+      }
 
-// ── 무엇을 그렸나 ────────────────────────────────────────────
-console.log();
-console.log('  캔버스가 받은 명령');
-for (const k of Object.keys(calls).sort()) {
-    console.log('    ' + k.padEnd(18) + calls[k]);
-}
-console.log();
-console.log('  오디오 노드 ' + audio.nodes + ' 개, 이은 것 ' + audio.connects
-            + ' 번, 울린 것 ' + audio.starts + ' 번');
-console.log();
+      // 조각이 다 사라질 만큼 시간을 흘려보낸다
+      for (let i = 0; i < 8; ++i) { now += 200; api.frame(now); }
+  } catch (e) {
+      crashed = e;
+  }
 
-check((calls.drawImage || 0) >= MAP_H,
-      '줄마다 따로 그려서 붙였다 (사람이 벽 사이에 낀다)');
-check((calls.gradient || 0) > 100, '그러데이션을 썼다 (물, 벽, 캐릭터, 물풍선)');
-check((calls.ellipse || 0) > 0,    '타원을 그렸다 (그림자, 발, 물결)');
-check((calls.clip || 0) > 0,       '잘라내기를 썼다 (물 구역, 위험 빗금)');
-check((calls.rotate || 0) > 0,     '돌려 그렸다 (부서진 조각, 롤러)');
-check((calls.fillText || 0) > 0,   'HUD 글자를 그렸다');
+  console.log();
+  if (crashed) {
+      check(false, '패킷을 먹이고 여러 프레임을 그려도 안 터진다: ' + crashed.message);
+      console.log(crashed.stack);
+  } else {
+      check(true, '패킷을 먹이고 여러 프레임을 그려도 안 터진다');
+  }
 
-// 소리 하나가 층 하나면 웹게임 소리가 된다.
-// 이벤트 열다섯 개에 노드가 수십 개 만들어졌다면 층으로 만들어졌다는 뜻이다
-check(audio.starts >= 20, '소리를 층으로 쌓아서 냈다 (울린 것 ' + audio.starts + ' 번)');
+  // ── 무엇을 그렸나 ────────────────────────────────────────────
+  console.log();
+  console.log('  캔버스가 받은 명령');
+  for (const k of Object.keys(calls).sort()) {
+      console.log('    ' + k.padEnd(18) + calls[k]);
+  }
+  console.log();
+  console.log('  오디오 노드 ' + audio.nodes + ' 개, 이은 것 ' + audio.connects
+              + ' 번, 울린 것 ' + audio.starts + ' 번');
+  console.log();
 
-// ── 판을 매 프레임 다시 그리고 있지는 않나 ───────────────────
-//
-// 45x39 = 1755 칸을 매 프레임 다시 그리면 그게 그대로 프레임 저하가 된다.
-// 안 보이는 종이에 미리 그려두고 붙이기만 하게 만들었는데,
-// 그게 실제로 먹고 있는지는 세어 봐야 안다
-const before = calls.fillRect;
-for (let i = 0; i < 10; ++i) { now += 16; api.frame(now); }
-const perFrame = (calls.fillRect - before) / 10;
+  check((calls.drawImage || 0) >= MAP_H,
+        '줄마다 따로 그려서 붙였다 (사람이 벽 사이에 낀다)');
+  check((calls.gradient || 0) > 100, '그러데이션을 썼다 (물, 벽, 캐릭터, 물풍선)');
+  check((calls.ellipse || 0) > 0,    '타원을 그렸다 (그림자, 발, 물결)');
+  check((calls.clip || 0) > 0,       '잘라내기를 썼다 (물 구역, 위험 빗금)');
+  check((calls.rotate || 0) > 0,     '돌려 그렸다 (부서진 조각, 롤러)');
+  check((calls.fillText || 0) > 0,   'HUD 글자를 그렸다');
 
-console.log();
-console.log('  판이 안 변할 때 프레임당 fillRect: ' + perFrame.toFixed(1) + ' 번');
-check(perFrame < 400, '판이 안 변하면 다시 안 그린다 (미리 그려둔 종이를 붙이기만 한다)');
+  // 소리 하나가 층 하나면 웹게임 소리가 된다.
+  // 이벤트 열다섯 개에 노드가 수십 개 만들어졌다면 층으로 만들어졌다는 뜻이다
+  check(audio.starts >= 20, '소리를 층으로 쌓아서 냈다 (울린 것 ' + audio.starts + ' 번)');
 
-console.log();
-console.log('===== 결과: ' + pass + ' PASS / ' + fail + ' FAIL =====');
-process.exit(fail ? 1 : 0);
+  // ── 판을 매 프레임 다시 그리고 있지는 않나 ───────────────────
+  //
+  // 45x39 = 1755 칸을 매 프레임 다시 그리면 그게 그대로 프레임 저하가 된다.
+  // 안 보이는 종이에 미리 그려두고 붙이기만 하게 만들었는데,
+  // 그게 실제로 먹고 있는지는 세어 봐야 안다
+  const before = calls.fillRect;
+  for (let i = 0; i < 10; ++i) { now += 16; api.frame(now); }
+  const perFrame = (calls.fillRect - before) / 10;
+
+  console.log();
+  console.log('  판이 안 변할 때 프레임당 fillRect: ' + perFrame.toFixed(1) + ' 번');
+  check(perFrame < 400, '판이 안 변하면 다시 안 그린다 (미리 그려둔 종이를 붙이기만 한다)');
+
+  console.log();
+  console.log('===== 결과: ' + pass + ' PASS / ' + fail + ' FAIL =====');
+  process.exit(fail ? 1 : 0);
+
+})();

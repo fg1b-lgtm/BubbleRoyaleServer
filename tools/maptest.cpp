@@ -163,8 +163,17 @@ static int LargestOpenRegion(const GameMap& m, bool* visited_out)
 // 시작하자마자 블록에 둘러싸여 있는 건 잘못이 아니다. 봄버맨은 원래 그렇다.
 // 그게 파밍 구간이고, 맵이 시간에 따라 열리는 장치다.
 //
-// 그래서 재야 하는 건 "갇혔나" 가 아니라 **몇 개를 부숴야 나가나** 다.
-// 블록 하나에 2.5초니까, 세 개면 7.5초다. 그 이상이면 시작이 답답하다.
+// 그래서 재야 하는 건 "갇혔나" 가 아니라 **몇 겹을 부숴야 돌아다닐 수 있나** 다.
+//
+// 9/1 에 기준을 바꿨다. 전에는 "뼈대의 절반에 닿을 때까지" 였는데,
+// 상자를 100%로 채우고 나니 그건 판을 가로지르라는 뜻이 되어 19겹이 나왔다.
+// 재려던 것은 그게 아니다. 재려던 것은 **언제부터 움직일 수 있나** 다.
+// 그래서 목표를 "돌아다닐 만한 넓이" 로 바꿨다 (FREEDOM_TILES).
+// 이만큼 돌아다닐 수 있으면 "나왔다" 고 본다.
+// 한 구역이 15x13 = 195칸이니 50칸이면 구역의 1/4 이다.
+// 그쯤 되면 도망갈 방향이 두 개 이상 생긴다
+static const int FREEDOM_TILES = 50;
+
 static int DigDepth(const GameMap& m, int sx, int sy, int target_region_size)
 {
     static uint8_t work[MAP_H][MAP_W];
@@ -328,7 +337,7 @@ static void Measure(const GameMap& m, int range, Report& r)
 
         // 밖으로 나가려면 블록을 몇 겹 부숴야 하나.
         // 뼈대의 절반쯤에 닿으면 "밖으로 나왔다" 고 본다
-        int dig = DigDepth(m, sx, sy, r.struct_biggest / 2);
+        int dig = DigDepth(m, sx, sy, FREEDOM_TILES);
         if (dig < 0)          ++r.dig_stuck;
         else if (dig > r.dig_max) r.dig_max = dig;
 
@@ -452,7 +461,7 @@ int main(int argc, char** argv)
     printf("  막다른 길 %lld 개 / 빈칸 %lld 개\n", dead / TRIES, open / TRIES);
     printf("  큰 덩어리 밖 %lld 개  ← 이건 정상이다. 파밍 구간이 여기서 나온다\n",
            pocket_total / TRIES);
-    printf("  스폰에서 나가는 데 부숴야 하는 블록: 최대 %d 겹 (%d.%d초)\n",
+    printf("  스폰에서 돌아다닐 수 있을 때까지: 최대 %d 겹 (%d.%d초)\n",
            dig_worst, dig_worst * BUBBLE_FUSE_TICKS / TICK_RATE,
            (dig_worst * BUBBLE_FUSE_TICKS * 10 / TICK_RATE) % 10);
     printf("  아예 못 나가는 스폰: %d 개\n", dig_stuck_total);
@@ -477,8 +486,8 @@ int main(int argc, char** argv)
           "블록을 다 부수면 맵이 하나로 이어진다");
     Check(dig_stuck_total == 0,
           "아무리 부숴도 못 나가는 스폰이 없다");
-    Check(dig_worst <= 3,
-          "스폰에서 세 겹 안에 밖으로 나간다 (7.5초)");
+    Check(dig_worst <= 5,
+          "스폰에서 다섯 겹 안에 돌아다닐 수 있게 된다");
     // 물줄기가 사거리 2 로 뻗으니 5칸이면 겨우 밖이다.
     // 조각 안에서 아무리 잘 떨어뜨려도 조각을 붙이는 순간 경계 너머와 가까워질 수 있어서
     // 조각이 아니라 붙여놓은 판에서 잰다

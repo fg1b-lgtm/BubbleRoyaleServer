@@ -56,54 +56,103 @@ const Art = (() => {
   // 살짝 지나쳤다가 돌아온다. 튀어나오는 것에는 전부 이걸 쓴다
   const overshoot = (t) => { const s = 1.70158; const u = t - 1; return u * u * ((s + 1) * u + s) + 1; };
 
-  // ── 판의 옷 ──────────────────────────────────────────────────
+  // ── 장소 열 곳 ───────────────────────────────────────────────
   //
-  // 같은 규칙의 같은 판인데 다른 데처럼 보이게 하는 것.
-  // 씨앗으로 고른다. 씨앗이 같으면 옷도 같아서 화면까지 재현된다
-  const THEMES = [
-    {
-      name: '모래섬',
-      sky:    '#0a1420',
-      floor:  '#d8c194', floorAlt: '#cfb689', joint: '#b59b6e', fleck: '#c1a675',
-      wallTop:'#8fc7de', wallSide:'#3f7590', wallEdge:'#2a5468',
-      crate:  '#c98f4e', crateTop:'#e5ad68', crateSide:'#8b5c2c',
-      water:  '#1c74b8', foam: '#cdeeff',
-      grade:  '#ffb56b', gradeAmt: 0.07,
-    },
-    {
-      name: '풀숲',
-      sky:    '#0b1710',
-      floor:  '#8fc267', floorAlt: '#85b85e', joint: '#6d9c4c', fleck: '#7cae57',
-      wallTop:'#c2c8d0', wallSide:'#5d656f', wallEdge:'#3d444c',
-      crate:  '#b5793f', crateTop:'#d29154', crateSide:'#774922',
-      water:  '#1a6ea8', foam: '#d6f2ff',
-      grade:  '#9bffb0', gradeAmt: 0.06,
-    },
-    {
-      name: '얼음골',
-      sky:    '#08131f',
-      floor:  '#cfe4f2', floorAlt: '#c3dcee', joint: '#9dc2db', fleck: '#b0d2e8',
-      wallTop:'#bfe7fb', wallSide:'#5f97b8', wallEdge:'#3f7093',
-      crate:  '#9fd2ea', crateTop:'#cdedfd', crateSide:'#5f9ab8',
-      water:  '#1d6fb4', foam: '#eaf9ff',
-      grade:  '#8fd8ff', gradeAmt: 0.09,
-    },
-    {
-      name: '공장',
-      sky:    '#0d1014',
-      floor:  '#b3b8bf', floorAlt: '#a8adb5', joint: '#878d95', fleck: '#9aa0a8',
-      wallTop:'#98a1ab', wallSide:'#454c55', wallEdge:'#2c3138',
-      crate:  '#cf8342', crateTop:'#e79c57', crateSide:'#8b551f',
-      water:  '#1b6aa6', foam: '#cfeaff',
-      grade:  '#ffd28a', gradeAmt: 0.05,
-    },
+  // 크아 맵이 기억에 남는 건 빌리지, 캠프, 해변처럼 **거기가 어디인지 알아서**다.
+  // 우리 판은 조각 아홉 개를 붙인 것이니, 조각마다 다른 장소로 그리면
+  // 한 판 안에서 아홉 군데를 지나가게 된다.
+  //
+  // 서버가 어떤 조각을 어디에 깔았는지 WELCOME 으로 알려준다 (sector_kind).
+  // 번호는 SectorTemplates.h 의 순서와 같다.
+  //
+  // 색은 셋으로 끝난다. 바닥 / 벽 윗면 / 벽 앞면.
+  // 상자는 그 장소에 있을 법한 것으로 (나무 궤짝, 얼음덩이, 화물, 항아리).
+  const PLACES = [
+    { name: '광장',   // 0 CROSSROADS — 돌바닥과 붉은 기와
+      floor: '#c9bda8', floorAlt: '#c0b39e', joint: '#a2957f', fleck: '#b3a58e',
+      wallTop: '#c96f5a', wallSide: '#7d3a2e', wallEdge: '#4f231b',
+      crate: '#c08b52', crateTop: '#dda76a', crateSide: '#7e5628' },
+
+    { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
+      floor: '#e0dcd2', floorAlt: '#d7d2c7', joint: '#b8b2a4', fleck: '#c8c2b4',
+      wallTop: '#f2eee4', wallSide: '#9a9280', wallEdge: '#6b6455',
+      crate: '#cbab5e', crateTop: '#e6c87c', crateSide: '#846a2f' },
+
+    { name: '공장',   // 2 COMB — 강철과 주황 화물
+      floor: '#9fa5ac', floorAlt: '#959ba2', joint: '#767c84', fleck: '#868c94',
+      wallTop: '#8b939d', wallSide: '#3f464f', wallEdge: '#252a31',
+      crate: '#cf7a35', crateTop: '#ea9450', crateSide: '#82471a' },
+
+    { name: '마을',   // 3 LATTICE — 잔디와 나무집
+      floor: '#8fc267', floorAlt: '#84b85d', joint: '#6a9c48', fleck: '#79ad52',
+      wallTop: '#d9c9a4', wallSide: '#8a6a45', wallEdge: '#57402a',
+      crate: '#b5793f', crateTop: '#d09252', crateSide: '#734a26' },
+
+    { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
+      floor: '#b8a184', floorAlt: '#ae977b', joint: '#907a5f', fleck: '#a08a6e',
+      wallTop: '#e8ddc4', wallSide: '#8e7f63', wallEdge: '#5b5040',
+      crate: '#9c7b52', crateTop: '#b8946a', crateSide: '#634d31' },
+
+    { name: '사막',   // 5 DIAGONAL — 모래와 사암
+      floor: '#e3cf9c', floorAlt: '#dac591', joint: '#bda772', fleck: '#cdb782',
+      wallTop: '#e0b878', wallSide: '#a1743c', wallEdge: '#6b4a22',
+      crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f' },
+
+    { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
+      floor: '#c2a893', floorAlt: '#b89e89', joint: '#9a8171', fleck: '#ab9280',
+      wallTop: '#b8695c', wallSide: '#6f3630', wallEdge: '#44201c',
+      crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862' },
+
+    { name: '해변',   // 7 WELL — 흰 모래와 산호
+      floor: '#efdfbc', floorAlt: '#e7d6b0', joint: '#c9b78f', fleck: '#d8c69f',
+      wallTop: '#8fd4e0', wallSide: '#3d7f96', wallEdge: '#245667',
+      crate: '#e08b7a', crateTop: '#f2a795', crateSide: '#94503f' },
+
+    { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
+      floor: '#dfeaf3', floorAlt: '#d4e2ee', joint: '#adc4d8', fleck: '#c0d4e4',
+      wallTop: '#b8e5fa', wallSide: '#5589a8', wallEdge: '#33607a',
+      crate: '#9fd2ea', crateTop: '#c8ecfc', crateSide: '#5c93b2' },
+
+    { name: '부두',   // 9 DOCKS — 나무 판자와 화물
+      floor: '#b08e63', floorAlt: '#a6845a', joint: '#8a6a45', fleck: '#997a52',
+      wallTop: '#8d9aa4', wallSide: '#414c56', wallEdge: '#262e36',
+      crate: '#7f8f5e', crateTop: '#9aab76', crateSide: '#4e5a36' },
+  ];
+
+  // ── 판 전체의 공기 ───────────────────────────────────────────
+  //
+  // 장소는 구역마다 다르지만 **물과 하늘과 색보정은 판 하나에 하나**다.
+  // 그래야 아홉 군데가 서로 다른 데면서도 같은 판 안에 있는 것으로 보인다.
+  // 이건 씨앗으로 고른다
+  const WORLDS = [
+    { name: '한낮', sky: '#0d1622', water: '#1c74b8', foam: '#cdeeff',
+      grade: '#ffd9a0', gradeAmt: 0.05 },
+    { name: '저녁', sky: '#1a1220', water: '#2a5fa8', foam: '#e3d8ff',
+      grade: '#ff9e6b', gradeAmt: 0.10 },
+    { name: '흐림', sky: '#101418', water: '#2b6f9c', foam: '#dfeef7',
+      grade: '#9fc7e8', gradeAmt: 0.07 },
+    { name: '새벽', sky: '#0b1020', water: '#1d5ba8', foam: '#d6ecff',
+      grade: '#8fb4ff', gradeAmt: 0.09 },
   ];
 
   // ── 보는 눈 ──────────────────────────────────────────────────
   //
   // TS   타일 한 칸이 몇 픽셀인가
   // WH   벽이 얼마나 솟아 있는가. 이 값이 판의 입체감을 통째로 정한다
-  const V = { TS: 24, WH: 11, CH: 7, TOP: 14, BOT: 10, th: THEMES[0] };
+  // world 는 판 하나에 하나, place[] 는 아홉 자리마다 하나.
+  // sectorW/H 는 어느 칸이 어느 자리에 속하는지 계산하는 데 쓴다
+  const V = {
+    TS: 24, WH: 11, CH: 7, TOP: 14, BOT: 10,
+    world: WORLDS[0],
+    place: new Array(9).fill(PLACES[0]),
+    sw: 15, sh: 13,
+  };
+
+  // 이 칸이 어느 장소인가
+  function placeAt(x, y) {
+    const s = Math.min(2, (y / V.sh) | 0) * 3 + Math.min(2, (x / V.sw) | 0);
+    return V.place[s];
+  }
 
   function setScale(ts) {
     V.TS  = ts;
@@ -113,7 +162,24 @@ const Art = (() => {
     V.BOT = Math.round(ts * 0.45);   // 아래로 삐져나오는 여유 (그림자)
   }
 
-  function setTheme(i) { V.th = THEMES[i % THEMES.length]; }
+  // 서버가 준 조각 번호 아홉 개로 장소를 정하고, 씨앗으로 공기를 정한다
+  function setPlaces(kinds, seed, sectorW, sectorH) {
+    V.sw = sectorW;
+    V.sh = sectorH;
+    for (let i = 0; i < 9; ++i) {
+      V.place[i] = PLACES[(kinds[i] || 0) % PLACES.length];
+    }
+    V.world = WORLDS[seed % WORLDS.length];
+  }
+
+  // 지금 판에 어떤 장소들이 깔렸나. HUD 에 이름을 띄우는 데 쓴다
+  function placeNames() {
+    const seen = [];
+    for (let i = 0; i < 9; ++i) {
+      if (seen.indexOf(V.place[i].name) < 0) seen.push(V.place[i].name);
+    }
+    return seen;
+  }
 
   // 칸마다 늘 같은 무늬가 나오게 하는 난수.
   // Math.random 을 쓰면 매 프레임 무늬가 바뀌어서 바닥이 지글거린다
@@ -143,12 +209,14 @@ const Art = (() => {
   // 벽이 바닥에 드리우는 그림자를 여기 같이 구워 넣는다.
   // 그림자가 있어야 벽이 바닥 위에 서 있는 것처럼 보인다. 이게 없으면 무늬다
   function buildFloor(g, tiles, W, H) {
-    const T = V.TS, th = V.th;
-    const base = rgb(th.floor), alt = rgb(th.floorAlt);
-    const joint = rgb(th.joint), fleck = rgb(th.fleck);
+    const T = V.TS;
 
     for (let y = 0; y < H; ++y) {
       for (let x = 0; x < W; ++x) {
+        // 칸마다 자기 구역의 장소 색을 쓴다. 경계에서 색이 바뀌는 게 곧 "다른 데" 다
+        const th = placeAt(x, y);
+        const base = rgb(th.floor), alt = rgb(th.floorAlt);
+        const joint = rgb(th.joint), fleck = rgb(th.fleck);
         const h = hash2(x, y);
 
         // 같은 색 두 개를 번갈아 깔되, 칸마다 아주 조금씩 밝기를 흔든다.
@@ -192,9 +260,7 @@ const Art = (() => {
   //
   // g 는 이 줄만 담는 종이다. 위로 V.TOP, 아래로 V.BOT 만큼 여유가 있다
   function buildRow(g, tiles, W, y) {
-    const T = V.TS, th = V.th;
-    const top = rgb(th.wallTop), side = rgb(th.wallSide), edge = rgb(th.wallEdge);
-    const ct = rgb(th.crateTop), cs = rgb(th.crateSide), cc = rgb(th.crate);
+    const T = V.TS;
 
     const isWall = (x, yy) => (yy < 0 || yy >= tiles.length || x < 0 || x >= W)
                               ? true : tiles[yy][x] === 1;
@@ -205,6 +271,11 @@ const Art = (() => {
     for (let x = 0; x < W; ++x) {
       const t = tiles[y][x];
       const px = x * T;
+      if (t !== 1 && t !== 2) continue;
+
+      const th = placeAt(x, y);
+      const top = rgb(th.wallTop), side = rgb(th.wallSide), edge = rgb(th.wallEdge);
+      const ct = rgb(th.crateTop), cs = rgb(th.crateSide), cc = rgb(th.crate);
 
       if (t === 1) {
         // 앞면. 아래로 V.WH 만큼 두께가 보인다
@@ -288,8 +359,7 @@ const Art = (() => {
   //   ② 흐름   빛무늬가 천천히 흐른다
   //   ③ 경계   물가에 하얀 포말이 일렁인다
   function water(g, x0, y0, w, h, t, clipRect) {
-    const th = V.th;
-    const c = rgb(th.water), f = rgb(th.foam);
+    const c = rgb(V.world.water), f = rgb(V.world.foam);
 
     g.save();
     if (clipRect) {
@@ -328,7 +398,7 @@ const Art = (() => {
   // 경계가 딱 떨어지면 색을 칠한 것이고, 일렁이면 물이 들어온 것이다
   function foamEdge(g, segs, t) {
     if (!segs.length) return;
-    const f = rgb(V.th.foam);
+    const f = rgb(V.world.foam);
 
     g.lineCap = 'round';
     for (let pass = 0; pass < 2; ++pass) {
@@ -674,7 +744,7 @@ const Art = (() => {
   }
 
   return {
-    THEMES, V, setScale, setTheme, hash2, rr,
+    PLACES, WORLDS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
     drawChar, drawBubble, drawItem,
     rgb, css, mix, lighter, darker,

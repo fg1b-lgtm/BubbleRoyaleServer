@@ -164,7 +164,7 @@ function frame(ts) {
 
 function drawWorld(now, dt) {
   const T = Art.V.TS;
-  const th = Art.V.th;
+  const th = Art.V.world;
 
   ctx.fillStyle = th.sky;
   ctx.fillRect(0, 0, W, H);
@@ -687,14 +687,15 @@ function scrim(a) {
 
 // ── 서버가 알려주는 것들 ─────────────────────────────────────
 Hooks.welcome = function () {
-  Art.setTheme(G.C.seed);
+  // 아홉 자리에 각각 다른 장소를 깐다. 공기(하늘·물·색보정)는 판 하나에 하나
+  Art.setPlaces(G.C.sectorKind, G.C.seed, G.C.sectorW, G.C.sectorH);
   resize();
   FX.reset();
   killFeed = [];
   banner = null;
   lastBeep = -1;
   const el = document.getElementById('theme');
-  if (el) el.textContent = Art.V.th.name;
+  if (el) el.textContent = Art.placeNames().join(' · ');
 };
 
 Hooks.mapRow = function (y) {
@@ -751,12 +752,17 @@ Hooks.event = function (type, x, y, who, val) {
 
     case EVT.BUBBLE:
       FX.pickup(cx, cy, T, now, '#8fd8ff');
+      Sound.place(pan);
       break;
 
     case EVT.BLOCK:
       G.tiles[y][x] = TILE.EMPTY;
       dirtyRows.add(y);
-      FX.breakCrate(cx, cy, T, now, Art.V.th.crate, Art.V.th.crateSide);
+      // 부서진 조각은 그 구역 상자 색으로 튄다
+      {
+        const pl = Art.placeAt(x, y);
+        FX.breakCrate(cx, cy, T, now, pl.crate, pl.crateSide);
+      }
       Sound.crack(pan);
       break;
 

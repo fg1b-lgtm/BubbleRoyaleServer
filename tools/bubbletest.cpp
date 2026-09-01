@@ -124,8 +124,13 @@ static void Test2_Cross()
     g_game.map.tile[10][13] = TILE_WALL;    // 오른쪽 세 칸 앞에 고정 벽
     g_game.map.tile[7][10]  = TILE_BLOCK;   // 위쪽 세 칸 앞에 블록
 
+    // 사거리를 숫자로 박아두지 않는다.
+    // BLAST_BASE_RANGE 를 2 에서 1 로 낮췄을 때 이 시험이 통째로 깨졌다.
+    // 시험이 상수를 다시 적어두면, 상수를 고칠 때마다 시험이 거짓말을 한다
+    const int RANGE = BLAST_BASE_RANGE + 2;
+
     int me = Join(10, 10);
-    g_game.players[me].power_lv = 2;        // 물줄기 2+2 = 4칸
+    g_game.players[me].power_lv = 2;
     PlaceBubble(me);
 
     for (int t = 0; t < BUBBLE_FUSE_TICKS; ++t) {
@@ -146,7 +151,9 @@ static void Test2_Cross()
     Check(g_game.map.tile[7][10] != TILE_BLOCK, "블록이 부서졌다");
     Check(g_game.blast[6][10] == 0, "블록에서 멈춘다");
 
-    Check(g_game.blast[10][6] > 0 && g_game.blast[10][5] == 0, "왼쪽은 사거리 4 만큼만 간다");
+    printf("  왼쪽  : 사거리 %d 이므로 %d 까지만\n", RANGE, 10 - RANGE);
+    Check(g_game.blast[10][10 - RANGE] > 0 && g_game.blast[10][10 - RANGE - 1] == 0,
+          "왼쪽은 사거리만큼만 간다");
 }
 
 // ── 시험 3 : 연쇄가 한 틱에 다 터지지 않는가 ─────────────────
@@ -156,8 +163,12 @@ static void Test3_ChainDelay()
 
     // ① 늦게 놓은 것이 앞의 폭발에 걸려 터지는 경우
     OpenBoard();
+    // 두 번째 물풍선을 **사거리가 정확히 닿는 자리**에 놓는다.
+    // 12 라고 박아뒀더니 사거리를 1 로 낮추는 순간 안 닿아서 연쇄가 아예 안 났다
+    const int REACH = BLAST_BASE_RANGE;
+
     int a = Join(10, 10);
-    int b = Join(12, 10);
+    int b = Join(10 + REACH, 10);
 
     PlaceBubble(a);                       // (10,10)
     for (int t = 0; t < 20; ++t) Tick();  // 20틱 뒤에
@@ -188,7 +199,7 @@ static void Test3_ChainDelay()
     //    그러면 큰 폭발 하나로 보여서 연쇄인 줄 모른다. 이쪽도 늦춰야 한다
     OpenBoard();
     int c = Join(10, 10);
-    int d = Join(12, 10);
+    int d = Join(10 + REACH, 10);
 
     PlaceBubble(c);
     PlaceBubble(d);
@@ -212,13 +223,13 @@ static void Test3_ChainDelay()
     PlaceBubble(e);
     for (int t = 0; t < 20; ++t) Tick();
 
-    g_game.players[e].judge_tx = 12;
-    g_game.players[e].px = TileCenter(12);
+    g_game.players[e].judge_tx = 10 + REACH;
+    g_game.players[e].px = TileCenter(10 + REACH);
     PlaceBubble(e);
     for (int t = 0; t < 20; ++t) Tick();
 
-    g_game.players[e].judge_tx = 14;
-    g_game.players[e].px = TileCenter(14);
+    g_game.players[e].judge_tx = 10 + REACH * 2;
+    g_game.players[e].px = TileCenter(10 + REACH * 2);
     PlaceBubble(e);
 
     int deepest = 0;

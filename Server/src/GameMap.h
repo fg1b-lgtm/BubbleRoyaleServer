@@ -135,18 +135,31 @@ struct GameMap
         //    거기서 마주치면 피할 데가 없다. 그건 실력이 아니라 자리 운이다.
         SealDeadEnds();
 
-        // 5) 조각과 조각이 맞닿는 자리를 확인한다.
+        // 5) 스폰 주변을 비운다.
+        //
+        //    3x3 이어야 한다. 가운데에 물풍선을 놓으면 사거리 1 물줄기가 십자로 덮고
+        //    네 귀퉁이가 남는다. 그래서 첫 물풍선을 놓고 대각선으로 피할 수 있다.
+        //    이게 없으면 시작하자마자 상자에 파묻힌 채로 아무것도 못 한다
+        for (int i = 0; i < spawn_count; ++i) {
+            ClearAround(spawn_x[i], spawn_y[i], SPAWN_CLEAR_RADIUS);
+        }
+
+        // 6) 조각과 조각이 맞닿는 자리를 확인한다.
         //    조각마다 관문을 뚫어놨으니 보통은 할 일이 없다. 안전장치다
         OpenSeams();
 
-        // 6) 스폰끼리 주변 블록 수를 비슷하게 맞춘다.
-        //    블록은 곧 아이템이라, 여기가 어긋나면 1분 뒤 아이템 차이가 된다
-        BalanceSpawnBlocks(rnd);
-
-        // 7) 물풍선을 놓으면 무조건 죽는 칸을 없앤다.
-        //    '?' 자리에 블록을 확률로 깔면 자잘한 주머니가 생기는데,
-        //    그런 칸에서는 실력으로 살 방법이 없다. 그건 패배가 아니라 벌칙이다
-        OpenDeathTraps(BLAST_BASE_RANGE);
+        // 7) 공정성 맞추기와 죽는 칸 없애기를 **번갈아 두 번** 돈다.
+        //
+        //    둘 다 상자를 지우는 일이라 서로를 망가뜨린다.
+        //      공정성을 먼저 하면 -> 죽는 칸 없애기가 상자를 더 지워서 다시 어긋난다
+        //      죽는 칸을 먼저 하면 -> 공정성이 지운 자리가 새 죽는 칸이 된다
+        //
+        //    둘 다 지우기만 하고 되돌리지 않으므로, 번갈아 돌리면 변화량이 빠르게 준다.
+        //    두 바퀴면 충분하다. 세 바퀴째에는 바뀌는 게 없다
+        for (int pass = 0; pass < 2; ++pass) {
+            BalanceSpawnBlocks(rnd);
+            OpenDeathTraps(BLAST_BASE_RANGE);
+        }
     }
 
     const char* SectorName(int slot) const
@@ -245,7 +258,8 @@ private:
                 int x = ox + lx;
                 int y = oy + ly;
 
-                // 길은 여기서 한 번만 정해지고 그 뒤로 아무도 못 바꾼다
+                // 조각이 길이라고 그린 자리. 지금은 여기도 상자로 덮는다.
+                // 파고 나면 드러난다. 어디를 파야 빨리 나가는지가 판단거리가 된다
                 street[y][x] = (c == '.' || c == 's');
 
                 if (c == '#') {
@@ -259,11 +273,9 @@ private:
                         ++spawn_count;
                     }
                 }
-                else if (c == '.') {
-                    tile[y][x] = TILE_EMPTY;
-                }
                 else {
-                    // '?' 자리. 여기가 아이템 상자이자 시계다
+                    // 고정 벽과 스폰이 아니면 전부 상자 후보다.
+                    // 상자가 곧 아이템이고 곧 시계다. 파낸 만큼만 판이 열린다
                     tile[y][x] = (rnd.Next(100) < block_percent) ? TILE_BLOCK : TILE_EMPTY;
                 }
             }
@@ -365,11 +377,20 @@ private:
     // 많은 데서는 덜어내고 적은 데는 채운다
     void BalanceSpawnBlocks(MapRandom& rnd)
     {
-        int sum = 0;
+        // 평균이 아니라 **제일 적은 쪽**에 맞춘다.
+        //
+        // 예전에는 평균을 목표로 잡고 많은 데서 덜고 적은 데는 채웠다.
+        // 상자를 100%로 채우고 나니 채울 빈칸이 없어서 위로는 못 올린다.
+        // 그러면 적은 쪽은 그대로고 차이가 안 줄어든다.
+        //
+        // 아래로만 맞추면 언제나 된다. 덜어낼 상자는 늘 있기 때문이다.
+        // 스폰 주변 상자가 적어지는 대신 **스물일곱 자리가 다 같아진다.**
+        // 아이템은 공정성이 총량보다 중요하다. 억울해서 지는 게 제일 나쁘다
+        int target = 9999;
         for (int i = 0; i < spawn_count; ++i) {
-            sum += BlocksNear(spawn_x[i], spawn_y[i]);
+            int n = BlocksNear(spawn_x[i], spawn_y[i]);
+            if (n < target) target = n;
         }
-        int target = sum / spawn_count;
 
         for (int i = 0; i < spawn_count; ++i) {
             int cx = spawn_x[i], cy = spawn_y[i];
@@ -515,6 +536,18 @@ private:
 
             if (!found) {
                 return;
+            }
+        }
+    }
+
+    // 스폰 주변을 비운다. 고정 벽은 안 건드린다.
+    // 벽을 지우면 조각의 뼈대가 무너지고, 뼈대는 판이 끝날 때까지 남는 것이다
+    void ClearAround(int cx, int cy, int r)
+    {
+        for (int y = cy - r; y <= cy + r; ++y) {
+            for (int x = cx - r; x <= cx + r; ++x) {
+                if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
+                if (tile[y][x] == TILE_BLOCK) tile[y][x] = TILE_EMPTY;
             }
         }
     }

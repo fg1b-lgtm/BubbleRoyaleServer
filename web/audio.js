@@ -1,101 +1,129 @@
-// web/audio.js — 소리를 만든다
+// web/audio.js — 소리
 //
-// 파일을 하나도 안 쓴다. 브라우저가 그때그때 만들어 낸다.
-// 에셋이 없으니 출처와 라이선스를 적을 것이 없고 (SPEC 13절), 받는 사람이
-// 따로 내려받을 것도 없다.
+// ── 8/31 에는 전부 만들어 냈고, 9/1 에 소리만 녹음물로 바꿨다 ─────
 //
-// 게임 소리가 싸구려로 들리는 이유는 대개 셋이다.
-//   ① 소리 하나가 층이 하나다. "삐" 하고 만다
-//   ② 같은 소리가 똑같이 반복된다. 열 번째부터 기계로 들린다
-//   ③ 공간이 없다. 코앞에서 나든 화면 끝에서 나든 똑같이 들린다
+// 만들어 낸 소리는 파일이 없다는 장점이 있었는데, 돌려보니 그게 다였다.
+// 사인파를 아무리 층으로 쌓아도 **물이 터지는 소리로는 안 들린다.**
+// 사람이 실제로 뭔가를 때려서 녹음한 것과는 애초에 다른 물건이다.
 //
-// 그래서 여기서는
-//   ① 소리 하나를 **층으로** 만든다. 때리는 소리 + 몸통 + 꼬리
-//   ② 낼 때마다 **음을 조금씩 흔든다**. 같은 소리가 두 번 안 난다
-//   ③ **화면에서 난 자리대로 좌우로 벌린다.** 멀면 작아진다
-//   ④ 울림(리버브)을 지나가게 한다. 울림도 파일이 아니라 만들어 쓴다
-//   ⑤ 큰 소리가 나면 음악이 잠깐 물러난다 (덕킹)
+// 그래서 소리는 녹음물로 간다. 다만 아무거나 가져오면 안 된다.
+//   - 이 레포는 Public 이다. 라이선스가 확실해야 한다
+//   - 받는 사람이 따로 뭘 안 받아도 돌아가야 한다
 //
-// 음악은 미리 녹음한 것이 아니라 **판 상황에 따라 층이 붙었다 빠진다.**
-// 스물넷이 살아 있을 때와 둘 남았을 때가 다르게 들려야 한다.
+// Kenney (kenney.nl) 의 **CC0** 팩을 쓴다. 한 사람이 만든 것이라 음색이 안 튄다.
+// CC0 는 저작권을 통째로 포기한 것이라 상업 이용까지 자유고 표기 의무도 없다.
+// 그래도 README 13절에 출처를 적어뒀다 (CLAUDE.md 규칙).
+//
+// **음악은 계속 만들어 낸다.** 그건 파일이 없어서가 아니라,
+// 남은 사람 수에 따라 층이 붙었다 빠져야 해서 녹음물로는 안 되는 일이다.
+//
+// ── 녹음물을 쓴다고 저절로 좋아지지 않는다 ───────────────────
+//
+// 파일 하나를 그대로 트는 것이 제일 흔한 실수다. 그러면
+//   ① 열 번째부터 기계로 들린다      → 낼 때마다 **음높이를 흔든다**
+//   ② 코앞이나 화면 끝이나 똑같다    → 난 자리대로 **좌우로 벌리고** 멀면 줄인다
+//   ③ 얄팍하다                       → 한 사건에 **파일 두세 개를 겹친다**
+//   ④ 겹치면 찢어진다                → 압축기를 마지막에 하나 둔다
+//   ⑤ 음악과 싸운다                  → 큰 소리가 나면 음악이 물러난다 (덕킹)
 const Sound = (() => {
 
-  let ac = null;
-  let ready = false, muted = false;
+  // ── 어떤 파일을 언제 쓰나 ────────────────────────────────────
+  //
+  // 이 표가 소리의 전부다. 들어보고 마음에 안 들면 **여기 파일 이름만 바꾸면 된다.**
+  // 코드를 안 건드리게 하려고 한곳에 모아뒀다.
+  // 배열이면 낼 때마다 그중 하나를 고른다. 그것만으로도 반복이 확 줄어든다.
+  const CLIPS = {
+    // 물풍선이 터진다. 젖은 몸통 + 터지는 순간, 두 장을 겹친다
+    boomBody:  ['impactSoft_heavy_000', 'impactSoft_heavy_001', 'impactSoft_heavy_002',
+                'impactSoft_heavy_003', 'impactSoft_heavy_004'],
+    boomCrack: ['impactGlass_light_000', 'impactGlass_light_001',
+                'impactGlass_light_002', 'impactGlass_light_003'],
 
-  // 믹서. 게임 소리와 음악이 각자 볼륨을 갖고, 마지막에 하나로 모인다
+    crate:     ['impactWood_medium_000', 'impactWood_medium_001', 'impactWood_medium_002',
+                'impactWood_medium_003', 'impactWood_medium_004'],
+    step:      ['footstep_concrete_000', 'footstep_concrete_001', 'footstep_concrete_002',
+                'footstep_concrete_003', 'footstep_concrete_004'],
+
+    graze:     ['pluck_001', 'pluck_002'],
+    chain:     ['pepSound1', 'pepSound3'],
+
+    trap:      ['impactSoft_medium_000', 'impactSoft_medium_001'],
+    trapDown:  ['phaserDown1'],
+    escape:    ['phaserUp3'],
+
+    // 마무리. 유리 깨지는 소리 + 주먹. 만화가 물풍선 터뜨릴 때 쓰는 조합이다
+    popCrack:  ['glass_001', 'glass_004'],
+    popPunch:  ['impactPunch_heavy_000', 'impactPunch_heavy_001'],
+
+    death:     ['lowDown'],
+    item:      ['powerUp1', 'powerUp5'],
+    ultra:     ['jingles_PIZZI00'],
+    place:     ['drop_001'],
+    drop:      ['drop_003'],
+    tick:      ['tick_001'],
+    warn:      ['error_004'],
+    floodLow:  ['lowThreeTone'],
+    drown:     ['lowRandom'],
+    start:     ['zapThreeToneUp'],
+    win:       ['jingles_NES02'],
+    lose:      ['jingles_NES13'],
+  };
+
+  const DIR = 'sfx/';
+
+  let ac = null;
+  let ready = false, muted = false, loaded = 0, total = 0;
+
+  // 믹서. 게임 소리와 음악이 각자 볼륨을 갖고 마지막에 하나로 모인다
   let master, comp, sfxBus, musicBus, verb, verbSend;
 
-  let noiseBuf = null;
-  const lastAt = {};        // 소리 종류별 마지막 시각. 같은 게 몰아치는 걸 막는다
+  const buffers = {};       // 이름 -> AudioBuffer
+  const lastAt = {};        // 종류별 마지막 시각. 같은 게 몰아치는 걸 막는다
 
   const rnd = (a, b) => a + Math.random() * (b - a);
-  const now = () => ac.currentTime;
+  const pick = (arr) => arr[(Math.random() * arr.length) | 0];
 
   // ── 울림을 만든다 ────────────────────────────────────────────
   //
   // 리버브는 보통 실제 공간에서 녹음한 파일(임펄스 응답)을 쓴다.
-  // 그런데 우리는 파일을 안 쓰기로 했다.
-  //
-  // 잡음을 한 덩어리 만들고 뒤로 갈수록 작아지게 깎으면 그게 곧 방이 된다.
-  // 좁은 방은 짧고 빨리 죽고, 넓은 홀은 길고 천천히 죽는다. 그 차이가 전부다.
+  // 그건 굳이 안 받아도 된다. 잡음 한 덩어리를 뒤로 갈수록 깎으면 그게 곧 방이다.
+  // 좁은 방은 짧고 빨리 죽고 넓은 홀은 길고 천천히 죽는다. 그 차이가 전부다.
   function makeRoom(seconds, decay) {
     const n = Math.floor(ac.sampleRate * seconds);
     const buf = ac.createBuffer(2, n, ac.sampleRate);
-
     for (let ch = 0; ch < 2; ++ch) {
       const d = buf.getChannelData(ch);
       for (let i = 0; i < n; ++i) {
-        // 앞쪽은 촘촘하고 뒤로 갈수록 성기게. 실제 방의 반사가 그렇다
         d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay);
       }
     }
     return buf;
   }
 
-  function makeNoise() {
-    const n = ac.sampleRate * 2;
-    const buf = ac.createBuffer(1, n, ac.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < n; ++i) d[i] = Math.random() * 2 - 1;
-    return buf;
-  }
-
-  function init() {
-    if (ac) {
-      if (ac.state === 'suspended') ac.resume();
-      return ready;
-    }
+  function build() {
+    if (ac) return true;
     try {
       ac = new (window.AudioContext || window.webkitAudioContext)();
     } catch (e) {
       return false;
     }
 
-    // 마지막에 압축기를 하나 둔다.
-    // 폭발이 여러 개 겹치면 소리가 찢어지는데, 이게 큰 것만 눌러준다.
+    // 마지막에 압축기를 하나. 폭발이 여러 개 겹치면 소리가 찢어지는데 큰 것만 눌러준다.
     // 이게 없으면 조용할 땐 안 들리고 시끄러울 땐 찢어진다
     comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -16;
-    comp.knee.value      = 22;
-    comp.ratio.value     = 9;
+    comp.threshold.value = -14;
+    comp.knee.value      = 20;
+    comp.ratio.value     = 8;
     comp.attack.value    = 0.004;
-    comp.release.value   = 0.18;
+    comp.release.value   = 0.16;
 
-    master = ac.createGain();
-    master.gain.value = 0.9;
-
-    sfxBus = ac.createGain();
-    sfxBus.gain.value = 1.0;
-
-    musicBus = ac.createGain();
-    musicBus.gain.value = 0.0;   // 음악은 판이 시작할 때 들어온다
+    master   = ac.createGain(); master.gain.value = 0.95;
+    sfxBus   = ac.createGain(); sfxBus.gain.value = 1.0;
+    musicBus = ac.createGain(); musicBus.gain.value = 0.0;
 
     verb = ac.createConvolver();
-    verb.buffer = makeRoom(1.6, 2.6);
-
-    verbSend = ac.createGain();
-    verbSend.gain.value = 0.30;
+    verb.buffer = makeRoom(1.5, 2.8);
+    verbSend = ac.createGain(); verbSend.gain.value = 0.32;
 
     sfxBus.connect(master);
     musicBus.connect(master);
@@ -104,98 +132,77 @@ const Sound = (() => {
     master.connect(comp);
     comp.connect(ac.destination);
 
-    noiseBuf = makeNoise();
     ready = true;
+    preload();
     startClock();
     return true;
   }
 
-  // 화면에서 난 자리를 좌우로 옮긴다.
-  //   pan  -1 왼쪽 .. 0 가운데 .. 1 오른쪽
+  // 파일을 미리 받아 풀어둔다.
+  //
+  // 소리가 필요한 순간에 받으면 그때 끊긴다. 처음에 한 번에 받아서 풀어둔다.
+  // 아직 안 온 소리는 그냥 안 난다. 소리 하나 때문에 게임이 멈추면 안 된다
+  function preload() {
+    if (typeof fetch !== 'function') return;
+
+    const names = new Set();
+    for (const k in CLIPS) CLIPS[k].forEach(n => names.add(n));
+    total = names.size;
+
+    for (const n of names) {
+      fetch(DIR + n + '.ogg')
+        .then(r => r.arrayBuffer())
+        .then(b => ac.decodeAudioData(b))
+        .then(buf => { buffers[n] = buf; ++loaded; })
+        .catch(() => { ++loaded; });   // 하나 없다고 나머지를 막지 않는다
+    }
+  }
+
   function panner(pan) {
     if (ac.createStereoPanner) {
       const p = ac.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan || 0));
       return p;
     }
-    return ac.createGain();   // 오래된 브라우저는 그냥 가운데
+    return ac.createGain();
   }
 
-  // ── 소리 한 층 ───────────────────────────────────────────────
+  // ── 녹음물 한 장을 낸다 ──────────────────────────────────────
   //
-  // 음 하나가 나고 사라지기까지를 네 토막으로 나눈다.
-  //   붙는 시간(attack)  커지는 데 걸리는 시간. 짧으면 때리는 소리
-  //   꺼지는 시간(decay) 그 뒤로 사그라드는 시간
-  // 이 둘의 비율이 "딱" 인지 "웅" 인지를 정한다. 음정보다 이쪽이 성격을 만든다
-  function tone(o) {
+  //   rate  음높이. 1 이 원래 소리. 낼 때마다 조금씩 흔들어야 기계로 안 들린다
+  //   send  울림을 얼마나 태울 것인가
+  //   cut   저역/고역을 깎을 것인가. 같은 파일도 이걸로 성격이 달라진다
+  function play(key, o) {
     if (!ready || muted) return;
-    const t = now();
+    o = o || {};
 
-    const osc = ac.createOscillator();
-    osc.type = o.wave || 'sine';
-    osc.frequency.setValueAtTime(o.f0, t);
-    if (o.f1 && o.f1 !== o.f0) {
-      osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.f1), t + o.dur);
-    }
-    if (o.detune) osc.detune.value = o.detune;
+    const name = pick(CLIPS[key] || []);
+    const buf = buffers[name];
+    if (!buf) return;
 
-    let node = osc;
+    const t = ac.currentTime + (o.delay || 0);
 
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = o.rate || 1;
+
+    let node = src;
     if (o.cut) {
       const f = ac.createBiquadFilter();
       f.type = o.filter || 'lowpass';
+      f.frequency.value = o.cut;
       f.Q.value = o.q || 1;
-      f.frequency.setValueAtTime(o.cut, t);
-      if (o.cut1) f.frequency.exponentialRampToValueAtTime(Math.max(40, o.cut1), t + o.dur);
       node.connect(f);
       node = f;
     }
 
     const g = ac.createGain();
-    const peak = Math.max(0.0001, o.gain);
-    const atk  = o.atk === undefined ? 0.004 : o.atk;
-
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(peak, t + atk);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+    g.gain.value = (o.gain === undefined ? 1 : o.gain);
 
     const p = panner(o.pan);
     node.connect(g); g.connect(p);
     p.connect(sfxBus);
-    if (o.send) {
-      const s = ac.createGain();
-      s.gain.value = o.send;
-      p.connect(s); s.connect(verbSend);
-    }
 
-    osc.start(t + (o.delay || 0));
-    osc.stop(t + (o.delay || 0) + o.dur + 0.02);
-  }
-
-  // 잡음 한 층. 물소리와 부서지는 소리는 음정이 아니라 잡음이다
-  function noise(o) {
-    if (!ready || muted) return;
-    const t = now() + (o.delay || 0);
-
-    const src = ac.createBufferSource();
-    src.buffer = noiseBuf;
-    src.loop = true;
-    src.playbackRate.value = o.rate || 1;
-
-    const f = ac.createBiquadFilter();
-    f.type = o.filter || 'lowpass';
-    f.Q.value = o.q || 1;
-    f.frequency.setValueAtTime(o.cut, t);
-    if (o.cut1) f.frequency.exponentialRampToValueAtTime(Math.max(40, o.cut1), t + o.dur);
-
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(Math.max(0.0001, o.gain), t + (o.atk || 0.005));
-    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
-
-    const p = panner(o.pan);
-    src.connect(f); f.connect(g); g.connect(p);
-    p.connect(sfxBus);
     if (o.send) {
       const s = ac.createGain();
       s.gain.value = o.send;
@@ -203,16 +210,14 @@ const Sound = (() => {
     }
 
     src.start(t);
-    src.stop(t + o.dur + 0.02);
   }
 
   // 큰 소리가 났을 때 음악이 잠깐 물러난다.
-  //
-  // 방송에서 말이 나오면 배경음악이 자동으로 작아지는 것과 같은 장치다.
-  // 이게 없으면 폭발과 음악이 같은 자리에서 싸워서 둘 다 안 들린다
+  // 방송에서 말이 나오면 배경음악이 작아지는 것과 같은 장치다.
+  // 없으면 폭발과 음악이 같은 자리에서 싸워서 둘 다 안 들린다
   function duck(amount, hold) {
     if (!ready) return;
-    const t = now();
+    const t = ac.currentTime;
     const g = musicBus.gain;
     const cur = g.value;
     g.cancelScheduledValues(t);
@@ -222,7 +227,7 @@ const Sound = (() => {
   }
 
   // 같은 소리가 몰아칠 때 앞의 것만 낸다.
-  // 폭발 한 번에 칸이 스무 개씩 오는데 그때마다 소리를 내면 찢어진다
+  // 폭발 한 번에 칸이 스무 개씩 오는데 그때마다 내면 찢어진다
   function gate(key, ms) {
     const t = performance.now();
     if (lastAt[key] && t - lastAt[key] < ms) return false;
@@ -230,45 +235,28 @@ const Sound = (() => {
     return true;
   }
 
-  // ── 음악 ─────────────────────────────────────────────────────
+  // ── 음악은 그대로 만들어 낸다 ────────────────────────────────
   //
-  // 미리 만든 곡을 트는 게 아니라 그 자리에서 친다.
+  // 녹음한 곡을 틀면 판이 급해져도 똑같이 들린다.
+  // 여기서는 층이 넷이고, 사람이 줄수록 위 층이 하나씩 붙는다.
   //
-  // 층이 넷이고, 판이 급해질수록 위 층이 하나씩 붙는다.
   //   0층 낮은 맥박   판이 도는 내내
   //   1층 리듬        사람이 줄기 시작하면
   //   2층 아르페지오  절반 아래로 줄면
   //   3층 높은 음     마지막 구역, 물이 차오를 때
   //
-  // 스물넷이 살아 있을 때와 둘 남았을 때가 같게 들리면 안 된다.
-  // 남은 사람 수를 화면에서 읽지 않아도 **귀로 알게** 하는 것이 목적이다.
+  // **남은 사람 수를 화면에서 안 읽어도 귀로 알게 하는 것**이 목적이다.
   const BPM = 104;
   const BEAT = 60 / BPM;
 
-  // 다섯 음만 쓴다 (마이너 펜타토닉). 아무 순서로 쳐도 안 어긋난다.
-  // 화성을 신경 쓰지 않고 리듬만 짤 수 있어서, 여기서는 이게 맞다
+  // 다섯 음만 쓴다 (마이너 펜타토닉). 아무 순서로 쳐도 안 어긋나서 리듬만 짜면 된다
   const SCALE = [0, 3, 5, 7, 10];
-  const ROOT  = 55;   // A1
+  const ROOT  = 55;
   const hz = (semi) => ROOT * Math.pow(2, semi / 12);
 
   let musicOn = false, musicTarget = 0;
-  let intensity = 0;          // 0..3
-  let step = 0;               // 열여섯 번째 음표 하나가 한 걸음
-  let nextTime = 0;
-  let clock = null;
-
-  function schedule() {
-    if (!ready) return;
-
-    // 앞으로 0.2초 안에 칠 것을 미리 예약한다.
-    // 지금 쳐서는 절대 정확할 수 없다. setInterval 은 몇십 ms 씩 흔들린다.
-    // 오디오 시계에 미리 걸어두면 흔들려도 소리는 제자리에 떨어진다
-    while (nextTime < ac.currentTime + 0.25) {
-      playStep(step, nextTime);
-      nextTime += BEAT / 4;
-      step = (step + 1) % 64;
-    }
-  }
+  let intensity = 0;
+  let step = 0, nextTime = 0, clock = null;
 
   function bar(t, gain, dur, wave, f, send) {
     if (muted) return;
@@ -294,38 +282,44 @@ const Sound = (() => {
 
   function playStep(i, t) {
     if (!musicOn) return;
+    const q = i % 16;
 
-    const q = i % 16;   // 한 마디 안에서 몇 번째인가
+    if (q % 4 === 0) bar(t, 0.26, 0.30, 'sine', hz(SCALE[0]) / 2, 0);
 
-    // 0층 — 낮은 맥박. 심장 소리 자리다
-    if (q % 4 === 0) {
-      bar(t, 0.30, 0.30, 'sine', hz(SCALE[0]) / 2, 0);
-    }
-
-    // 1층 — 리듬. 짧은 잡음을 스틱처럼 쓴다
     if (intensity >= 1 && q % 2 === 1) {
-      const src = ac.createBufferSource();
-      src.buffer = noiseBuf;
-      const f = ac.createBiquadFilter();
-      f.type = 'highpass';
-      f.frequency.value = 6000;
-      const g = ac.createGain();
-      g.gain.setValueAtTime(0.06, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      // 리듬은 짧은 잡음을 스틱처럼 쓴다. 이건 파일을 쓸 이유가 없다
+      const n = ac.sampleRate * 0.05 | 0;
+      const b = ac.createBuffer(1, n, ac.sampleRate);
+      const d = b.getChannelData(0);
+      for (let k = 0; k < n; ++k) d[k] = (Math.random() * 2 - 1) * (1 - k / n);
+
+      const src = ac.createBufferSource(); src.buffer = b;
+      const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
+      const g = ac.createGain(); g.gain.value = 0.05;
       src.connect(f); f.connect(g); g.connect(musicBus);
-      src.start(t); src.stop(t + 0.06);
+      src.start(t);
     }
 
-    // 2층 — 아르페지오. 여기서부터 급해진 게 들린다
     if (intensity >= 2) {
       const n = SCALE[(i * 3) % SCALE.length] + 12 * (1 + ((i >> 2) & 1));
-      bar(t, 0.075, 0.16, 'triangle', hz(n), 0.25);
+      bar(t, 0.065, 0.16, 'triangle', hz(n), 0.25);
     }
 
-    // 3층 — 마지막. 높고 길게 깔린다
     if (intensity >= 3 && q % 8 === 0) {
       const n = SCALE[(i >> 3) % SCALE.length] + 24;
-      bar(t, 0.055, 1.2, 'sawtooth', hz(n), 0.5);
+      bar(t, 0.05, 1.2, 'sawtooth', hz(n), 0.5);
+    }
+  }
+
+  // 박자를 setInterval 로 치지 않는다. 그건 몇십 ms 씩 흔들린다.
+  // 오디오 시계에 앞으로 0.25초 안에 칠 것을 미리 예약한다.
+  // 프레임이 밀려도 소리는 제자리에 떨어진다
+  function schedule() {
+    if (!ready) return;
+    while (nextTime < ac.currentTime + 0.25) {
+      playStep(step, nextTime);
+      nextTime += BEAT / 4;
+      step = (step + 1) % 64;
     }
   }
 
@@ -337,14 +331,20 @@ const Sound = (() => {
 
   // ── 밖에서 쓰는 것 ───────────────────────────────────────────
   return {
-    wake() { return init(); },
+    // 브라우저는 사용자가 뭔가 누르기 전에는 소리를 못 내게 막는다
+    wake() {
+      const ok = build();
+      if (ac && ac.state === 'suspended') ac.resume();
+      return ok;
+    },
     toggle() {
       muted = !muted;
-      if (ready) master.gain.value = muted ? 0 : 0.9;
+      if (ready) master.gain.value = muted ? 0 : 0.95;
       return muted;
     },
-    isMuted() { return muted; },
+    isMuted()  { return muted; },
     isReady()  { return ready; },
+    progress() { return total ? loaded / total : 0; },
 
     // 판이 어떤 상황인가. 음악의 층수가 여기서 정해진다
     setMood(phase, aliveRatio, danger) {
@@ -357,137 +357,99 @@ const Sound = (() => {
       if (danger)            lv = 3;
       intensity = lv;
 
-      musicTarget = musicOn ? 0.55 : (phase === 3 ? 0.25 : 0.18);
+      musicTarget = musicOn ? 0.42 : (phase === 3 ? 0.20 : 0.14);
       const g = musicBus.gain;
       g.cancelScheduledValues(ac.currentTime);
       g.setTargetAtTime(musicTarget, ac.currentTime, 0.4);
     },
 
-    // ── 소리 하나하나 ──────────────────────────────────────────
+    // ── 사건 하나에 소리 하나 ──────────────────────────────────
     //
-    // 전부 층이 둘 이상이다. 층 하나짜리가 웹게임 소리로 들리는 것의 정체다
+    // 전부 파일 두 장 이상을 겹치고, 낼 때마다 음높이를 흔든다
 
-    // 물풍선이 터진다. 이 게임에서 제일 중요한 소리.
-    //   ① 툭 하고 터지는 순간      ② 물이 쏟아지는 몸통     ③ 젖은 꼬리
+    // 물풍선이 터진다. 이 게임에서 제일 중요한 소리
     boom(pan) {
-      if (!gate('boom', 70)) return;
-      const k = rnd(0.94, 1.07);
-      tone({ f0: 220 * k, f1: 48, dur: 0.30, wave: 'sine', gain: 0.34, atk: 0.002, pan, send: 0.2 });
-      noise({ cut: 2200 * k, cut1: 220, dur: 0.34, gain: 0.30, filter: 'lowpass', q: 1.2, pan, send: 0.35 });
-      noise({ cut: 5200, cut1: 1400, dur: 0.10, gain: 0.13, filter: 'bandpass', q: 2.5, pan, delay: 0.01 });
-      duck(0.45, 0.30);
+      if (!gate('boom', 60)) return;
+      const k = rnd(0.86, 1.06);
+      play('boomBody',  { pan, gain: 0.95, rate: k * 0.9, send: 0.30 });
+      play('boomCrack', { pan, gain: 0.42, rate: k * 1.15, send: 0.22, delay: 0.008,
+                          cut: 5200, filter: 'lowpass' });
+      duck(0.42, 0.28);
     },
 
     // 걸치기. 이 게임의 정체성이라 제일 예쁜 소리를 준다.
     // 연속으로 성공하면 음이 올라간다. 숫자를 안 봐도 귀로 늘어난 걸 안다
     graze(n, pan) {
       const up = Math.min(n || 1, 5);
-      const base = 1180 * Math.pow(1.09, up - 1);
-      tone({ f0: base, f1: base * 1.5, dur: 0.16, wave: 'sine', gain: 0.20, atk: 0.001, pan, send: 0.5 });
-      tone({ f0: base * 2, f1: base * 3, dur: 0.13, wave: 'sine', gain: 0.09, atk: 0.001, pan, send: 0.6, delay: 0.012 });
-      noise({ cut: 9000, dur: 0.06, gain: 0.05, filter: 'highpass', pan });
+      play('graze', { pan, gain: 0.85, rate: 1 + (up - 1) * 0.14, send: 0.45 });
+      play('graze', { pan, gain: 0.30, rate: 2 + (up - 1) * 0.28, send: 0.55, delay: 0.02 });
     },
 
-    // 연쇄. 한 번 터질 때마다 반음씩 올라간다. 몇 단인지가 귀로 들린다
+    // 연쇄. 한 번 터질 때마다 음이 올라간다. 몇 단인지가 귀로 들린다
     chain(n, pan) {
-      const f = 520 * Math.pow(1.06, Math.min(n || 1, 8));
-      tone({ f0: f, f1: f * 1.9, dur: 0.14, wave: 'square', cut: 2600, gain: 0.08, pan, send: 0.3 });
+      play('chain', { pan, gain: 0.45, rate: 1 + Math.min(n || 1, 8) * 0.08, send: 0.3 });
     },
 
-    // 갇혔다. 물이 차오르며 감싸는 소리
     trap(pan) {
-      tone({ f0: 640, f1: 240, dur: 0.34, wave: 'triangle', gain: 0.16, pan, send: 0.3 });
-      noise({ cut: 700, cut1: 3000, dur: 0.30, gain: 0.13, filter: 'bandpass', q: 3, pan });
+      play('trap',     { pan, gain: 0.8, rate: rnd(0.85, 0.95), send: 0.35 });
+      play('trapDown', { pan, gain: 0.35, rate: 0.9, delay: 0.02 });
     },
 
     // 스스로 빠져나왔다. 갇힘의 정확히 반대로 올라간다
     breaks(pan) {
-      tone({ f0: 300, f1: 900, dur: 0.24, wave: 'triangle', gain: 0.17, pan, send: 0.3 });
-      noise({ cut: 1200, cut1: 6000, dur: 0.22, gain: 0.10, filter: 'bandpass', q: 2, pan });
+      play('escape', { pan, gain: 0.55, rate: rnd(1.0, 1.1), send: 0.35 });
     },
 
-    // 마무리. 몸으로 부딪쳐 터뜨렸다. 이 게임에서 제일 통쾌해야 하는 순간
+    // 마무리. 몸으로 부딪쳐 터뜨렸다. 제일 통쾌해야 하는 순간이라 세 장을 겹친다
     pop(pan) {
-      tone({ f0: 1500, f1: 220, dur: 0.16, wave: 'sine', gain: 0.30, atk: 0.001, pan });
-      noise({ cut: 3800, cut1: 600, dur: 0.20, gain: 0.22, filter: 'lowpass', pan, send: 0.4 });
-      tone({ f0: 90, f1: 55, dur: 0.26, wave: 'sine', gain: 0.22, pan });
+      play('popPunch', { pan, gain: 0.9,  rate: rnd(0.92, 1.05) });
+      play('popCrack', { pan, gain: 0.75, rate: rnd(1.05, 1.2), delay: 0.012, send: 0.4 });
+      play('boomBody', { pan, gain: 0.5,  rate: 0.75, delay: 0.02, send: 0.3 });
       duck(0.55, 0.4);
     },
 
     death(pan) {
-      tone({ f0: 300, f1: 60, dur: 0.55, wave: 'sawtooth', cut: 1400, cut1: 200, gain: 0.16, pan, send: 0.4 });
-      noise({ cut: 900, cut1: 120, dur: 0.5, gain: 0.16, pan });
+      play('death',    { pan, gain: 0.7, rate: rnd(0.9, 1.0), send: 0.45 });
+      play('boomBody', { pan, gain: 0.5, rate: 0.7, send: 0.35 });
     },
 
-    item(pan) {
-      tone({ f0: 880, dur: 0.07, wave: 'square', gain: 0.07, pan });
-      tone({ f0: 1320, dur: 0.09, wave: 'square', gain: 0.06, pan, delay: 0.055 });
-    },
+    item(pan)  { play('item',  { pan, gain: 0.45, rate: rnd(0.97, 1.05) }); },
+    drop(pan)  { play('drop',  { pan, gain: 0.30, rate: rnd(0.95, 1.1) }); },
+    place(pan) { play('place', { pan, gain: 0.35, rate: rnd(0.95, 1.1) }); },
 
-    // 울트라. 네 음짜리 팡파르. 흔한 게 아니라 확실히 달라야 한다
-    ultra(pan) {
-      [0, 4, 7, 12].forEach((s, i) => {
-        tone({ f0: hz(24 + s), dur: 0.34, wave: 'square', cut: 4200, gain: 0.13,
-               pan, send: 0.5, delay: i * 0.075 });
-      });
-    },
+    // 울트라. 흔한 게 아니라 확실히 달라야 한다
+    ultra(pan) { play('ultra', { pan, gain: 0.75, send: 0.4 }); },
 
-    drop(pan) { tone({ f0: 700, f1: 1000, dur: 0.07, wave: 'sine', gain: 0.05, pan }); },
+    // 상자가 부서진다. 제일 자주 나는 소리라 제일 작아야 하고,
+    // 낼 때마다 음이 흔들려서 백 번을 들어도 기계로 안 들린다
+    crack(pan) { play('crate', { pan, gain: 0.42, rate: rnd(0.82, 1.25) }); },
 
-    // 상자가 부서진다. 제일 자주 나는 소리라 제일 작고 짧아야 한다.
-    // 대신 칠 때마다 음이 흔들려서 백 번을 들어도 기계로 안 들린다
-    crack(pan) {
-      const k = rnd(0.85, 1.25);
-      noise({ cut: 3000 * k, cut1: 900, dur: 0.09, gain: 0.10, filter: 'bandpass', q: 1.6, pan });
-      tone({ f0: 190 * k, f1: 90, dur: 0.07, wave: 'triangle', gain: 0.07, pan });
-    },
-
-    // 내 발소리. 아주 작게. 없으면 걷는 게 안 느껴지고, 크면 지겹다
+    // 내 발소리. 아주 작게. 없으면 걷는 게 안 느껴지고 크면 지겹다
     step(pan) {
       if (!gate('step', 130)) return;
-      noise({ cut: 1100, cut1: 400, dur: 0.05, gain: 0.030, filter: 'lowpass', pan });
+      play('step', { pan, gain: 0.13, rate: rnd(0.9, 1.15) });
     },
 
-    // 물이 곧 찬다. 사이렌은 두 음이 엇갈릴 때 불안해진다
     warn() {
-      tone({ f0: 300, f1: 220, dur: 0.5, wave: 'sawtooth', cut: 1200, gain: 0.10, send: 0.4 });
-      tone({ f0: 226, f1: 300, dur: 0.5, wave: 'sawtooth', cut: 1200, gain: 0.08, send: 0.4, delay: 0.05 });
-      duck(0.3, 0.6);
+      play('warn',     { gain: 0.55, rate: 0.9, send: 0.4 });
+      play('floodLow', { gain: 0.35, rate: 0.8, delay: 0.12, send: 0.4 });
+      duck(0.3, 0.7);
     },
 
     flood() {
-      noise({ cut: 1400, cut1: 300, dur: 1.1, gain: 0.26, pan: 0, send: 0.6 });
-      tone({ f0: 120, f1: 45, dur: 0.9, wave: 'sine', gain: 0.16 });
+      play('boomBody', { gain: 0.9, rate: 0.55, send: 0.6 });
+      play('floodLow', { gain: 0.5, rate: 0.7, delay: 0.05, send: 0.5 });
       duck(0.4, 0.8);
     },
 
-    // 물에 잠긴 데 서 있다. 숨이 막히는 소리
     drown() {
       if (!gate('drown', 900)) return;
-      noise({ cut: 500, cut1: 180, dur: 0.7, gain: 0.18, filter: 'lowpass' });
-      tone({ f0: 200, f1: 90, dur: 0.6, wave: 'sine', gain: 0.12 });
+      play('drown', { gain: 0.5, rate: 0.8, cut: 900, filter: 'lowpass' });
     },
 
-    tick(n) { tone({ f0: 640 + n * 60, dur: 0.09, wave: 'square', cut: 3000, gain: 0.13, send: 0.2 }); },
-
-    // 시작. 바람 소리로 끌어올렸다가 한 방 때린다
-    start() {
-      noise({ cut: 300, cut1: 6000, dur: 0.45, gain: 0.14, filter: 'bandpass', q: 1 });
-      tone({ f0: 300, f1: 900, dur: 0.5, wave: 'square', cut: 3000, gain: 0.10 });
-      tone({ f0: 110, dur: 0.5, wave: 'sine', gain: 0.30, atk: 0.002, delay: 0.42, send: 0.4 });
-    },
-
-    win() {
-      [0, 4, 7, 12, 16].forEach((s, i) => {
-        tone({ f0: hz(24 + s), dur: 0.5, wave: 'square', cut: 4000, gain: 0.14,
-               send: 0.55, delay: i * 0.10 });
-      });
-    },
-
-    lose() {
-      [0, -2, -5].forEach((s, i) => {
-        tone({ f0: hz(24 + s), dur: 0.6, wave: 'triangle', gain: 0.13, send: 0.5, delay: i * 0.16 });
-      });
-    },
+    tick(n)  { play('tick',  { gain: 0.55, rate: 1 + n * 0.12 }); },
+    start()  { play('start', { gain: 0.7, send: 0.35 }); },
+    win()    { play('win',   { gain: 0.8, send: 0.4 }); },
+    lose()   { play('lose',  { gain: 0.7, send: 0.4 }); },
   };
 })();

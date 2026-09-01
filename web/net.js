@@ -65,7 +65,11 @@ function onWelcome(v) {
     myId: u8(), mapW: u8(), mapH: u8(), sectorW: u8(), sectorH: u8(),
     tickRate: u8(), tileUnits: u16(), fuse: u16(), trap: u16(),
     floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(), seed: u32(),
+    sectorKind: [],
   };
+  // 아홉 자리에 어떤 조각이 깔렸나. 규칙이 아니라 **화면용**이다.
+  // 구역마다 다른 장소처럼 그리는 데 쓴다
+  for (let i = 0; i < 9; ++i) G.C.sectorKind.push(u8());
   G.myId = G.C.myId;
   G.snapInterval = 1000 / G.C.tickRate;
 

@@ -101,6 +101,12 @@ static void SendWelcome(Session* s, int slot)
     w.body_num           = (uint8_t)PLAYER_BODY_NUM;
     w.body_den           = (uint8_t)PLAYER_BODY_DEN;
     w.seed               = g_game.map.seed;
+
+    // 아홉 자리에 어떤 조각이 깔렸는지. 화면이 구역마다 다르게 그리는 데 쓴다
+    for (int i = 0; i < SECTOR_SLOTS; ++i) {
+        w.sector_kind[i] = g_game.map.sector_template[i];
+    }
+
     memcpy(buf + HEADER_SIZE, &w, sizeof(w));
 
     SendPacket(s, buf, WELCOME_PACKET_SIZE);
