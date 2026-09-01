@@ -207,7 +207,11 @@ int main(int argc, char** argv)
     printf("  부순 블록 %lld 개, 살아남은 사람의 아이템 %lld.%lld 개\n",
            broken / rounds,
            win_items / rounds, (win_items * 10 / rounds) % 10);
-    printf("  (상한은 물풍선 4 + 물줄기 4 + 롤러 4 = 12. 울트라를 먹으면 물줄기만 6)\n");
+    // 상한을 손으로 적어두면 상수를 바꾼 날 이 줄만 거짓말이 된다. 상수에서 뽑는다
+    printf("  (상한은 물풍선 %d + 물줄기 %d + 롤러 %d = %d. 울트라를 먹으면 물줄기만 %d)\n",
+           STAT_CAP_FROM_WALL, STAT_CAP_FROM_WALL, STAT_CAP_SPEED,
+           STAT_CAP_FROM_WALL * 2 + STAT_CAP_SPEED,
+           STAT_CAP_ULTRA);
 
     return 0;
 }

@@ -62,6 +62,7 @@ static void SeatViewers()
             ++i;   // 아직도 자리가 없다
             continue;
         }
+        g_viewers[i]->slot = slot;
         printf("[Tick] %s:%d seated as p%d\n", g_viewers[i]->ip, g_viewers[i]->port, slot);
         g_viewers[i] = g_viewers[--g_viewer_count];
     }
@@ -363,6 +364,8 @@ static void HandleJob(const Job* j){
                 SendWelcome(s, 0xFF);
                 break;
             }
+            s->slot = slot;
+
             Player& p = g_game.players[slot];
             printf("[Tick] %s:%d entered as p%d at tile (%d,%d)\n",
                    s->ip, s->port, slot, p.judge_tx, p.judge_ty);
@@ -392,6 +395,7 @@ static void HandleJob(const Job* j){
             break;
         }
         case JobType::Leave:
+            s->slot = -1;
             RemovePlayer(s);
             RemoveViewer(s);
             printf("[Tick] %s:%d left\n", s->ip, s->port);
@@ -542,7 +546,7 @@ static DWORD WINAPI WorkerThread(LPVOID param)
             }
         }
 
-        Release(s);   // 이 주문 하나가 끝났다
+        ReleaseAt(s, io->type == IoType::Recv ? 2 : 3);   // 이 주문 하나가 끝났다
     }
     return 0;
 }
@@ -576,13 +580,13 @@ static DWORD WINAPI TickThread(LPVOID)
             tmp.s    = lives[i].s;
             tmp.len  = 0;
             HandleJob(&tmp);
-            Release(lives[i].s);
+            ReleaseAt(lives[i].s, 1);
         }
 
         // 3) 그다음 패킷. 여긴 나 혼자다
         for (int i = 0; i < count; ++i) {
             HandleJob(&jobs[i]);
-            Release(jobs[i].s);   // 꽂을 때 든 참조를 여기서 놓는다
+            ReleaseAt(jobs[i].s, 1);   // 꽂을 때 든 참조를 여기서 놓는다
         }
 
         // 4) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
@@ -644,10 +648,10 @@ static DWORD WINAPI TickThread(LPVOID)
         // 무엇을 얼마에 샀는지가 같이 보여야 한다
         if (tick % TICK_RATE == 0) {
             int humans = HumanCount();
-            if (humans > 0) {
-                printf("[Net] aoi=%d players=%d(+%d bots)  %lld pkt/s  %lld B/s  "
+            if (humans > 0 || g_live_sessions > 0) {
+                printf("[Net] aoi=%d players=%d(+%d bots) live=%ld  %lld pkt/s  %lld B/s  "
                        "builds %lld/s  dropped pkt %lld life %lld\n",
-                       g_aoi_on ? 1 : 0, humans, BotCount(),
+                       g_aoi_on ? 1 : 0, humans, BotCount(), g_live_sessions,
                        g_net.packets, g_net.bytes, g_net.builds,
                        g_job_dropped, g_life_dropped);
             }
@@ -849,8 +853,11 @@ int main(int argc, char** argv)
         // 거기서 CloseSession 이 불리면 목록 참조가 풀린다.
         // main 이 자기 참조를 안 들면, 아직 세팅 중인 세션이 지워질 수 있다.
         s->ref_count = 2;
+        InterlockedIncrement(&g_live_sessions);
+        InterlockedAdd(&g_ref_up[0], 2);   // 처음 든 둘도 세어야 균형이 맞는지 볼 수 있다
         s->closing = 0;
         s->sending = 0;
+        s->slot    = -1;
         InitializeSRWLock(&s->send_lock);
         inet_ntop(AF_INET, &client_addr.sin_addr, s->ip, sizeof(s->ip));
         s->port = ntohs(client_addr.sin_port);
@@ -884,6 +891,18 @@ int main(int argc, char** argv)
 
         Release(s);   // main 은 세팅을 끝냈다. 자기 참조를 놓는다
     }
+
+    // 참조를 든 자리와 놓은 자리가 맞는지 마지막에 한 번 센다.
+    //
+    // 9/1 에 AOI 를 붙이면서 세션이 샜다. 부하 시험에서 접속 1047 / 정리 535.
+    // "샌 것 같다" 를 **"어디서 몇 개"** 로 바꾼 게 이 줄이다.
+    // 자리마다 따로 세니까 어느 경로가 안 놓는지가 바로 나온다.
+    // 지금은 다섯 자리가 전부 같은 수로 끝난다
+    printf("[Ref] live %ld | 목록 %ld/%ld  꽂이 %ld/%ld  받기 %ld/%ld  보내기 %ld/%ld  AOI %ld/%ld\n",
+           g_live_sessions,
+           g_ref_up[0], g_ref_down[0], g_ref_up[1], g_ref_down[1],
+           g_ref_up[2], g_ref_down[2], g_ref_up[3], g_ref_down[3],
+           g_ref_up[4], g_ref_down[4]);
 
     closesocket(listen_sock);
     InterlockedExchange(&g_tick_running, 0);   // 나가라고 알린다

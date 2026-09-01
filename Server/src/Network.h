@@ -16,7 +16,7 @@ inline bool PostRecv(Session* s)
     s->recv_io.wsabuf.buf = s->recv_buf.WritePtr();       // 바구니 빈 자리를 가리킨다
     s->recv_io.wsabuf.len = s->recv_buf.WritableSize();   // 담을 수 있는 만큼
 
-    AddRef(s);   // 걸기 전에 올린다. 걸고 나서 올리면 그 사이에 완료돼서 Release 가 먼저 될 수 있다
+    AddRefAt(s, 2);   // 걸기 전에 올린다. 걸고 나서 올리면 그 사이에 완료돼서 Release 가 먼저 될 수 있다
 
     DWORD flags = 0;
     DWORD received = 0;
@@ -27,7 +27,7 @@ inline bool PostRecv(Session* s)
         // WSA_IO_PENDING 은 실패가 아니라 진행 중이다. 비동기라 이게 정상이다
         if (err != WSA_IO_PENDING) {
             printf("[Session] %s:%d WSARecv failed: %d\n", s->ip, s->port, err);
-            Release(s);   // 주문이 안 걸렸으니 올린 것을 도로 내린다
+            ReleaseAt(s, 2);   // 주문이 안 걸렸으니 올린 것을 도로 내린다
             return false;
         }
     }
@@ -52,7 +52,7 @@ inline void StartSend(Session* s)
     s->send_io.wsabuf.buf = ptr;
     s->send_io.wsabuf.len = len;
 
-    AddRef(s);
+    AddRefAt(s, 3);
 
     DWORD sent = 0;
     int rc = WSASend(s->sock, &s->send_io.wsabuf, 1, &sent, 0, &s->send_io.overlapped, nullptr);
@@ -65,7 +65,7 @@ inline void StartSend(Session* s)
             // 그다음 CloseSession 이 없어진 메모리를 만진다.
             // 놓는 것은 항상 맨 마지막이다.
             CloseSession(s);
-            Release(s);
+            ReleaseAt(s, 3);
         }
     }
 }

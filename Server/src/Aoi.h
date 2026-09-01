@@ -95,28 +95,56 @@ inline int WatchSectorOf(int slot)
     return SectorOf(p.judge_tx, p.judge_ty);
 }
 
-// 한 구역에 앉아 있는 사람들에게 보낸다.
+// ── 보내는 자리 세 곳 ────────────────────────────────────────
 //
-// Broadcast 와 같은 방식으로 참조를 올려두고 자물쇠 밖에서 보낸다.
-// 자물쇠를 쥔 채로 보내면 그동안 아무도 접속을 못 한다
-inline void SendToSector(int sector, const char* data, int len)
+// **세 곳 다 세션 목록에서 꺼내고, 꺼내는 동안 읽기 자물쇠를 쥔다.**
+//
+// 처음에는 players[i].s 를 그냥 집어서 AddRef 했다. 한 줄 짧고 자물쇠도 안 걸려서
+// 빨랐는데, 그 포인터는 **아무도 살아 있다고 보장해주지 않는다.**
+// 워커가 같은 순간에 그 세션을 닫으면 목록에서 빠지고 참조가 하나 내려간다.
+// 그게 마지막이면 delete 된다. 그 뒤에 AddRef 를 하면 이미 없는 메모리를 만지는 것이다.
+//
+// 부하 시험에서 접속 1047 / 정리 535 가 나왔고, 로그에 주소가 비어 있는
+// `:0` 세션에 보내려다 WSAENOTSOCK(10038) 이 찍혔다. 지워진 세션을 되살려 쓴 흔적이다.
+// AOI 를 끄면 안 나고 켜면 났다. 이 세 함수가 원인이다.
+//
+// 목록은 g_session_lock 이 지킨다. 자물쇠를 쥔 동안은 목록에 있는 세션이
+// 적어도 목록 몫의 참조 하나를 갖고 있으므로 AddRef 가 안전하다.
+// **보내는 것은 자물쇠 밖에서 한다.** 쥔 채로 보내면 그동안 아무도 접속을 못 한다.
+//
+// 어느 구역을 보고 있는지는 Session::slot 으로 되묻는다.
+// 게임판에서 세션 포인터를 꺼내는 게 아니라, 세션에서 자리 번호를 꺼내는 것이다.
+inline int CollectTargets(Session** out, int cap, int sector, int tx, int ty, int margin)
 {
-    Session* targets[PLAYER_MAX];
     int count = 0;
 
-    for (int i = 0; i < PLAYER_MAX; ++i) {
-        const Player& p = g_game.players[i];
-        if (p.s == nullptr) continue;
-        if (p.s->closing == 1) continue;
+    AcquireSRWLockShared(&g_session_lock);
+    for (int i = 0; i < MAX_SESSION && count < cap; ++i) {
+        Session* t = g_sessions[i];
+        if (t == nullptr || t->closing == 1) continue;
 
-        int watch = WatchSectorOf(i);
-        if (sector >= 0 && watch != sector) continue;
-        if (sector < 0  && watch >= 0)      continue;   // 관전자 묶음
+        int watch = WatchSectorOf(t->slot);
 
-        AddRef(p.s);
-        targets[count++] = p.s;
+        if (sector >= -1) {
+            // 구역 묶음으로 보낸다 (스냅샷)
+            if (sector >= 0 && watch != sector) continue;
+            if (sector == -1 && watch >= 0)     continue;   // 관전자 묶음
+        }
+        else {
+            // 이 칸이 보이는 사람에게만 보낸다 (이벤트)
+            if (watch >= 0 && !VisibleTo(watch, tx, ty, margin)) continue;
+        }
+
+        AddRef(t);
+        out[count++] = t;
     }
+    ReleaseSRWLockShared(&g_session_lock);
 
+    return count;
+}
+
+inline void SendTargets(Session** targets, int count, const char* data, int len)
+{
     for (int i = 0; i < count; ++i) {
         SendPacket(targets[i], data, len);
         g_net.packets += 1;
@@ -125,47 +153,42 @@ inline void SendToSector(int sector, const char* data, int len)
     }
 }
 
-// 이 칸이 보이는 사람에게만 보낸다. 이벤트용.
-//
-// 이벤트는 구역마다 만들어 돌려 쓸 수가 없다. 어차피 몸통이 5바이트라
-// 만드는 값이 안 든다. 스냅샷과 달리 그냥 사람마다 판단한다
+// 한 구역에 앉아 있는 사람들에게. sector 가 -1 이면 관전자 묶음
+inline void SendToSector(int sector, const char* data, int len)
+{
+    Session* targets[MAX_SESSION];
+    int count = CollectTargets(targets, MAX_SESSION, sector, 0, 0, 0);
+    SendTargets(targets, count, data, len);
+}
+
+// 이 칸이 보이는 사람에게만. 이벤트용
 inline void SendToWatchers(int tx, int ty, int margin, const char* data, int len)
 {
-    Session* targets[PLAYER_MAX];
-    int count = 0;
-
-    for (int i = 0; i < PLAYER_MAX; ++i) {
-        const Player& p = g_game.players[i];
-        if (p.s == nullptr) continue;
-        if (p.s->closing == 1) continue;
-
-        int watch = WatchSectorOf(i);
-        if (watch >= 0 && !VisibleTo(watch, tx, ty, margin)) continue;
-
-        AddRef(p.s);
-        targets[count++] = p.s;
-    }
-
-    for (int i = 0; i < count; ++i) {
-        SendPacket(targets[i], data, len);
-        g_net.packets += 1;
-        g_net.bytes   += len;
-        Release(targets[i]);
-    }
+    Session* targets[MAX_SESSION];
+    int count = CollectTargets(targets, MAX_SESSION, -2, tx, ty, margin);
+    SendTargets(targets, count, data, len);
 }
 
 // 한 사람에게만. 익사 카운트다운처럼 본인만 알면 되는 것
 inline void SendToOne(int slot, const char* data, int len)
 {
     if (slot < 0 || slot >= PLAYER_MAX) return;
-    Session* s = g_game.players[slot].s;
-    if (s == nullptr || s->closing == 1) return;
 
-    AddRef(s);
-    SendPacket(s, data, len);
-    g_net.packets += 1;
-    g_net.bytes   += len;
-    Release(s);
+    Session* targets[1];
+    int count = 0;
+
+    AcquireSRWLockShared(&g_session_lock);
+    for (int i = 0; i < MAX_SESSION; ++i) {
+        Session* t = g_sessions[i];
+        if (t == nullptr || t->closing == 1) continue;
+        if (t->slot != slot) continue;
+        AddRef(t);
+        targets[count++] = t;
+        break;
+    }
+    ReleaseSRWLockShared(&g_session_lock);
+
+    SendTargets(targets, count, data, len);
 }
 
 // 전원에게. 침수와 킬 피드처럼 작고 드문 것
@@ -183,12 +206,7 @@ inline void SendToAll(const char* data, int len)
     }
     ReleaseSRWLockShared(&g_session_lock);
 
-    for (int i = 0; i < count; ++i) {
-        SendPacket(targets[i], data, len);
-        g_net.packets += 1;
-        g_net.bytes   += len;
-        Release(targets[i]);
-    }
+    SendTargets(targets, count, data, len);
 }
 
 // 이벤트 하나를 정책대로 보낸다.

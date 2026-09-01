@@ -86,7 +86,7 @@ inline bool PushJob(JobType type, Session* s, const char* data, int len){
         g_life_buf[g_write][m].type = type;
         g_life_buf[g_write][m].s    = s;
         g_life_count[g_write] = m + 1;
-        AddRef(s);
+        AddRefAt(s, 1);
         ReleaseSRWLockExclusive(&g_job_lock);
         return true;
     }
@@ -108,7 +108,7 @@ inline bool PushJob(JobType type, Session* s, const char* data, int len){
 
     g_job_count[g_write] = n+1;
 
-    AddRef(s);
+    AddRefAt(s, 1);
 
     ReleaseSRWLockExclusive(&g_job_lock);
     return true;
