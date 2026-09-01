@@ -45,6 +45,7 @@
 
 <div id="hud">
   <span id="conn" class="off">연결 안 됨</span>
+  <span>판 모양 <b id="theme">—</b></span>
   <span>tick <b id="tick">0</b></span>
   <span>판 <b id="round">1</b></span>
   <span>생존 <b id="alive">0</b></span>
@@ -74,7 +75,9 @@ const EVT = {
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3 };
 const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4 };
 const SECT = { OPEN:0, WARNING:1, FLOODED:2 };
-const PF   = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8 };
+const PF   = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8,
+               MOVING:16, FACE_SHIFT:5, FACE_MASK:3 << 5 };
+const FACE = { DOWN:0, LEFT:1, RIGHT:2, UP:3 };
 const HEADER_SIZE = 4;
 
 // ── 상태 ─────────────────────────────────────────────────────
@@ -188,6 +191,9 @@ const sfx = (() => {
     item()   { tone(950, 1500, 0.07, 'square', 0.07); },
     death()  { noise(0.35, 0.22, 400); tone(240, 55, 0.35, 'sine', 0.16); },
     drop()   { tone(600, 900, 0.06, 'sine', 0.05); },
+    // 상자가 부서지는 소리. 제일 자주 나므로 제일 작고 짧아야 한다.
+    // 크게 만들면 1분 동안 이 소리만 듣게 된다
+    crack()  { noise(0.07, 0.07, 2600); },
     // 울트라. 흔한 게 아니라 크게 들려야 한다
     ultra()  { tone(500, 1400, 0.30, 'square', 0.20);
                setTimeout(() => tone(1000, 1900, 0.25, 'square', 0.16), 90); },
@@ -210,6 +216,62 @@ const sfx = (() => {
 const cv  = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 let TS = 18;   // 타일 한 칸을 몇 픽셀로 그릴 것인가
+
+// ── 판을 미리 그려두는 종이 ──────────────────────────────────
+//
+// 바닥과 벽과 상자는 45x39 = 1755 칸이다. 이걸 매 프레임 다시 그리면
+// 초당 10만 번이 넘는다. 그런데 이 그림은 블록이 부서질 때 말고는 안 변한다.
+//
+// 그래서 안 보이는 종이에 한 번 그려두고, 매 프레임에는 그 종이를 통째로 한 번 붙인다.
+// 블록이 부서지면 그때만 다시 그린다.
+let mapCv = null, mapCtx = null, mapDirty = true;
+
+// 부서진 상자 조각. 잠깐 날아가다 사라진다
+let shards = [];
+
+// ── 판의 옷 ──────────────────────────────────────────────────
+//
+// 크아 맵이 기억에 남는 건 밀도가 좋아서가 아니라 **어디인지 알아볼 수 있어서**다.
+// 모래섬, 풀숲, 얼음골은 같은 규칙의 같은 판인데 다른 데처럼 보인다.
+//
+// 씨앗으로 고른다. 서버가 씨앗을 이미 보내주므로 패킷을 늘리지 않아도 되고,
+// 같은 씨앗이면 같은 옷이 나와서 로그를 다시 볼 때 화면까지 똑같이 재현된다.
+const THEMES = [
+  { name: '모래섬',
+    floor1: '#e6d3a3', floor2: '#dfca97', joint: '#c9b183', dust: '#cdb489',
+    wallTop: '#9fd2e6', wallFace: '#6ea8c4', wallEdge: '#48788f',
+    crate:   '#c98f4e', crateTop: '#e0a862', crateEdge: '#84592c', crateLine: '#a97341',
+    shade:   'rgba(90,70,40,0.18)' },
+
+  { name: '풀숲',
+    floor1: '#9ac96f', floor2: '#8ec065', joint: '#78ab53', dust: '#7fb257',
+    wallTop: '#b8bec7', wallFace: '#8b939e', wallEdge: '#5f666f',
+    crate:   '#b5793f', crateTop: '#cf9152', crateEdge: '#734a26', crateLine: '#96602f',
+    shade:   'rgba(40,60,30,0.18)' },
+
+  { name: '얼음골',
+    floor1: '#d6e9f6', floor2: '#c9e1f2', joint: '#aecfe6', dust: '#b6d6ea',
+    wallTop: '#a9d8f2', wallFace: '#7fb6d9', wallEdge: '#5589a8',
+    crate:   '#9fd2ea', crateTop: '#c8e9f9', crateEdge: '#639bba', crateLine: '#84bedb',
+    shade:   'rgba(60,90,110,0.16)' },
+
+  { name: '공장',
+    floor1: '#bfc4ca', floor2: '#b4b9c0', joint: '#9aa0a8', dust: '#a4aab2',
+    wallTop: '#8d959f', wallFace: '#6b737d', wallEdge: '#464d55',
+    crate:   '#cf8342', crateTop: '#e59a55', crateEdge: '#84501f', crateLine: '#ab6a34',
+    shade:   'rgba(40,45,55,0.20)' },
+];
+let TH = THEMES[0];
+
+// 칸마다 늘 같은 무늬가 나오게 하는 난수.
+//
+// Math.random 을 쓰면 매 프레임 무늬가 바뀌어서 바닥이 지글거린다.
+// 좌표를 섞어서 0~1 을 만들면 같은 칸은 언제나 같은 값이 나온다
+function hash2(x, y) {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = (h ^ (h >> 13)) * 1274126177 | 0;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+}
 
 // ── 서버와 이야기하기 ────────────────────────────────────────
 let ws = null;
@@ -304,14 +366,26 @@ function onWelcome(v) {
   edgeFlash = null;
   floodBanner = null;
 
+  shards = [];
+
   tiles = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
   items = Array.from({ length: C.mapH }, () => new Uint8Array(C.mapW));
 
-  TS = Math.max(10, Math.min(20, Math.floor((window.innerWidth - 60) / C.mapW)));
+  TS = Math.max(12, Math.min(22, Math.floor((window.innerWidth - 60) / C.mapW)));
   cv.width  = C.mapW * TS;
   cv.height = C.mapH * TS;
 
-  console.log('welcome', C);
+  // 판마다 옷을 갈아입힌다. 씨앗이 같으면 옷도 같다
+  TH = THEMES[C.seed % THEMES.length];
+
+  mapCv  = document.createElement('canvas');
+  mapCv.width  = cv.width;
+  mapCv.height = cv.height;
+  mapCtx = mapCv.getContext('2d');
+  mapDirty = true;
+
+  document.getElementById('theme').textContent = TH.name;
+  console.log('welcome', C, TH.name);
 }
 
 function onMapRow(v) {
@@ -321,6 +395,8 @@ function onMapRow(v) {
   for (let x = 0; x < C.mapW; ++x) tiles[y][x] = v.getUint8(o + x);
   o += C.mapW;
   for (let x = 0; x < C.mapW; ++x) items[y][x] = v.getUint8(o + x);
+
+  mapDirty = true;   // 줄이 하나 바뀌었으니 미리 그려둔 종이를 새로 그린다
 }
 
 function onSnapshot(v) {
@@ -374,6 +450,17 @@ function onSnapshot(v) {
     p.jtx   = v.getUint8(o + 5);
     p.jty   = v.getUint8(o + 6);
     p.flags = v.getUint8(o + 7);
+
+    // 보는 쪽과 걷는지 여부는 서버가 flags 에 얹어 보낸다.
+    // 위치 두 개를 빼서 알아낼 수도 있지만, 서 있으면 위치가 안 변해서
+    // 마지막으로 보던 쪽을 잃어버린다
+    p.face   = (p.flags & PF.FACE_MASK) >> PF.FACE_SHIFT;
+    p.moving = !!(p.flags & PF.MOVING);
+
+    // 걸음의 위상. 시간이 아니라 **간 거리**로 돈다.
+    // 시간으로 돌리면 롤러를 먹어 빨라져도 발은 그대로라 미끄러지는 것처럼 보인다
+    const step = Math.abs(p.x1 - p.x0) + Math.abs(p.y1 - p.y0);
+    p.walk = (p.walk || 0) + step / C.tileUnits * 7.5;
     p.bubble_lv = v.getUint8(o + 8);
     p.power_lv  = v.getUint8(o + 9);
     p.speed_lv  = v.getUint8(o + 10);
@@ -432,8 +519,14 @@ function onEvent(v) {
       sfx.boom();
       break;
 
+    // 상자가 부서졌다. 이 게임에서 제일 자주 일어나는 일이라,
+    // 여기서 손맛이 안 나면 앞의 1분이 통째로 심심해진다.
+    // 그냥 사라지게 하지 않고 조각을 흩뿌린다
     case EVT.BLOCK:
       tiles[y][x] = TILE.EMPTY;
+      mapDirty = true;
+      spawnShards(x, y);
+      sfx.crack();
       break;
 
     case EVT.DROP:
@@ -594,6 +687,378 @@ function sectorOf(tx, ty) {
   return sy * 3 + sx;
 }
 
+// 모서리가 둥근 네모. 브라우저마다 ctx.roundRect 가 있기도 없기도 해서 직접 그린다
+function rr(g, x, y, w, h, r) {
+  if (r > w / 2) r = w / 2;
+  if (r > h / 2) r = h / 2;
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.lineTo(x + w - r, y);       g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r);   g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h);       g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r);           g.quadraticCurveTo(x, y, x + r, y);
+  g.closePath();
+}
+
+// ── 판 그리기 (미리 그려두는 종이에) ─────────────────────────
+function isWall(x, y) {
+  if (x < 0 || y < 0 || x >= C.mapW || y >= C.mapH) return true;   // 판 밖은 벽으로 친다
+  return tiles[y][x] === TILE.WALL;
+}
+
+function drawFloor(g, x, y) {
+  const px = x * TS, py = y * TS;
+
+  g.fillStyle = ((x + y) & 1) ? TH.floor1 : TH.floor2;
+  g.fillRect(px, py, TS, TS);
+
+  // 칸과 칸 사이 이음매. 이게 있어야 바닥이 한 장이 아니라 여러 장으로 보인다
+  g.fillStyle = TH.joint;
+  g.fillRect(px, py, TS, 1);
+  g.fillRect(px, py, 1, TS);
+
+  // 자잘한 얼룩. 늘 같은 자리에 난다 (hash2)
+  const h = hash2(x, y);
+  if (h > 0.72) {
+    g.fillStyle = TH.dust;
+    const s = 1 + (h > 0.92 ? 1 : 0);
+    g.fillRect(px + 3 + (h * 11 | 0) % (TS - 7), py + 3 + (h * 17 | 0) % (TS - 7), s, s);
+  }
+}
+
+// 고정 벽. 부술 수 없는 것이라 한눈에 무겁게 보여야 한다.
+//
+// 벽끼리 붙어 있는 쪽에는 테두리를 안 긋는다.
+// 그러면 벽 여럿이 하나의 덩어리로 보인다. 칸마다 테두리를 그으면 바둑판이 된다
+function drawWall(g, x, y) {
+  const px = x * TS, py = y * TS;
+  const top = Math.max(3, TS * 0.34) | 0;
+
+  g.fillStyle = TH.wallFace;
+  g.fillRect(px, py, TS, TS);
+  g.fillStyle = TH.wallTop;
+  g.fillRect(px, py, TS, top);
+
+  g.fillStyle = TH.wallEdge;
+  if (!isWall(x, y - 1)) g.fillRect(px, py, TS, 1);
+  if (!isWall(x, y + 1)) g.fillRect(px, py + TS - 1, TS, 1);
+  if (!isWall(x - 1, y)) g.fillRect(px, py, 1, TS);
+  if (!isWall(x + 1, y)) g.fillRect(px + TS - 1, py, 1, TS);
+
+  // 바닥에 지는 그림자. 벽이 바닥보다 높다는 걸 이걸로만 알린다
+  if (!isWall(x, y + 1)) {
+    g.fillStyle = TH.shade;
+    g.fillRect(px, py + TS, TS, Math.max(2, TS * 0.14));
+  }
+}
+
+// 부술 수 있는 상자. 벽과 확실히 달라 보여야 한다.
+// 벽은 각지고 꽉 차고, 상자는 모서리가 둥글고 한 칸 안에서 살짝 떠 있다
+function drawCrate(g, x, y) {
+  const px = x * TS, py = y * TS;
+  const m  = Math.max(1, TS * 0.08);
+  const w  = TS - m * 2;
+
+  g.fillStyle = TH.shade;
+  rr(g, px + m + 1, py + m + 2, w, w, w * 0.22);
+  g.fill();
+
+  const grad = g.createLinearGradient(0, py, 0, py + TS);
+  grad.addColorStop(0, TH.crateTop);
+  grad.addColorStop(1, TH.crate);
+  g.fillStyle = grad;
+  rr(g, px + m, py + m, w, w, w * 0.22);
+  g.fill();
+
+  g.strokeStyle = TH.crateEdge;
+  g.lineWidth = 1;
+  g.stroke();
+
+  // 널빤지 두 줄. 나무든 얼음이든 결이 있어야 상자처럼 보인다
+  g.strokeStyle = TH.crateLine;
+  g.beginPath();
+  g.moveTo(px + m + 1, py + m + w * 0.38);  g.lineTo(px + m + w - 1, py + m + w * 0.38);
+  g.moveTo(px + m + 1, py + m + w * 0.70);  g.lineTo(px + m + w - 1, py + m + w * 0.70);
+  g.stroke();
+
+  // 왼쪽 위 반짝임. 빛이 어디서 오는지를 정해두면 판 전체가 한 덩어리로 보인다
+  g.fillStyle = 'rgba(255,255,255,0.35)';
+  g.fillRect(px + m + 2, py + m + 2, Math.max(2, w * 0.28), 1);
+}
+
+function redrawMap() {
+  if (!mapCtx || !tiles) return;
+  mapDirty = false;
+
+  for (let y = 0; y < C.mapH; ++y) {
+    for (let x = 0; x < C.mapW; ++x) {
+      drawFloor(mapCtx, x, y);
+    }
+  }
+  // 벽을 먼저 다 그리고 상자를 그린다.
+  // 벽이 바닥에 드리우는 그림자가 옆 칸까지 넘어가기 때문에 순서가 있다
+  for (let y = 0; y < C.mapH; ++y) {
+    for (let x = 0; x < C.mapW; ++x) {
+      if (tiles[y][x] === TILE.WALL) drawWall(mapCtx, x, y);
+    }
+  }
+  for (let y = 0; y < C.mapH; ++y) {
+    for (let x = 0; x < C.mapW; ++x) {
+      if (tiles[y][x] === TILE.BLOCK) drawCrate(mapCtx, x, y);
+    }
+  }
+}
+
+// ── 부서진 조각 ──────────────────────────────────────────────
+//
+// 상자가 그냥 사라지면 부순 게 아니라 지워진 것처럼 보인다.
+// 조각이 튀어야 내가 부쉈다는 느낌이 난다. 앞의 1분이 여기에 달려 있다
+function spawnShards(tx, ty) {
+  const cx = tx * TS + TS / 2, cy = ty * TS + TS / 2;
+  const now = performance.now();
+
+  for (let i = 0; i < 7; ++i) {
+    const a = (i / 7) * Math.PI * 2 + Math.random() * 0.6;
+    const v = TS * (0.05 + Math.random() * 0.06);
+    shards.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v - TS * 0.03,
+      s: TS * (0.12 + Math.random() * 0.14),
+      born: now, life: 320 + Math.random() * 220,
+      rot: Math.random() * 6.3, spin: (Math.random() - 0.5) * 0.5,
+    });
+  }
+}
+
+function drawShards(now) {
+  shards = shards.filter(s => now - s.born < s.life);
+
+  for (const s of shards) {
+    const t = (now - s.born) / s.life;
+
+    // 한 프레임에 얼마나 가는지가 아니라 t 로 자리를 정한다.
+    // 프레임이 밀려도 같은 시간에 같은 데 있게 하려는 것이다
+    const k  = t * 16;
+    const px = s.x + s.vx * k;
+    const py = s.y + s.vy * k + k * k * TS * 0.006;   // 아래로 떨어진다
+
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    ctx.translate(px, py);
+    ctx.rotate(s.rot + s.spin * k);
+    ctx.fillStyle = TH.crate;
+    ctx.fillRect(-s.s / 2, -s.s / 2, s.s, s.s);
+    ctx.strokeStyle = TH.crateEdge;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-s.s / 2, -s.s / 2, s.s, s.s);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── 캐릭터 ───────────────────────────────────────────────────
+//
+// 그림 파일을 안 쓴다. 소리와 같은 이유다 (SPEC 13절).
+// 받는 사람이 따로 내려받을 게 없고, 출처와 라이선스를 적을 것도 없다.
+//
+// 모양은 크아 쪽을 따라간다. 머리가 크고 몸이 작다.
+// 머리가 커야 작게 그려도 어느 쪽을 보는지가 보인다.
+//
+//   face   0 아래 / 1 왼 / 2 오른 / 3 위
+//   moving 걷는 중인가. 서 있을 때와 그림이 다르다
+//   walk   걸음의 위상. 간 거리로 돈다
+function drawChar(cx, cy, r, color, face, moving, walk, now, dim) {
+  const swing = moving ? Math.sin(walk) : 0;
+  const bob   = moving ? Math.abs(Math.sin(walk)) * r * 0.10
+                       : Math.sin(now / 620) * r * 0.04;   // 서 있으면 숨만 쉰다
+
+  const y = cy - bob;
+
+  // 발밑 그림자. 이게 있어야 바닥에 서 있는 것처럼 보인다
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + r * 0.86, r * 0.80, r * 0.28, 0, 0, 7);
+  ctx.fill();
+
+  // 발 둘. 옆을 볼 때는 앞뒤로, 앞뒤를 볼 때는 위아래로 엇갈린다
+  ctx.fillStyle = dim;
+  const side = (face === FACE.LEFT || face === FACE.RIGHT);
+  for (let i = 0; i < 2; ++i) {
+    const s = i ? 1 : -1;
+    const fx = side ? cx + swing * s * r * 0.34 : cx + s * r * 0.34;
+    const fy = side ? y + r * 0.74
+                    : y + r * 0.74 + swing * s * r * 0.18;
+    ctx.beginPath();
+    ctx.ellipse(fx, fy, r * 0.26, r * 0.18, 0, 0, 7);
+    ctx.fill();
+  }
+
+  // 몸. 어깨가 좁고 아래가 넓은 종 모양
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.46, y + r * 0.74);
+  ctx.quadraticCurveTo(cx - r * 0.52, y + r * 0.10, cx, y + r * 0.06);
+  ctx.quadraticCurveTo(cx + r * 0.52, y + r * 0.10, cx + r * 0.46, y + r * 0.74);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 머리
+  const hr = r * 0.74;
+  const hy = y - r * 0.30;
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, hy, hr, 0, 7);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.stroke();
+
+  // 왼쪽 위 반짝임. 상자와 같은 데서 빛이 온다
+  ctx.fillStyle = 'rgba(255,255,255,0.30)';
+  ctx.beginPath();
+  ctx.arc(cx - hr * 0.34, hy - hr * 0.38, hr * 0.30, 0, 7);
+  ctx.fill();
+
+  // 얼굴. 뒤를 보면 아무것도 안 그린다. 그게 뒤통수다
+  const eye = (ex, ey, er) => {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex, ey, er, 0, 7); ctx.fill();
+    ctx.fillStyle = '#1b1f24';
+    ctx.beginPath(); ctx.arc(ex, ey + er * 0.16, er * 0.52, 0, 7); ctx.fill();
+  };
+
+  if (face === FACE.DOWN) {
+    eye(cx - hr * 0.36, hy + hr * 0.12, hr * 0.26);
+    eye(cx + hr * 0.36, hy + hr * 0.12, hr * 0.26);
+  }
+  else if (face === FACE.LEFT || face === FACE.RIGHT) {
+    const s = (face === FACE.RIGHT) ? 1 : -1;
+    eye(cx + s * hr * 0.34, hy + hr * 0.10, hr * 0.26);
+
+    // 옆을 보면 얼굴 윤곽이 한쪽으로 튀어나온다. 이게 있어야 옆모습으로 읽힌다
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx + s * hr * 0.86, hy + hr * 0.18, hr * 0.22, 0, 7);
+    ctx.fill();
+  }
+  else {
+    // 뒤통수. 머리 아래쪽에 그늘만 넣는다
+    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    ctx.beginPath();
+    ctx.arc(cx, hy + hr * 0.30, hr * 0.62, 0, 7);
+    ctx.fill();
+  }
+}
+
+// ── 물풍선 ───────────────────────────────────────────────────
+//
+// 터지기 전 2.5초가 이 게임에서 제일 긴 시간이다.
+// 그 시간이 그냥 흘러가면 안 되고, 남은 시간이 몸으로 느껴져야 한다.
+// 그래서 마지막 0.5초에 크기와 빠르기와 색이 한꺼번에 바뀐다
+function drawBubbleSprite(cx, cy, r, near, now) {
+  const beat = Math.sin(now / (near ? 55 : 190));
+
+  // 물이 들어 있으니 위아래로 눌렸다 펴진다. 가로와 세로가 반대로 움직인다
+  const rx = r * (1 + beat * 0.09);
+  const ry = r * (1 - beat * 0.09);
+
+  const g = ctx.createRadialGradient(cx - rx * 0.35, cy - ry * 0.40, r * 0.15,
+                                     cx, cy, r * 1.05);
+  if (near) {
+    g.addColorStop(0, 'rgba(255,235,235,0.95)');
+    g.addColorStop(1, 'rgba(255,110,110,0.90)');
+  } else {
+    g.addColorStop(0, 'rgba(235,250,255,0.95)');
+    g.addColorStop(1, 'rgba( 70,160,235,0.90)');
+  }
+
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, 7);
+  ctx.fill();
+
+  ctx.strokeStyle = near ? 'rgba(255,180,180,0.9)' : 'rgba(190,235,255,0.9)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // 반짝임 하나. 이거 하나로 평평한 원이 물방울이 된다
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  ctx.ellipse(cx - rx * 0.36, cy - ry * 0.40, rx * 0.20, ry * 0.14, -0.6, 0, 7);
+  ctx.fill();
+}
+
+// ── 아이템 ───────────────────────────────────────────────────
+//
+// 다 똑같은 동그라미면 뭘 먹을지 고를 수가 없다. 멀리서 색과 모양으로 갈려야 한다
+function drawItemSprite(x, y, it, now) {
+  const cx = x * TS + TS / 2;
+  const cy = y * TS + TS / 2 + Math.sin(now / 420 + x + y) * TS * 0.06;   // 살짝 뜬다
+
+  ctx.fillStyle = 'rgba(0,0,0,0.20)';
+  ctx.beginPath();
+  ctx.ellipse(cx, y * TS + TS * 0.82, TS * 0.24, TS * 0.09, 0, 0, 7);
+  ctx.fill();
+
+  // 울트라만 크게 그린다. 대비가 있어야 특수가 특별해진다 (SPEC 2.7)
+  if (it === ITEM.ULTRA) {
+    const beat = 0.5 + 0.5 * Math.sin(now / 140);
+    const r = TS * (0.34 + 0.07 * beat);
+
+    ctx.fillStyle = 'rgba(255,209,102,' + (0.55 + 0.4 * beat) + ')';
+    ctx.beginPath();
+    for (let i = 0; i < 10; ++i) {
+      const a = -Math.PI / 2 + i * Math.PI / 5;
+      const rr2 = (i & 1) ? r * 0.45 : r;
+      ctx.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    return;
+  }
+
+  const r = TS * 0.26;
+
+  if (it === ITEM.BUBBLE) {          // 물풍선 하나 더. 물방울 모양
+    ctx.fillStyle = '#4dabf7';
+    ctx.beginPath();
+    ctx.arc(cx, cy + r * 0.15, r, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.3, cy - r * 0.2, r * 0.28, 0, 7);
+    ctx.fill();
+  }
+  else if (it === ITEM.POWER) {      // 물줄기가 길어진다. 위로 뻗는 모양
+    ctx.fillStyle = '#ff922b';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 1.1);
+    ctx.quadraticCurveTo(cx + r, cy, cx, cy + r);
+    ctx.quadraticCurveTo(cx - r, cy, cx, cy - r * 1.1);
+    ctx.fill();
+  }
+  else {                              // 롤러. 바퀴
+    ctx.fillStyle = '#51cf66';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.30)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.05, 0, 7); ctx.stroke();
+}
+
 function draw() {
   requestAnimationFrame(draw);
   if (!C) return;
@@ -603,21 +1068,10 @@ function draw() {
 
   ctx.clearRect(0, 0, cv.width, cv.height);
 
-  // 바닥
-  for (let y = 0; y < C.mapH; ++y) {
-    for (let x = 0; x < C.mapW; ++x) {
-      const t = tiles[y][x];
-      ctx.fillStyle = t === TILE.WALL  ? '#2b3440'
-                    : t === TILE.BLOCK ? '#5a4632'
-                    : ((x + y) & 1) ? '#0f1620' : '#111a26';
-      ctx.fillRect(x * TS, y * TS, TS, TS);
-
-      if (t === TILE.BLOCK) {
-        ctx.fillStyle = '#6b5540';
-        ctx.fillRect(x * TS + 1, y * TS + 1, TS - 2, 2);
-      }
-    }
-  }
+  // 판. 미리 그려둔 종이를 통째로 한 번 붙인다.
+  // 블록이 부서졌을 때만 다시 그린다
+  if (mapDirty) redrawMap();
+  ctx.drawImage(mapCv, 0, 0);
 
   // 구역 상태. 잠긴 데는 물빛, 예고 중인 데는 붉은 테두리가 뛴다
   for (let s = 0; s < 9; ++s) {
@@ -626,15 +1080,23 @@ function draw() {
     const w  = C.sectorW * TS, h = C.sectorH * TS;
 
     if (sectors[s] === SECT.FLOODED) {
-      ctx.fillStyle = 'rgba(40,120,200,0.30)';
+      ctx.fillStyle = 'rgba(30,110,190,0.42)';
       ctx.fillRect(sx, sy, w, h);
+
+      // 물결. 가로줄 몇 개가 천천히 흐른다.
+      // 색만 덮으면 얕은 물인지 잠긴 건지 구별이 안 된다
+      ctx.fillStyle = 'rgba(190,235,255,0.13)';
+      for (let i = 0; i < 5; ++i) {
+        const yy = sy + ((now / 26 + i * h / 5) % h);
+        ctx.fillRect(sx, yy, w, 2);
+      }
     }
     else if (sectors[s] === SECT.WARNING) {
       // 임박할수록 빠르게 깜빡인다. 등속으로 하면 시간이 안 느껴진다
       const beat = 0.5 + 0.5 * Math.sin(now / 160);
-      ctx.fillStyle = 'rgba(40,120,200,0.10)';
+      ctx.fillStyle = 'rgba(255,90,60,' + (0.06 + 0.10 * beat) + ')';
       ctx.fillRect(sx, sy, w, h);
-      ctx.strokeStyle = 'rgba(255,80,80,' + (0.25 + 0.55 * beat) + ')';
+      ctx.strokeStyle = 'rgba(255,70,60,' + (0.30 + 0.55 * beat) + ')';
       ctx.lineWidth = 3;
       ctx.strokeRect(sx + 2, sy + 2, w - 4, h - 4);
     }
@@ -643,7 +1105,7 @@ function draw() {
   // 최종 구역 안에서 계속 차오르는 물.
   // 사각형 바깥을 네 줄기로 덮는다. 칸마다 그리면 매 프레임 1755번이라 아깝다
   if (ring.on) {
-    ctx.fillStyle = 'rgba(40,120,200,0.34)';
+    ctx.fillStyle = 'rgba(30,110,190,0.42)';
     const x0 = ring.x0 * TS, y0 = ring.y0 * TS;
     const x1 = (ring.x1 + 1) * TS, y1 = (ring.y1 + 1) * TS;
 
@@ -658,43 +1120,42 @@ function draw() {
     ctx.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
   }
 
+  // 부서진 상자 조각. 아이템보다 아래에 깔린다
+  drawShards(now);
+
   // 아이템
   for (let y = 0; y < C.mapH; ++y) {
     for (let x = 0; x < C.mapW; ++x) {
-      const it = items[y][x];
-      if (it === ITEM.NONE) continue;
-
-      const cx2 = x * TS + TS / 2, cy2 = y * TS + TS / 2;
-
-      // 울트라만 크게 그린다. 대비가 있어야 특수가 특별해진다 (SPEC 2.7 의 6위)
-      if (it === ITEM.ULTRA) {
-        const beat = 0.5 + 0.5 * Math.sin(now / 140);
-        ctx.fillStyle = 'rgba(255,209,102,' + (0.5 + 0.45 * beat) + ')';
-        ctx.beginPath();
-        ctx.arc(cx2, cy2, TS * (0.34 + 0.08 * beat), 0, 7);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        continue;
-      }
-
-      ctx.fillStyle = it === ITEM.BUBBLE ? '#4dabf7'
-                    : it === ITEM.POWER  ? '#ff922b'
-                    :                      '#51cf66';
-      // 작고 잦은 것이라 연출을 줄인다. 크게 하면 3분 뒤에 피로해진다
-      ctx.beginPath();
-      ctx.arc(cx2, cy2, TS * 0.22, 0, 7);
-      ctx.fill();
+      if (items[y][x] !== ITEM.NONE) drawItemSprite(x, y, items[y][x], now);
     }
   }
 
-  // 물줄기
+  // 물줄기.
+  //
+  // 예전에는 네모 하나였다. 물이 아니라 색깔 칸으로 보였다.
+  // 가운데가 밝고 가장자리로 갈수록 옅어지게 하면 물이 퍼진 것처럼 보인다
   blasts = blasts.filter(b => b.until > now);
   for (const b of blasts) {
     const left = (b.until - now) / ((C.blast / C.tickRate) * 1000);
-    ctx.fillStyle = 'rgba(120,210,255,' + (0.25 + 0.55 * left) + ')';
-    ctx.fillRect(b.x * TS, b.y * TS, TS, TS);
+    const cx = b.x * TS + TS / 2, cy = b.y * TS + TS / 2;
+
+    const g = ctx.createRadialGradient(cx, cy, TS * 0.05, cx, cy, TS * 0.72);
+    g.addColorStop(0, 'rgba(230,250,255,' + (0.30 + 0.60 * left) + ')');
+    g.addColorStop(1, 'rgba(80,180,240,'  + (0.10 + 0.45 * left) + ')');
+    ctx.fillStyle = g;
+    rr(ctx, b.x * TS, b.y * TS, TS, TS, TS * 0.22);
+    ctx.fill();
+
+    // 튀는 물방울 몇 개. 칸마다 늘 같은 자리에 튄다
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * left) + ')';
+    for (let i = 0; i < 3; ++i) {
+      const h = hash2(b.x * 7 + i, b.y * 13 + i);
+      const a = h * 6.3;
+      const d = TS * (0.20 + (1 - left) * 0.34);
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, TS * 0.06, 0, 7);
+      ctx.fill();
+    }
   }
 
   // 물풍선
@@ -704,17 +1165,13 @@ function draw() {
 
     // 마지막 0.5초에 맥박이 빨라진다. 설치 후 2.5초가 체감상 제일 길다
     const near = b.fuse < C.tickRate * 0.5;
-    const beat = Math.sin(now / (near ? 55 : 190));
-    const r    = TS * (0.34 + 0.06 * beat);
 
-    ctx.fillStyle = near ? 'rgba(255,140,140,0.9)' : 'rgba(120,190,255,0.85)';
+    ctx.fillStyle = 'rgba(0,0,0,0.20)';
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, 7);
+    ctx.ellipse(cx, cy + TS * 0.32, TS * 0.30, TS * 0.11, 0, 0, 7);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    drawBubbleSprite(cx, cy, TS * (near ? 0.40 : 0.36), near, now);
   }
 
   // 사람
@@ -727,7 +1184,7 @@ function draw() {
 
     // 판정 타일. 아주 희미하게. 눈에 걸리면 안 된다 (SPEC 2.3)
     if (!dead) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.13)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.16)';
       ctx.lineWidth = 1;
       ctx.strokeRect(p.jtx * TS + 0.5, p.jty * TS + 0.5, TS - 1, TS - 1);
     }
@@ -735,37 +1192,63 @@ function draw() {
     // 서버가 준 몸 크기 그대로 그린다.
     // 실제 크기로 그려야 두 칸에 걸쳐 서 있다는 게 눈에 보인다
     const bodyR = TS * C.bodyNum / C.bodyDen / 2;
+    const color = PLAYER_COLORS[id % PLAYER_COLORS.length];
 
     ctx.globalAlpha = dead ? 0.22 : ((p.flags & PF.INVULN) && (now / 90 | 0) % 2 ? 0.35 : 1);
-    ctx.fillStyle = PLAYER_COLORS[id % PLAYER_COLORS.length];
-    ctx.beginPath();
-    ctx.arc(cx, cy, bodyR, 0, 7);
-    ctx.fill();
 
-    if (id === myId) {
-      ctx.strokeStyle = '#fff';
+    // 내 캐릭터 발밑에만 고리를 하나 둔다.
+    // 스물넷이 뒤엉키면 색만으로는 내가 어디 있는지 못 찾는다
+    if (id === myId && !dead) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + bodyR * 0.86, bodyR * 0.95, bodyR * 0.36, 0, 0, 7);
       ctx.stroke();
     }
 
-    // 갇힘. 물방울이 씌워진다. 안에서 아주 느리게 움직일 수 있다
+    drawChar(cx, cy, bodyR, color, p.face | 0, !!p.moving && !dead, p.walk || 0, now,
+             'rgba(0,0,0,0.45)');
+
+    // 갇힘. 물방울이 통째로 씌워진다.
+    // 글자를 안 쓴다. 갇혔다는 건 이 그림 하나로 다 보인다
     if (p.flags & PF.TRAPPED) {
-      ctx.strokeStyle = 'rgba(150,210,255,0.85)';
-      ctx.lineWidth = 2;
+      const wob = Math.sin(now / 150) * 0.06;
+      const g = ctx.createRadialGradient(cx - bodyR * 0.4, cy - bodyR * 0.5, bodyR * 0.2,
+                                         cx, cy, bodyR * 1.3);
+      g.addColorStop(0, 'rgba(255,255,255,0.35)');
+      g.addColorStop(1, 'rgba(120,200,255,0.30)');
+
+      ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(cx, cy, TS * 0.5, 0, 7);
+      ctx.ellipse(cx, cy, bodyR * (1.22 + wob), bodyR * (1.22 - wob), 0, 0, 7);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(200,240,255,0.95)';
+      ctx.lineWidth = 2;
       ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath();
+      ctx.ellipse(cx - bodyR * 0.5, cy - bodyR * 0.6, bodyR * 0.22, bodyR * 0.14, -0.6, 0, 7);
+      ctx.fill();
     }
 
     ctx.globalAlpha = 1;
 
-    // 잠긴 구역 안이다. 숫자만 크게 (SPEC 2.8)
-    // 물에 잠긴 데 서 있다. 숫자만 크게 (SPEC 2.8)
+    // 물에 잠긴 데 서 있다. 머리 위에서 물방울이 올라온다.
+    // 느낌표를 띄우면 글자고, 이건 그림이다
     if (p.flags & PF.DROWNING) {
-      ctx.fillStyle = '#ff5a5a';
-      ctx.font = 'bold ' + (TS * 1.3) + 'px system-ui';
-      ctx.textAlign = 'center';
-      ctx.fillText('!', cx, cy - TS * 0.8);
+      for (let i = 0; i < 3; ++i) {
+        const t = ((now / 700) + i / 3) % 1;
+        ctx.globalAlpha = (1 - t) * 0.9;
+        ctx.fillStyle = '#8ecbff';
+        ctx.beginPath();
+        ctx.arc(cx + Math.sin(t * 6 + i) * TS * 0.18,
+                cy - bodyR - t * TS * 0.9,
+                TS * 0.09 * (1 - t * 0.4), 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
     }
   }
 

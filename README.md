@@ -132,6 +132,7 @@ build.bat ..\tools\probe.cpp
 | `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
 | `walker.exe [사람수] [초]` | 예 | 실제로 걸어다니며 물풍선을 놓는다 |
 | `node tools/wstest.js` | 예 + 다리 | 브라우저 없이 웹 경로 전체를 확인한다 |
+| `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지 |
 
 앞의 셋은 소켓을 안 쓴다. **게임 규칙만 꺼내서 두들기므로 서버를 켤 필요가 없다.**
 
@@ -144,10 +145,12 @@ build.bat ..\tools\probe.cpp
 movetest    25 PASS / 0 FAIL
 bubbletest  58 PASS / 0 FAIL
 floodtest   33 PASS / 0 FAIL
-maptest      7 PASS / 0 FAIL   (맵 200개)
+maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
-wstest      16 PASS / 0 FAIL
-봇 26개 8초  접속 1891 = fully closed 1891, 에러 0
+wstest      20 PASS / 0 FAIL
+clienttest   9 PASS / 0 FAIL
+roundsim    20판 전부 결판, 평균 1분 49초
+봇 24개 12초  접속 666 = left 666 = fully closed 666, 에러 0
 ```
 
 ---
@@ -167,11 +170,12 @@ BubbleRoyale.sln
 │   ├─ RecvBuffer.h      받은 바이트를 쌓아두는 버퍼 (커서 두 개)
 │   ├─ SendBuffer.h      보낼 것을 쌓아두는 링버퍼
 │   ├─ JobQueue.h        워커가 꽂고 틱 스레드가 가져가는 주문 꽂이
-│   ├─ GameMap.h         45x39 판. 기둥 · 블록 · 스폰 · 조각 통로
+│   ├─ GameMap.h         45x39 판. 조각 아홉 개를 뽑아 붙이고 뒷정리
 │   ├─ Movement.h        한 축 이동 · 걸치기 판정 · 코너 보정
 │   ├─ Game.h            자료구조 전부 + 사람 입장/퇴장/입력/이동
 │   ├─ Bubble.h          물풍선 · 폭발 · 연쇄 · 아이템 · 피격
 │   ├─ Flood.h           침수
+│   ├─ SectorTemplates.h 손으로 그린 맵 조각 10종
 │   ├─ GameTick.h        한 틱에 무엇을 어떤 순서로 하는가
 │   └─ ServerConfig.h    워커 수 · 동시 접속 상한
 ├─ Client/src/        테스트용 콘솔 클라이언트
