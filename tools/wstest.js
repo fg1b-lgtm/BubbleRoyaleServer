@@ -34,6 +34,9 @@ const rows = new Set();
 let snapshots = 0, events = 0, maxPlayers = 0, maxBubbles = 0;
 const phases = new Set();
 const eventKinds = new Map();
+let sizeMismatch = 0;
+const facesSeen = new Set();
+let sawMoving = false, sawStanding = false;
 
 ws.onopen = () => {
     console.log('붙었다. 9.5초 동안 받아 본다.\n');
@@ -85,12 +88,38 @@ ws.onmessage = (e) => {
     }
     else if (id === PKT.SNAPSHOT) {
         ++snapshots;
-        // SnapshotHead: tick(4) sectors(9) phase(1) phase_ticks(2) winner(1) round_no(1)
-        const np = v.getUint8(HEADER_SIZE + 18);
-        const nb = v.getUint8(HEADER_SIZE + 19);
+
+        // SnapshotHead 는 24 바이트다. 하나라도 틀리면 그 뒤가 전부 밀린다.
+        //   tick 4 | sectors 9 | phase 1 | phase_ticks 2 | winner 1 | round_no 1
+        //   ring 4 | player_count 1 | bubble_count 1
+        //
+        // 예전에 여기를 18, 19 로 적어놨었다. ring 이 생기면서 밀린 건데,
+        // 안 쓸 때 ring 이 0xFF 라 "사람 255명" 으로 읽혔고
+        // "사람이 하나 이상 있다" 는 검사가 늘 통과해서 5일 동안 안 들켰다.
+        // 시험이 통과한다고 시험이 맞는 건 아니다
+        const HEAD = HEADER_SIZE + 24;
+
         phases.add(v.getUint8(HEADER_SIZE + 13));
+        const np = v.getUint8(HEADER_SIZE + 22);
+        const nb = v.getUint8(HEADER_SIZE + 23);
         if (np > maxPlayers) maxPlayers = np;
         if (nb > maxBubbles) maxBubbles = nb;
+
+        if (v.byteLength !== HEAD + np * 11 + nb * 4) {
+            ++sizeMismatch;
+        }
+
+        // 내 캐릭터의 flags 에서 보는 쪽과 걷는지를 꺼낸다.
+        // 화면이 앞뒤옆을 나눠 그리려면 이 두 개가 실제로 와야 한다
+        for (let i = 0; i < np; ++i) {
+            const o = HEAD + i * 11;
+            if (v.getUint8(o) !== welcome.myId) continue;
+
+            const f = v.getUint8(o + 7);
+            facesSeen.add((f & 0x60) >> 5);
+            if (f & 0x10) sawMoving = true;
+            else          sawStanding = true;
+        }
     }
     else if (id === PKT.EVENT) {
         ++events;
@@ -134,7 +163,13 @@ function report() {
         check(welcome.mapW === 45 && welcome.mapH === 39, '맵 크기가 45x39 다');
         check(welcome.tickRate === 30, '틱레이트가 30 이다');
         check(welcome.tileUnits === 256, '타일이 256 units 다');
-        check(welcome.bodyNum === 68 && welcome.bodyDen === 100, '몸 크기가 왔다');
+        // 숫자를 박아두지 않는다. 상수를 고칠 때마다 시험이 깨지면 시험을 안 믿게 된다.
+        // 여기서 지킬 것은 값이 얼마냐가 아니라 **규칙**이다.
+        //   1.0 보다 작아야 한다. 같거나 크면 통로에 못 들어가고 걸치기 자체가 사라진다
+        //   0.5 보다 커야 한다. 너무 작으면 화면에서 사람이 점으로 보인다
+        const body = welcome.bodyNum / welcome.bodyDen;
+        check(body > 0.5 && body < 1.0,
+              '몸 크기가 한 칸보다 작다 (' + body.toFixed(2) + ')');
         check(welcome.myId >= 0 && welcome.myId < 24, '내 번호를 받았다');
 
         console.log('  판 줄 ' + rows.size + ' / ' + welcome.mapH);
@@ -164,6 +199,17 @@ function report() {
     check(welcomeCount === 2, '다시 시작하면 WELCOME 이 한 번 더 온다');
     check(seeds.size === 2, '다시 시작하면 맵 씨앗이 바뀐다');
     check(rowsAfterRestart === 39, '다시 시작하면 판을 다시 보내준다');
+
+    check(sizeMismatch === 0,
+          '스냅샷 길이가 머리에 적힌 사람/물풍선 수와 맞는다 (' + sizeMismatch + ' 번 어긋남)');
+
+    // 화면이 앞뒤옆을 나눠 그리려면 이게 실제로 와야 한다.
+    // 오른쪽으로 갔다가 멈췄다가 아래로 가는 순서로 눌러놨다
+    const faceNames = ['아래', '왼', '오른', '위'];
+    console.log('  본 방향: ' + [...facesSeen].map(f => faceNames[f]).join(', '));
+    check(facesSeen.has(2), '오른쪽으로 갈 때 오른쪽을 본다');
+    check(facesSeen.has(0), '아래로 갈 때 아래를 본다');
+    check(sawMoving && sawStanding, '걷는 상태와 서 있는 상태가 둘 다 온다');
 
     check(eventKinds.has(8), 'BUBBLE 이벤트가 왔다 (놓은 게 화면에 나간다)');
     check(eventKinds.has(9), 'BLAST 이벤트가 왔다');

@@ -160,6 +160,28 @@ constexpr uint8_t PF_TRAPPED  = 1 << 1;
 constexpr uint8_t PF_INVULN   = 1 << 2;
 constexpr uint8_t PF_DROWNING = 1 << 3;
 
+// 이번 틱에 실제로 자리가 바뀌었나.
+//
+// 누르고 있는지가 아니라 **움직였는지**다. 벽에 대고 누르고 있으면 꺼진다.
+// 클라이언트가 걷는 그림과 서 있는 그림을 가르는 데 쓴다.
+constexpr uint8_t PF_MOVING = 1 << 4;
+
+// 어느 쪽을 보고 있나. 두 칸(5,6번 자리)에 0~3 을 담는다.
+//
+// 위치 두 개를 빼서 클라이언트가 알아낼 수도 있다. 그런데 서 있으면 위치가 안 변해서
+// 마지막으로 보던 쪽을 잃어버린다. 벽에 대고 누르고 있을 때도 마찬가지다.
+// 보는 방향은 서버가 이미 알고 있으니 두 칸만 얹어 보낸다. 패킷은 안 커진다.
+constexpr uint8_t PF_FACE_SHIFT = 5;
+constexpr uint8_t PF_FACE_MASK  = 3 << PF_FACE_SHIFT;
+
+enum FaceDir : uint8_t
+{
+    FACE_DOWN  = 0,   // 화면 앞쪽. 처음 들어오면 이쪽을 본다
+    FACE_LEFT  = 1,
+    FACE_RIGHT = 2,
+    FACE_UP    = 3,
+};
+
 struct BubbleState
 {
     uint8_t tx, ty;

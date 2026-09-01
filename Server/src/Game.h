@@ -29,6 +29,14 @@ struct Player
 
     int dir_x, dir_y;    // 지금 누르고 있는 방향. -1 / 0 / 1
 
+    // 보고 있는 쪽 (FaceDir). 누르는 걸 놓아도 그대로 남는다.
+    // 서 있는 그림도 앞뒤옆이 다르기 때문에 방향은 상태로 들고 있어야 한다
+    int  face;
+
+    // 이번 틱에 자리가 실제로 바뀌었나.
+    // 벽에 대고 누르고 있으면 dir 은 있는데 이건 꺼져 있다. 그때는 걷는 그림을 안 쓴다
+    bool moving;
+
     int bubble_lv;       // 물풍선 아이템 수. 동시에 놓을 수 있는 개수가 늘어난다
     int power_lv;        // 물줄기 아이템 수. 폭발이 뻗는 길이가 늘어난다
     int speed_lv;        // 롤러 수
@@ -291,6 +299,8 @@ inline int AddPlayer(Session* s)
     p.judge_ty     = ty;
     p.dir_x        = 0;
     p.dir_y        = 0;
+    p.face         = FACE_DOWN;   // 들어오면 화면 앞쪽을 본다
+    p.moving       = false;
     p.bubble_lv    = 0;
     p.power_lv     = 0;
     p.speed_lv     = 0;
@@ -413,6 +423,18 @@ inline void MovePlayer(const GameMap& map, Player& p)
 
     bool trapped = (p.trap_ticks > 0);
 
+    int was_x = p.px;
+    int was_y = p.py;
+
+    // 보는 쪽을 먼저 정한다. 실제로 갔는지와 상관없이 누른 대로 돈다.
+    // 벽을 보고 서 있는 것도 그림으로는 그쪽을 보는 게 맞다.
+    //
+    // 두 방향을 같이 누르면 가로를 쓴다. 옆모습이 앞뒤보다 알아보기 쉽다
+    if (p.dir_x > 0)      p.face = FACE_RIGHT;
+    else if (p.dir_x < 0) p.face = FACE_LEFT;
+    else if (p.dir_y > 0) p.face = FACE_DOWN;
+    else if (p.dir_y < 0) p.face = FACE_UP;
+
     // 갇혀도 아주 느리게는 갈 수 있다.
     // 아예 묶어두면 5초가 죽은 시간이 된다. 기어서라도 물줄기 밖으로 나갈 수 있어야
     // 그 5초가 판단하는 시간이 된다
@@ -435,6 +457,10 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // 막힌 축만 서고 나머지 축은 계속 가게 하기 위해서다. 벽을 타고 미끄러진다
     p.px = StepAxis(map, p.px, p.py, p.dir_x * speed, true);
     p.py = StepAxis(map, p.py, p.px, p.dir_y * speed, false);
+
+    // 벽에 막혀 한 칸도 못 갔으면 걷는 그림을 쓰지 않는다.
+    // 누르고 있는지가 아니라 갔는지를 본다. 안 그러면 벽에 대고 제자리걸음을 한다
+    p.moving = (p.px != was_x || p.py != was_y);
 
     // 위치가 다 정해진 뒤에 판정 칸을 정한다. 몸 중심이 있는 칸이다
     p.judge_tx = JudgeAxis(p.px);

@@ -182,6 +182,8 @@ static void SendSnapshot()
         if (p.trap_ticks   > 0) ps.flags |= PF_TRAPPED;
         if (p.invuln_ticks > 0) ps.flags |= PF_INVULN;
         if (p.flood_ticks  > 0) ps.flags |= PF_DROWNING;
+        if (p.moving)           ps.flags |= PF_MOVING;
+        ps.flags |= (uint8_t)((p.face & 3) << PF_FACE_SHIFT);
         ps.bubble_lv = (uint8_t)p.bubble_lv;
         ps.power_lv  = (uint8_t)p.power_lv;
         ps.speed_lv  = (uint8_t)p.speed_lv;
