@@ -723,6 +723,27 @@ static void ShutdownWorkers(HANDLE* workers, int count)
 // Server.exe bots 0     봇을 안 채운다. 사람끼리만 하고 싶을 때
 // Server.exe bots 24    자리를 꽉 채운다
 // Server.exe aoi 0      AOI 를 끄고 전원에게 다 보낸다. **전후를 재려고 남겨둔 스위치다**
+// Ctrl+C 를 눌렀을 때 받는 자리.
+//
+// 이게 없으면 창을 닫거나 프로세스를 죽여서 서버를 내리게 되고, **종료 경로를
+// 한 번도 안 지나간다.** 참조가 맞는지 세는 [Ref] 줄도 영영 안 찍힌다.
+// 안 지나가는 코드는 맞는지 틀린지도 알 수 없다.
+//
+// 하는 일은 듣는 소켓을 닫는 것 하나뿐이다. 그러면 accept 가 실패로 깨어나고,
+// main 이 자기 흐름대로 걸어 나간다. 처리기 안에서 정리를 하지 않는다 —
+// 여긴 다른 스레드고, 여기서 스레드를 기다리면 서로 기다리다 안 끝난다
+inline SOCKET g_listen_sock = INVALID_SOCKET;
+
+BOOL WINAPI OnConsoleSignal(DWORD type)
+{
+    if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT || type == CTRL_CLOSE_EVENT) {
+        printf("[Server] 종료 신호. 듣는 소켓을 닫는다\n");
+        closesocket(g_listen_sock);
+        return TRUE;
+    }
+    return FALSE;
+}
+
 int main(int argc, char** argv)
 {
     // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
@@ -788,7 +809,10 @@ int main(int argc, char** argv)
     }
     printf("[Server] %d workers started\n", WORKER_COUNT);
 
-    SOCKET listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    SetConsoleCtrlHandler(OnConsoleSignal, TRUE);
+
+    g_listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    SOCKET listen_sock = g_listen_sock;
     if (listen_sock == INVALID_SOCKET) {
         printf("[Server] socket failed: %d\n", WSAGetLastError());
         CloseHandle(iocp);

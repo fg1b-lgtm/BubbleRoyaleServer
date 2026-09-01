@@ -135,7 +135,7 @@ inline int CollectTargets(Session** out, int cap, int sector, int tx, int ty, in
             if (watch >= 0 && !VisibleTo(watch, tx, ty, margin)) continue;
         }
 
-        AddRef(t);
+        AddRefAt(t, 4);   // 4 = AOI 송신 자리
         out[count++] = t;
     }
     ReleaseSRWLockShared(&g_session_lock);
@@ -149,7 +149,7 @@ inline void SendTargets(Session** targets, int count, const char* data, int len)
         SendPacket(targets[i], data, len);
         g_net.packets += 1;
         g_net.bytes   += len;
-        Release(targets[i]);
+        ReleaseAt(targets[i], 4);
     }
 }
 
@@ -182,7 +182,7 @@ inline void SendToOne(int slot, const char* data, int len)
         Session* t = g_sessions[i];
         if (t == nullptr || t->closing == 1) continue;
         if (t->slot != slot) continue;
-        AddRef(t);
+        AddRefAt(t, 4);   // 4 = AOI 송신 자리
         targets[count++] = t;
         break;
     }
@@ -201,7 +201,7 @@ inline void SendToAll(const char* data, int len)
     for (int i = 0; i < MAX_SESSION; ++i) {
         Session* t = g_sessions[i];
         if (t == nullptr || t->closing == 1) continue;
-        AddRef(t);
+        AddRefAt(t, 4);   // 4 = AOI 송신 자리
         targets[count++] = t;
     }
     ReleaseSRWLockShared(&g_session_lock);
