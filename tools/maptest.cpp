@@ -63,7 +63,7 @@ static int EscapeSteps(const GameMap& m, int sx, int sy, int range)
             uint8_t t = m.tile[y][x];
             if (t == TILE_WALL)  break;
             danger[y][x] = true;
-            if (t == TILE_BLOCK) break;   // 블록을 부수고 거기서 멈춘다
+            if (t == TILE_BLOCK || t == TILE_BOX) break;   // 부수고 거기서 멈춘다
         }
     }
 
@@ -210,7 +210,7 @@ static int DigDepth(const GameMap& m, int sx, int sy, int target_region_size)
                     seen[ny][nx] = true;
                     qx[tail] = nx; qy[tail] = ny; ++tail;
                 }
-                else if (work[ny][nx] == TILE_BLOCK) {
+                else if (work[ny][nx] == TILE_BLOCK || work[ny][nx] == TILE_BOX) {
                     seen[ny][nx] = true;
                     tbx[blocks_touched] = nx; tby[blocks_touched] = ny;
                     ++blocks_touched;
@@ -243,7 +243,7 @@ static void StructureOnly(const GameMap& src, GameMap& out)
     out = src;
     for (int y = 0; y < MAP_H; ++y) {
         for (int x = 0; x < MAP_W; ++x) {
-            if (out.tile[y][x] == TILE_BLOCK) out.tile[y][x] = TILE_EMPTY;
+            if (out.tile[y][x] == TILE_BLOCK || out.tile[y][x] == TILE_BOX) out.tile[y][x] = TILE_EMPTY;
         }
     }
 }
@@ -288,7 +288,7 @@ static void Measure(const GameMap& m, int range, Report& r)
         for (int x = 0; x < MAP_W; ++x) {
             uint8_t t = m.tile[y][x];
             if (t == TILE_WALL)  { ++r.wall;  continue; }
-            if (t == TILE_BLOCK) { ++r.block; continue; }
+            if (t == TILE_BLOCK || t == TILE_BOX) { ++r.block; continue; }
             ++r.open;
 
             if (OpenNeighbors(m, x, y) <= 1) {
@@ -346,7 +346,7 @@ static void Measure(const GameMap& m, int range, Report& r)
         for (int y = sy - 3; y <= sy + 3; ++y) {
             for (int x = sx - 3; x <= sx + 3; ++x) {
                 if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) continue;
-                if (m.tile[y][x] == TILE_BLOCK) ++n;
+                if (m.tile[y][x] == TILE_BLOCK || m.tile[y][x] == TILE_BOX) ++n;
             }
         }
         if (n < r.spawn_block_min) r.spawn_block_min = n;

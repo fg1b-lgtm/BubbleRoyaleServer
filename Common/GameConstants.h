@@ -60,7 +60,22 @@ enum TileType : uint8_t
     // 따로 예외를 두지 않았는데도 그렇게 된다.
     // 이동 판정이 "지금 있는 칸" 이 아니라 "가려는 칸" 만 보기 때문이다.
     TILE_BUBBLE = 3,
+
+    // 밀 수 있는 상자. 부서지기도 한다.
+    //
+    // 블록은 부수는 것 말고는 할 게 없다. 길을 막고 있으면 폭탄을 놓고 기다린다.
+    // 상자는 **밀 수 있다.** 그래서 같은 벽 하나에 선택지가 둘이 된다.
+    //   부순다   2.5초 걸리고 아이템이 나올 수도 있다
+    //   민다     즉시. 대신 민 자리에 그대로 있다
+    //
+    // 밀어서 통로를 막을 수도 있고, 물에 밀어 넣을 수도 있고,
+    // 쫓기는 중에 뒤로 밀어 길을 끊을 수도 있다.
+    // 규칙 하나로 판단거리가 여럿 생기는 쪽이 좋은 규칙이다
+    TILE_BOX = 4,
 };
+
+// 부술 수 있는 칸인가. 블록과 상자 둘 다다
+inline bool IsBreakableTile(uint8_t t) { return t == TILE_BLOCK || t == TILE_BOX; }
 
 // 맵 조각 하나에 스폰 자리 3개. 3x3 조각이니 전체 27 자리에 24명이 들어간다
 constexpr int SPAWN_PER_SECTOR = 3;
@@ -87,6 +102,16 @@ constexpr int SPAWN_TOTAL      = SPAWN_PER_SECTOR * SECTOR_COLS * SECTOR_ROWS;
 // 시작하자마자 안 갇히는 것은 스폰 주변을 비우는 것과
 // OpenDeathTraps 가 보장한다 (SPEC 2.2).
 constexpr int BLOCK_FILL_PERCENT = 100;
+
+// 깔린 블록 중 몇 퍼센트를 **밀 수 있는 상자**로 바꿀 것인가.
+//
+// 너무 많으면 판이 물러서 벽이 의미를 잃고, 너무 적으면 있는 줄도 모른다.
+// 다섯 칸에 하나쯤이면 한 화면에 서너 개라 눈에 띄면서 흔하지는 않다
+constexpr int BOX_PERCENT = 20;
+
+// 상자를 한 번 밀고 나서 다음까지 몇 틱 쉬나.
+// 없으면 붙어서 계속 누르는 동안 상자가 주르륵 밀려간다. 한 번에 한 칸이어야 판단이 된다
+constexpr int PUSH_COOLDOWN_TICKS = TICK_RATE / 3;
 
 // 스폰 자리 주변 몇 칸을 비워두는가.
 //
@@ -306,7 +331,13 @@ constexpr int TRAP_DURATION_TICKS = TICK_RATE * 7;       // 7초
 constexpr int FLOOD_ESCAPE_TICKS  = TICK_RATE * 2;       // 2초
 
 // ── 아이템 ─────────────────────────────────────────────────
-constexpr int STAT_CAP_FROM_WALL  = 4;    // 벽에서 나오는 수치형의 상한
+// 벽에서 나오는 수치형의 상한.
+//
+// 9/1 에 속도만 4 에서 7 로 올렸다. 이동 속도 18 + 7*4 = 46 units/tick = 5.4 타일/초.
+// 상자를 100% 로 채우고 나서 판이 넓게 느껴졌는데, 끝까지 먹어도 4.0 타일/초라
+// 판을 가로지르는 데 너무 오래 걸렸다. 롤러가 제일 체감이 큰 아이템이어야 한다
+constexpr int STAT_CAP_FROM_WALL  = 4;
+constexpr int STAT_CAP_SPEED      = 7;
 constexpr int ITEM_DROP_PERCENT   = 40;   // 블록을 부술 때 아이템이 나올 확률
 constexpr int KILL_DROP_PERCENT   = 50;   // 죽을 때 흘리는 비율
 

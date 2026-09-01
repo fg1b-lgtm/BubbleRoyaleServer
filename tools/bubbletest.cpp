@@ -609,6 +609,79 @@ static void Test12_Ultra()
     Check(ultra_from_wall == 0, "울트라는 벽에서 절대 안 나온다");
 }
 
+// ── 시험 13 : 상자를 밀 수 있는가 ────────────────────────────
+//
+// 블록은 부수는 것 말고 할 게 없다. 상자는 **밀 수 있다.**
+// 그래서 같은 벽 하나에 선택지가 둘이 된다. 부수거나 밀거나.
+//
+// 여기서 재는 것은 넷이다.
+//   ① 밀린다
+//   ② 뒤가 막혀 있으면 안 밀린다 (그럴 땐 부수는 수밖에 없다)
+//   ③ 한 번에 한 칸씩만 밀린다 (쿨다운이 없으면 주르륵 밀려간다)
+//   ④ 사람이 서 있는 칸으로는 안 밀린다 (깔아뭉개면 그건 다른 게임이다)
+static void Test12_PushBox()
+{
+    printf("\n=== 시험 13: 상자 밀기 ===\n");
+
+    // ① 그냥 밀린다
+    OpenBoard();
+    g_game.map.tile[10][11] = TILE_BOX;
+
+    int me = Join(10, 10);
+    Player& p = g_game.players[me];
+    p.dir_x = 1;
+
+    Tick();
+    printf("  민 뒤: (11,10)=%d  (12,10)=%d\n",
+           g_game.map.tile[10][11], g_game.map.tile[10][12]);
+
+    Check(g_game.map.tile[10][11] == TILE_EMPTY, "있던 자리가 비었다");
+    Check(g_game.map.tile[10][12] == TILE_BOX,   "한 칸 밀렸다");
+
+    // ③ 쿨다운. 계속 누르고 있어도 바로 또 안 밀린다
+    Tick();
+    Check(g_game.map.tile[10][13] != TILE_BOX, "붙어서 눌러도 연달아 안 밀린다");
+
+    for (int t = 0; t < PUSH_COOLDOWN_TICKS + 2; ++t) Tick();
+    printf("  쿨다운 뒤: (13,10)=%d\n", g_game.map.tile[10][13]);
+    Check(g_game.map.tile[10][13] == TILE_BOX, "쿨다운이 지나면 또 밀린다");
+
+    // ② 뒤가 막혀 있으면 안 밀린다
+    OpenBoard();
+    g_game.map.tile[10][11] = TILE_BOX;
+    g_game.map.tile[10][12] = TILE_WALL;
+
+    int q = Join(10, 10);
+    g_game.players[q].dir_x = 1;
+    Tick();
+
+    Check(g_game.map.tile[10][11] == TILE_BOX, "뒤가 막혔으면 안 밀린다");
+
+    // ④ 사람이 서 있는 칸으로는 안 밀린다
+    OpenBoard();
+    g_game.map.tile[10][11] = TILE_BOX;
+
+    int a = Join(10, 10);
+    int b = Join(12, 10);
+    g_game.players[a].dir_x = 1;
+    g_game.players[b].dir_x = 0;
+    Tick();
+
+    printf("  사람이 뒤에 서 있을 때: (11,10)=%d\n", g_game.map.tile[10][11]);
+    Check(g_game.map.tile[10][11] == TILE_BOX, "사람 위로는 안 밀린다");
+
+    // 상자도 물줄기에 부서진다. 밀기만 되고 안 부서지면 막다른 데가 생긴다
+    OpenBoard();
+    g_game.map.tile[10][11] = TILE_BOX;
+
+    int c = Join(10, 10);
+    PlaceBubble(c);
+    for (int t = 0; t < BUBBLE_FUSE_TICKS + 2; ++t) Tick();
+
+    printf("  물줄기가 지난 뒤: (11,10)=%d\n", g_game.map.tile[10][11]);
+    Check(g_game.map.tile[10][11] == TILE_EMPTY, "상자도 물줄기에 부서진다");
+}
+
 int main()
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -621,6 +694,7 @@ int main()
     Test6_PopByTouch();
     Test6b_TrappedCannotPop();
     Test7_OwnBubble();
+    Test12_PushBox();
     Test8_Count();
     Test9_Drop();
     Test10_Pickup();

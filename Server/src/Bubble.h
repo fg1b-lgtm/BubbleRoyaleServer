@@ -148,7 +148,7 @@ inline void Explode(int index)
                 break;   // 고정 벽에서 멈춘다. 그 칸은 안 덮는다
             }
 
-            if (t == TILE_BLOCK) {
+            if (IsBreakableTile(t)) {
                 BreakBlock(x, y);
                 SetBlast(x, y, b.owner, gen);
                 break;   // 블록을 부수고 거기서 멈춘다
@@ -230,7 +230,7 @@ inline void PickUpItems()
         // 상한 위는 킬 드롭과 최종 보급에서만 나온다
         if (kind == ITEM_BUBBLE && p.bubble_lv < STAT_CAP_FROM_WALL) ++p.bubble_lv;
         if (kind == ITEM_POWER  && p.power_lv  < STAT_CAP_FROM_WALL) ++p.power_lv;
-        if (kind == ITEM_ROLLER && p.speed_lv  < STAT_CAP_FROM_WALL) ++p.speed_lv;
+        if (kind == ITEM_ROLLER && p.speed_lv  < STAT_CAP_SPEED)     ++p.speed_lv;
 
         // 울트라는 한 번에 상한 위까지 올린다. 이게 역전 장치다
         if (kind == ITEM_ULTRA) {

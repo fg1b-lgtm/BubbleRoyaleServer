@@ -27,9 +27,11 @@ inline void PlayTick()
     //    움직이기 전에 터뜨린다. 나중에 터뜨리면 이미 지나간 자리에 물이 깔린다
     UpdateBubbles();
 
-    // 2) 사람을 움직인다
+    // 2) 사람을 움직인다.
+    //    미는 것이 먼저다. 밀고 나서 그 자리로 들어가야 한 틱에 이어진다
     for (int i = 0; i < PLAYER_MAX; ++i) {
         if (Occupied(g_game.players[i])) {
+            TryPushBox(g_game.map, g_game.players[i]);
             MovePlayer(g_game.map, g_game.players[i]);
         }
     }

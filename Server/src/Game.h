@@ -43,6 +43,9 @@ struct Player
     // 서 있는 그림도 앞뒤옆이 다르기 때문에 방향은 상태로 들고 있어야 한다
     int  face;
 
+    // 상자를 민 뒤 쉬는 시간. 없으면 붙어서 누르는 동안 상자가 주르륵 밀려간다
+    int  push_cool;
+
     // 이번 틱에 자리가 실제로 바뀌었나.
     // 벽에 대고 누르고 있으면 dir 은 있는데 이건 꺼져 있다. 그때는 걷는 그림을 안 쓴다
     bool moving;
@@ -196,24 +199,55 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     g_game.ring_next = 0;
     g_game.ring_step = RING_STEP_TICKS / flood_scale;
 
+    // 잠기는 순서. **구석부터 잠기고 변은 나중이다.**
+    //
+    // 처음에는 바깥 여덟 구역을 통째로 섞었다. 그랬더니 변 두 개가 먼저 잠기면서
+    // 그 사이 구석이 통째로 고립되는 판이 나왔다. 거기 있던 사람은 실력과 상관없이
+    // 갇혀 죽는다. 그건 패배가 아니라 사고다.
+    //
+    // 구석 넷을 먼저 잠그면 남는 것이 늘 이어져 있다.
+    // 구석은 이웃이 둘뿐이라 하나 잠겨도 나머지가 안 끊긴다.
+    //
+    //   구석 (0,0) (2,0) (0,2) (2,2)   먼저
+    //   변   (1,0) (0,1) (2,1) (1,2)   나중
+    //   가운데                          안 잠긴다
+    //
+    // 같은 무리 안에서만 섞는다. 그래서 매판 다르면서도 갇히지는 않는다
     for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
         for (int sx = 0; sx < SECTOR_COLS; ++sx) {
             g_game.sector_state[sy][sx] = SECTOR_OPEN;
-
-            if (sx == SECTOR_COLS / 2 && sy == SECTOR_ROWS / 2) {
-                continue;
-            }
-            g_game.flood_order[g_game.flood_outer++] = sy * SECTOR_COLS + sx;
         }
     }
 
-    // 뒤에서부터 하나씩 뽑아 자리를 바꾼다. 흔한 섞기 방법이다
-    for (int i = g_game.flood_outer - 1; i > 0; --i) {
-        int j = order_rnd.Next(i + 1);
-        int t = g_game.flood_order[i];
-        g_game.flood_order[i] = g_game.flood_order[j];
-        g_game.flood_order[j] = t;
+    int corners[4], edges[4];
+    int nc = 0, ne = 0;
+
+    for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
+        for (int sx = 0; sx < SECTOR_COLS; ++sx) {
+            bool mid_x = (sx == SECTOR_COLS / 2);
+            bool mid_y = (sy == SECTOR_ROWS / 2);
+            if (mid_x && mid_y) {
+                continue;             // 가운데는 안 잠긴다
+            }
+            int idx = sy * SECTOR_COLS + sx;
+            if (!mid_x && !mid_y) corners[nc++] = idx;   // 구석
+            else                  edges[ne++]   = idx;   // 변
+        }
     }
+
+    // 무리 안에서만 섞는다
+    for (int i = nc - 1; i > 0; --i) {
+        int j = order_rnd.Next(i + 1);
+        int t = corners[i]; corners[i] = corners[j]; corners[j] = t;
+    }
+    for (int i = ne - 1; i > 0; --i) {
+        int j = order_rnd.Next(i + 1);
+        int t = edges[i]; edges[i] = edges[j]; edges[j] = t;
+    }
+
+    g_game.flood_outer = 0;
+    for (int i = 0; i < nc; ++i) g_game.flood_order[g_game.flood_outer++] = corners[i];
+    for (int i = 0; i < ne; ++i) g_game.flood_order[g_game.flood_outer++] = edges[i];
 
     g_game.player_count = 0;
     g_game.next_gen     = 1;
@@ -322,6 +356,7 @@ inline int AddPlayer(Session* s, bool bot = false)
     p.dir_x        = 0;
     p.dir_y        = 0;
     p.is_bot       = bot;
+    p.push_cool    = 0;
     p.face         = FACE_DOWN;   // 들어오면 화면 앞쪽을 본다
     p.moving       = false;
     p.bubble_lv    = 0;
@@ -495,6 +530,69 @@ inline void SetInput(Session* s, int dx, int dy)
 }
 
 // 한 사람을 한 틱 움직인다
+// 상자를 민다.
+//
+// 블록은 부수는 것 말고 할 게 없다. 길을 막고 있으면 폭탄을 놓고 2.5초를 기다린다.
+// 상자는 **밀 수 있다.** 그래서 같은 벽 하나에 선택지가 둘이 된다.
+//   부순다  2.5초 걸리고 아이템이 나올 수도 있다
+//   민다    즉시. 대신 민 자리에 그대로 있다
+//
+// 밀어서 통로를 막을 수도 있고, 물에 밀어 넣을 수도 있고,
+// 쫓기는 중에 뒤로 밀어 길을 끊을 수도 있다.
+// 규칙 하나로 판단거리가 여럿 생기는 쪽이 좋은 규칙이다.
+//
+// 한 축만 누르고 있을 때만 민다. 대각선이면 어느 쪽을 미는지가 애매하다.
+// 판정 칸 기준이라 몸이 조금 어긋나 있어도 밀린다.
+// 밀기까지 칸에 맞추라고 하면 그건 짜증이지 난이도가 아니다
+inline void TryPushBox(GameMap& map, Player& p)
+{
+    if (!p.alive || p.trap_ticks > 0) {
+        return;
+    }
+    if (p.push_cool > 0) {
+        --p.push_cool;
+        return;
+    }
+
+    int dx = (p.dir_y == 0) ? p.dir_x : 0;
+    int dy = (p.dir_x == 0) ? p.dir_y : 0;
+    if (dx == 0 && dy == 0) {
+        return;
+    }
+
+    int bx = p.judge_tx + dx;
+    int by = p.judge_ty + dy;
+    if (bx < 0 || by < 0 || bx >= MAP_W || by >= MAP_H) {
+        return;
+    }
+    if (map.tile[by][bx] != TILE_BOX) {
+        return;
+    }
+
+    int nx = bx + dx;
+    int ny = by + dy;
+    if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) {
+        return;
+    }
+    if (map.tile[ny][nx] != TILE_EMPTY) {
+        return;   // 뒤가 막혔다. 밀 데가 없으면 부수는 수밖에 없다
+    }
+
+    // 사람이 서 있는 칸으로는 못 민다. 밀어서 깔아뭉개면 그건 다른 게임이다
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        const Player& o = g_game.players[i];
+        if (!Occupied(o) || !o.alive) continue;
+        if (o.judge_tx == nx && o.judge_ty == ny) return;
+    }
+
+    map.tile[by][bx] = TILE_EMPTY;
+    map.tile[ny][nx] = TILE_BOX;
+    p.push_cool = PUSH_COOLDOWN_TICKS;
+
+    int dir = (dx > 0) ? 0 : (dx < 0) ? 1 : (dy > 0) ? 2 : 3;
+    PushEvent(EVT_PUSH, bx, by, 0xFF, dir);
+}
+
 inline void MovePlayer(const GameMap& map, Player& p)
 {
     if (!p.alive) {

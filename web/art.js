@@ -275,7 +275,13 @@ const Art = (() => {
 
       const th = placeAt(x, y);
       const top = rgb(th.wallTop), side = rgb(th.wallSide), edge = rgb(th.wallEdge);
-      const ct = rgb(th.crateTop), cs = rgb(th.crateSide), cc = rgb(th.crate);
+
+      // 밀 수 있는 상자는 **색이 아니라 모양으로** 다르다.
+      // 색만 바꾸면 장소 팔레트에 묻혀서 못 알아본다.
+      // 쇠테를 두르고 네 귀퉁이에 못을 박아서, 무겁고 미는 것처럼 보이게 한다
+      const box = (t === 4);
+      const ct = rgb(box ? lighter(rgb(th.crate), 0.10) : rgb(th.crateTop));
+      const cs = rgb(th.crateSide), cc = rgb(th.crate);
 
       if (t === 1) {
         // 앞면. 아래로 V.WH 만큼 두께가 보인다
@@ -309,7 +315,7 @@ const Art = (() => {
         if (!isWall(x + 1, y)) g.fillRect(px + T - 1, Y - V.WH, 1, T + V.WH);
         if (!isWall(x, y + 1)) g.fillRect(px, Y + T - 1, T, 1);
       }
-      else if (t === 2) {
+      else if (t === 2 || t === 4) {
         // 상자. 벽보다 낮고 모서리가 둥글다.
         // 부술 수 있는 것과 없는 것이 **모양으로** 갈려야 한다. 색만으로는 부족하다
         const m = Math.max(1, T * 0.09);
@@ -346,6 +352,28 @@ const Art = (() => {
 
         g.fillStyle = 'rgba(255,255,255,0.42)';
         g.fillRect(px + m + 2, Y + m - V.CH + 2, w * 0.34, 1.5);
+
+        // 밀 수 있는 상자만 쇠테와 못.
+        // "이건 밀 수 있다" 를 글자 없이 알리는 유일한 방법이다
+        if (box) {
+          const bx = px + m, by = Y + m - V.CH;
+
+          g.strokeStyle = 'rgba(90,100,115,0.85)';
+          g.lineWidth = Math.max(1.5, w * 0.09);
+          g.beginPath();
+          g.moveTo(bx, by + w * 0.30); g.lineTo(bx + w, by + w * 0.30);
+          g.moveTo(bx, by + w * 0.74); g.lineTo(bx + w, by + w * 0.74);
+          g.stroke();
+
+          g.fillStyle = 'rgba(215,225,240,0.85)';
+          const r2 = Math.max(1, w * 0.055);
+          for (let i = 0; i < 4; ++i) {
+            g.beginPath();
+            g.arc(bx + (i & 1 ? w - w * 0.16 : w * 0.16),
+                  by + (i < 2 ? w * 0.30 : w * 0.74), r2, 0, 7);
+            g.fill();
+          }
+        }
       }
     }
   }
@@ -427,108 +455,22 @@ const Art = (() => {
   //   기울기   가는 쪽으로 몸이 기운다. 이게 없으면 미끄러지는 것처럼 보인다
   //   눌림     걸을 때 위아래로 눌렸다 펴진다. 발만 움직이면 인형이 된다
   //   눈       가끔 깜빡이고, 물풍선이 가까우면 커진다
-  // 머리 장식 여섯 가지.
-  //
-  // 색 스물네 개 중에는 반드시 비슷한 게 생긴다. 장식을 따로 돌리면
-  // 색이 같아도 머리가 달라서 구분이 된다.
-  // 그리고 장식은 **실루엣**이라 안개 너머나 작은 미니맵에서도 읽힌다
-  function drawCrest(g, kind, lean, hy, hr, base, shade, lit, line) {
-    g.lineJoin = 'round';
-    g.strokeStyle = css(line);
-    g.lineWidth = Math.max(1, hr * 0.16);
-
-    if (kind === 0) {
-      // 더듬이 둘. 걸을 때 살짝 흔들리라고 끝을 둥글게
-      g.fillStyle = css(shade);
-      for (let i = 0; i < 2; ++i) {
-        const s = i ? 1 : -1;
-        g.beginPath();
-        g.ellipse(lean + s * hr * 0.82, hy - hr * 0.34, hr * 0.22, hr * 0.30, s * 0.5, 0, 7);
-        g.fill(); g.stroke();
-      }
-    }
-    else if (kind === 1) {
-      // 모자. 챙이 앞으로 나와 있다
-      g.fillStyle = css(shade);
-      g.beginPath();
-      g.ellipse(lean, hy - hr * 0.52, hr * 1.02, hr * 0.46, 0, Math.PI, 0);
-      g.fill(); g.stroke();
-      g.fillStyle = css(darker(shade, 0.2));
-      g.beginPath();
-      g.ellipse(lean, hy - hr * 0.50, hr * 1.15, hr * 0.16, 0, 0, 7);
-      g.fill(); g.stroke();
-    }
-    else if (kind === 2) {
-      // 리본. 좌우 고리 둘에 가운데 매듭
-      g.fillStyle = css(lit);
-      for (let i = 0; i < 2; ++i) {
-        const s = i ? 1 : -1;
-        g.beginPath();
-        g.ellipse(lean + s * hr * 0.62, hy - hr * 0.78, hr * 0.36, hr * 0.26, s * 0.4, 0, 7);
-        g.fill(); g.stroke();
-      }
-      g.fillStyle = css(base);
-      g.beginPath();
-      g.arc(lean, hy - hr * 0.80, hr * 0.18, 0, 7);
-      g.fill(); g.stroke();
-    }
-    else if (kind === 3) {
-      // 뿔 둘
-      g.fillStyle = css(lit);
-      for (let i = 0; i < 2; ++i) {
-        const s = i ? 1 : -1;
-        g.beginPath();
-        g.moveTo(lean + s * hr * 0.40, hy - hr * 0.72);
-        g.quadraticCurveTo(lean + s * hr * 0.92, hy - hr * 1.36,
-                           lean + s * hr * 0.86, hy - hr * 0.62);
-        g.closePath();
-        g.fill(); g.stroke();
-      }
-    }
-    else if (kind === 4) {
-      // 머리띠와 구슬
-      g.strokeStyle = css(lit);
-      g.lineWidth = Math.max(1.5, hr * 0.22);
-      g.beginPath();
-      g.ellipse(lean, hy - hr * 0.10, hr * 1.0, hr * 0.98, 0, Math.PI * 1.15, Math.PI * 1.85);
-      g.stroke();
-      g.fillStyle = css(lit);
-      g.strokeStyle = css(line);
-      g.lineWidth = Math.max(1, hr * 0.14);
-      g.beginPath();
-      g.arc(lean, hy - hr * 1.02, hr * 0.22, 0, 7);
-      g.fill(); g.stroke();
-    }
-    else {
-      // 왕관. 뾰족한 셋
-      g.fillStyle = css(lit);
-      g.beginPath();
-      g.moveTo(lean - hr * 0.72, hy - hr * 0.60);
-      g.lineTo(lean - hr * 0.72, hy - hr * 1.10);
-      g.lineTo(lean - hr * 0.36, hy - hr * 0.80);
-      g.lineTo(lean,             hy - hr * 1.30);
-      g.lineTo(lean + hr * 0.36, hy - hr * 0.80);
-      g.lineTo(lean + hr * 0.72, hy - hr * 1.10);
-      g.lineTo(lean + hr * 0.72, hy - hr * 0.60);
-      g.closePath();
-      g.fill(); g.stroke();
-    }
-  }
-
   // 얼굴만. 킬 피드와 결과표에 쓴다.
   //
   // "P3" 이라고 쓰면 그건 번호고, 얼굴을 그리면 그건 **그 사람**이다.
-  // 판에서 본 머리 장식이 표에도 그대로 나오면 누가 누구인지가 바로 이어진다
-  function drawFace(g, cx, cy, hr, hex, crest) {
-    const base = rgb(hex);
-    const lit  = lighter(base, 0.30);
+  // 판에서 본 동물이 표에도 그대로 나오면 누가 누구인지가 바로 이어진다.
+  // 판에서 쓰는 것과 **같은 함수**로 그린다. 따로 그리면 언젠가 갈린다
+  function drawFace(g, cx, cy, hr, hex, animal) {
+    const base  = rgb(hex);
+    const lit   = lighter(base, 0.30);
     const shade = darker(base, 0.30);
-    const line = darker(base, 0.62);
+    const line  = darker(base, 0.62);
 
+    g.save();
     g.lineJoin = 'round';
     g.lineWidth = Math.max(1, hr * 0.16);
 
-    drawCrest(g, crest | 0, cx, cy, hr, base, shade, lit, line);
+    drawEars(g, animal | 0, cx, cy, hr, base, shade, lit, line, 0);
 
     g.fillStyle = css(base);
     g.strokeStyle = css(line);
@@ -541,12 +483,307 @@ const Art = (() => {
     g.ellipse(cx - hr * 0.34, cy - hr * 0.40, hr * 0.32, hr * 0.22, -0.6, 0, 7);
     g.fill();
 
-    for (let i = 0; i < 2; ++i) {
-      const s = i ? 1 : -1;
+    drawFaceParts(g, animal | 0, cx, cy, hr, base, shade, lit, line,
+                  0, false, 0, 0, cx, false);
+    g.restore();
+  }
+
+  // ── 동물 여덟 종 ────────────────────────────────────────────
+  //
+  // 왜 동물인가.
+  //   둥근 머리에 색만 다르면 스물넷이 다 같은 인형으로 보인다.
+  //   크아가 캐릭터로 기억되는 건 다오와 우니가 **다르게 생겨서**다.
+  //
+  // 왜 여덟인가.
+  //   색이 24개, 동물이 8종이고 주기가 다르다.
+  //   그래서 색이 같은 사람끼리는 동물이 다르고, 동물이 같으면 색이 다르다.
+  //
+  // 무엇으로 가르나. **실루엣이 먼저다.**
+  //   귀 모양이 제일 크게 다르다. 안개 너머와 작은 표에서도 그것만 보인다.
+  //   주둥이와 눈은 가까이서만 보이는 것이라 두 번째다.
+  const ANIMALS = ['고양이', '강아지', '토끼', '곰', '여우', '판다', '개구리', '병아리'];
+
+  // 귀. 머리보다 먼저 그린다
+  function drawEars(g, kind, lean, hy, hr, base, shade, lit, line, face) {
+    g.lineJoin = 'round';
+    g.strokeStyle = css(line);
+    g.lineWidth = Math.max(1, hr * 0.15);
+
+    const back = (face === 3);   // 뒤를 보면 귀가 조금 눕는다
+
+    if (kind === 0) {
+      // 고양이. 뾰족한 삼각 귀. 안쪽이 밝다
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.fillStyle = css(base);
+        g.beginPath();
+        g.moveTo(lean + s * hr * 0.30, hy - hr * 0.74);
+        g.lineTo(lean + s * hr * 0.86, hy - hr * 1.42);
+        g.lineTo(lean + s * hr * 0.94, hy - hr * 0.52);
+        g.closePath();
+        g.fill(); g.stroke();
+
+        g.fillStyle = css(lighter(base, 0.55), 0.9);
+        g.beginPath();
+        g.moveTo(lean + s * hr * 0.44, hy - hr * 0.74);
+        g.lineTo(lean + s * hr * 0.80, hy - hr * 1.18);
+        g.lineTo(lean + s * hr * 0.84, hy - hr * 0.62);
+        g.closePath();
+        g.fill();
+      }
+    }
+    else if (kind === 1) {
+      // 강아지. 축 처진 귀. 머리 옆으로 늘어진다
+      g.fillStyle = css(shade);
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.ellipse(lean + s * hr * 0.92, hy + hr * (back ? 0.10 : 0.22),
+                  hr * 0.34, hr * 0.62, s * 0.32, 0, 7);
+        g.fill(); g.stroke();
+      }
+    }
+    else if (kind === 2) {
+      // 토끼. 길고 큰 귀. 제일 알아보기 쉽다
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.fillStyle = css(base);
+        g.beginPath();
+        g.ellipse(lean + s * hr * 0.44, hy - hr * 1.30,
+                  hr * 0.26, hr * 0.78, s * 0.16, 0, 7);
+        g.fill(); g.stroke();
+
+        g.fillStyle = css(lighter(base, 0.6), 0.9);
+        g.beginPath();
+        g.ellipse(lean + s * hr * 0.44, hy - hr * 1.28,
+                  hr * 0.13, hr * 0.56, s * 0.16, 0, 7);
+        g.fill();
+      }
+    }
+    else if (kind === 3) {
+      // 곰. 작고 동그란 귀가 머리 위에
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.fillStyle = css(shade);
+        g.beginPath();
+        g.arc(lean + s * hr * 0.68, hy - hr * 0.76, hr * 0.34, 0, 7);
+        g.fill(); g.stroke();
+        g.fillStyle = css(lighter(base, 0.45));
+        g.beginPath();
+        g.arc(lean + s * hr * 0.68, hy - hr * 0.76, hr * 0.17, 0, 7);
+        g.fill();
+      }
+    }
+    else if (kind === 4) {
+      // 여우. 크고 뾰족한 귀. 끝이 어둡다
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.fillStyle = css(base);
+        g.beginPath();
+        g.moveTo(lean + s * hr * 0.24, hy - hr * 0.78);
+        g.lineTo(lean + s * hr * 1.02, hy - hr * 1.62);
+        g.lineTo(lean + s * hr * 1.00, hy - hr * 0.44);
+        g.closePath();
+        g.fill(); g.stroke();
+
+        g.fillStyle = css(darker(base, 0.55));
+        g.beginPath();
+        g.moveTo(lean + s * hr * 0.70, hy - hr * 1.16);
+        g.lineTo(lean + s * hr * 1.02, hy - hr * 1.62);
+        g.lineTo(lean + s * hr * 1.00, hy - hr * 1.06);
+        g.closePath();
+        g.fill();
+      }
+    }
+    else if (kind === 5) {
+      // 판다. 검고 동그란 귀
+      g.fillStyle = '#2b2f36';
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.arc(lean + s * hr * 0.74, hy - hr * 0.72, hr * 0.36, 0, 7);
+        g.fill(); g.stroke();
+      }
+    }
+    else if (kind === 6) {
+      // 개구리. 귀가 없고 눈이 머리 위로 솟는다.
+      // 그 혹을 여기서 그려두고 눈알은 얼굴 쪽에서 얹는다
+      g.fillStyle = css(lighter(base, 0.15));
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        g.beginPath();
+        g.arc(lean + s * hr * 0.52, hy - hr * 0.86, hr * 0.40, 0, 7);
+        g.fill(); g.stroke();
+      }
+    }
+    else {
+      // 병아리. 귀 대신 머리 깃 세 가닥
+      g.strokeStyle = css(darker(base, 0.35));
+      g.lineWidth = Math.max(1.5, hr * 0.20);
+      g.lineCap = 'round';
+      for (let i = -1; i <= 1; ++i) {
+        g.beginPath();
+        g.moveTo(lean + i * hr * 0.22, hy - hr * 0.86);
+        g.quadraticCurveTo(lean + i * hr * 0.44, hy - hr * 1.34,
+                           lean + i * hr * 0.14, hy - hr * 1.46);
+        g.stroke();
+      }
+      g.strokeStyle = css(line);
+      g.lineWidth = Math.max(1, hr * 0.15);
+    }
+  }
+
+  // 얼굴. 주둥이와 눈과 무늬
+  function drawFaceParts(g, kind, lean, hy, hr, base, shade, lit, line,
+                         face, side, dir, t, seed, danger) {
+    // 뒤를 보면 아무것도 안 그린다. 그게 뒤통수다
+    if (face === 3) {
+      g.fillStyle = 'rgba(0,0,0,0.16)';
+      g.beginPath();
+      g.arc(lean, hy + hr * 0.28, hr * 0.64, 0, 7);
+      g.fill();
+      return;
+    }
+
+    // 판다 눈 둘레. 눈보다 먼저 깔아야 눈이 그 위에 온다
+    if (kind === 5) {
+      g.fillStyle = '#2b2f36';
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        if (side && s !== dir) continue;
+        g.beginPath();
+        g.ellipse(lean + (side ? dir * hr * 0.34 : s * hr * 0.36), hy + hr * 0.10,
+                  hr * 0.30, hr * 0.36, s * 0.35, 0, 7);
+        g.fill();
+      }
+    }
+
+    // 3초에 한 번쯤 깜빡인다. 물풍선이 가까우면 눈이 커진다.
+    // 위험한 걸 캐릭터가 먼저 알아채는 것처럼 보인다
+    const blink = (Math.sin(t / 1000 + seed) > 0.985) ? 0.15 : 1;
+    const scare = danger ? 1.35 : 1;
+    const er = hr * (kind === 3 ? 0.20 : 0.26) * scare;   // 곰은 눈이 작다
+
+    function eye(ex, ey2, rr2) {
+      const e = (rr2 === undefined) ? er : rr2;
       g.fillStyle = '#fff';
-      g.beginPath(); g.arc(cx + s * hr * 0.34, cy + hr * 0.12, hr * 0.26, 0, 7); g.fill();
-      g.fillStyle = '#161a1f';
-      g.beginPath(); g.arc(cx + s * hr * 0.34, cy + hr * 0.16, hr * 0.13, 0, 7); g.fill();
+      g.beginPath();
+      g.ellipse(ex, ey2, e, e * blink, 0, 0, 7);
+      g.fill();
+      if (blink > 0.5) {
+        g.fillStyle = '#161a1f';
+        g.beginPath();
+        g.arc(ex + (side ? dir * e * 0.20 : 0), ey2 + e * 0.18, e * 0.52, 0, 7);
+        g.fill();
+        // 눈동자 반짝임. 이 점 하나가 살아 있는 것처럼 보이게 한다
+        g.fillStyle = 'rgba(255,255,255,0.9)';
+        g.beginPath();
+        g.arc(ex - e * 0.22, ey2 - e * 0.12, e * 0.16, 0, 7);
+        g.fill();
+      }
+    }
+
+    const ey = hy + hr * 0.12;
+
+    if (kind === 6) {
+      // 개구리. 눈이 머리 위 혹 안에 있다
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        if (side && s !== dir) continue;
+        eye(lean + (side ? dir * hr * 0.52 : s * hr * 0.52), hy - hr * 0.86,
+            hr * 0.24 * scare);
+      }
+      g.strokeStyle = css(line);
+      g.lineWidth = Math.max(1.2, hr * 0.14);
+      g.beginPath();
+      g.arc(lean, hy + hr * 0.02, hr * 0.62, 0.15 * Math.PI, 0.85 * Math.PI);
+      g.stroke();
+      return;
+    }
+
+    if (side) {
+      eye(lean + dir * hr * 0.34, ey);
+    } else {
+      eye(lean - hr * 0.34, ey);
+      eye(lean + hr * 0.34, ey);
+    }
+
+    // 주둥이. 종마다 다르다
+    const mx = lean + (side ? dir * hr * 0.62 : 0);
+    const my = hy + hr * 0.50;
+
+    if (kind === 7) {
+      // 병아리. 부리
+      g.fillStyle = '#f7b73d';
+      g.strokeStyle = 'rgba(120,85,20,0.9)';
+      g.lineWidth = Math.max(1, hr * 0.12);
+      g.beginPath();
+      g.moveTo(mx - hr * 0.26, my - hr * 0.10);
+      g.lineTo(mx + hr * 0.26, my - hr * 0.10);
+      g.lineTo(mx + (side ? dir * hr * 0.30 : 0), my + hr * 0.34);
+      g.closePath();
+      g.fill(); g.stroke();
+      return;
+    }
+
+    // 주둥이 바탕. 밝은 타원
+    g.fillStyle = css(lighter(base, 0.62), 0.95);
+    g.strokeStyle = css(line, 0.5);
+    g.lineWidth = Math.max(1, hr * 0.10);
+    g.beginPath();
+    g.ellipse(mx, my, hr * ((kind === 3 || kind === 4) ? 0.46 : 0.38),
+              hr * (kind === 3 ? 0.34 : 0.28), 0, 0, 7);
+    g.fill(); g.stroke();
+
+    // 코
+    g.fillStyle = (kind === 5) ? '#2b2f36' : css(darker(base, 0.55));
+    g.beginPath();
+    if (kind === 1 || kind === 3) {
+      g.ellipse(mx, my - hr * 0.10, hr * 0.17, hr * 0.13, 0, 0, 7);   // 강아지·곰은 코가 크다
+    } else {
+      g.moveTo(mx - hr * 0.13, my - hr * 0.16);
+      g.lineTo(mx + hr * 0.13, my - hr * 0.16);
+      g.lineTo(mx, my + hr * 0.02);
+      g.closePath();
+    }
+    g.fill();
+
+    // 입
+    g.strokeStyle = css(line, 0.75);
+    g.lineWidth = Math.max(1, hr * 0.10);
+    g.beginPath();
+    g.moveTo(mx, my - hr * 0.02);
+    g.lineTo(mx, my + hr * 0.12);
+    g.stroke();
+    g.beginPath();
+    g.arc(mx - hr * 0.13, my + hr * 0.10, hr * 0.14, 0, Math.PI * 0.9);
+    g.stroke();
+    g.beginPath();
+    g.arc(mx + hr * 0.13, my + hr * 0.10, hr * 0.14, Math.PI * 0.1, Math.PI);
+    g.stroke();
+
+    // 고양이·여우 수염
+    if (kind === 0 || kind === 4) {
+      g.strokeStyle = css(line, 0.45);
+      g.lineWidth = Math.max(0.8, hr * 0.06);
+      for (let i = 0; i < 2; ++i) {
+        const s = i ? 1 : -1;
+        if (side && s !== dir) continue;
+        for (let k = -1; k <= 1; ++k) {
+          g.beginPath();
+          g.moveTo(mx + s * hr * 0.30, my + k * hr * 0.10);
+          g.lineTo(mx + s * hr * 0.88, my + k * hr * 0.22 - hr * 0.06);
+          g.stroke();
+        }
+      }
+    }
+
+    // 강아지 혀
+    if (kind === 1 && !danger) {
+      g.fillStyle = '#ef6b8a';
+      g.beginPath();
+      g.ellipse(mx, my + hr * 0.26, hr * 0.14, hr * 0.18, 0, 0, 7);
+      g.fill();
     }
   }
 
@@ -645,7 +882,8 @@ const Art = (() => {
     // 머리가 같아도 색이 다르다. 둘 다 같으려면 24명을 넘겨야 한다.
     //
     // 그리고 이건 실루엣이다. **멀리서 사람을 알아보는 건 색이 아니라 윤곽이다**
-    drawCrest(g, o.crest | 0, lean, hy, hr, base, shade, lit, line);
+    // 귀. 머리보다 **먼저** 그린다. 뒤에 있어야 붙어 있는 것처럼 보인다
+    drawEars(g, o.animal | 0, lean, hy, hr, base, shade, lit, line, face);
 
     const headGrad = g.createRadialGradient(lean - hr * 0.35, hy - hr * 0.40, hr * 0.15,
                                             lean, hy, hr * 1.1);
@@ -662,54 +900,8 @@ const Art = (() => {
     g.ellipse(lean - hr * 0.34, hy - hr * 0.42, hr * 0.32, hr * 0.22, -0.6, 0, 7);
     g.fill();
 
-    // 얼굴. 뒤를 보면 아무것도 안 그린다. 그게 뒤통수다
-    //
-    // 눈은 3초에 한 번쯤 깜빡이고, 물풍선이 가까우면 커진다.
-    // 위험한 걸 캐릭터가 먼저 알아채는 것처럼 보인다
-    const blink = (Math.sin(t / 1000 + cx) > 0.985) ? 0.15 : 1;
-    const scare = o.danger ? 1.35 : 1;
-    const er = hr * 0.27 * scare;
-
-    function eye(ex, ey) {
-      g.fillStyle = '#fff';
-      g.beginPath();
-      g.ellipse(ex, ey, er, er * blink, 0, 0, 7);
-      g.fill();
-      if (blink > 0.5) {
-        g.fillStyle = '#161a1f';
-        g.beginPath();
-        g.arc(ex + (side ? dir * er * 0.20 : 0), ey + er * 0.18, er * 0.50, 0, 7);
-        g.fill();
-      }
-    }
-
-    if (face === 0) {
-      eye(lean - hr * 0.34, hy + hr * 0.14);
-      eye(lean + hr * 0.34, hy + hr * 0.14);
-      if (o.danger) {
-        g.strokeStyle = css(line, 0.8);
-        g.lineWidth = Math.max(1, r * 0.10);
-        g.beginPath();
-        g.arc(lean, hy + hr * 0.58, hr * 0.22, 0.15 * Math.PI, 0.85 * Math.PI);
-        g.stroke();
-      }
-    }
-    else if (side) {
-      // 옆을 보면 얼굴선이 한쪽으로 튀어나온다. 이게 있어야 옆모습으로 읽힌다
-      g.fillStyle = css(base);
-      g.strokeStyle = css(line);
-      g.lineWidth = Math.max(1, r * 0.11);
-      g.beginPath();
-      g.arc(lean + dir * hr * 0.84, hy + hr * 0.20, hr * 0.23, 0, 7);
-      g.fill(); g.stroke();
-      eye(lean + dir * hr * 0.34, hy + hr * 0.10);
-    }
-    else {
-      g.fillStyle = 'rgba(0,0,0,0.16)';
-      g.beginPath();
-      g.arc(lean, hy + hr * 0.28, hr * 0.64, 0, 7);
-      g.fill();
-    }
+    drawFaceParts(g, o.animal | 0, lean, hy, hr, base, shade, lit, line,
+                  face, side, dir, t, cx, !!o.danger);
 
     g.restore();
   }
@@ -866,7 +1058,7 @@ const Art = (() => {
   }
 
   return {
-    PLACES, WORLDS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
+    PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem,
     rgb, css, mix, lighter, darker,

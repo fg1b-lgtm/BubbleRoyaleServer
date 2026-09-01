@@ -240,6 +240,12 @@ check(api.Art.V.TS >= 24,
       '구역만 보여주니 타일이 커졌다 (판 전체를 보여줄 때는 19px 였다)');
 check(api.Art.V.WH > 0, '벽에 높이가 있다 (' + api.Art.V.WH + 'px)');
 
+// 색만으로는 스물넷을 못 가른다. 동물이 색과 다른 주기로 돌아야 한다
+console.log('  동물 ' + api.Art.ANIMALS.length + '종: ' + api.Art.ANIMALS.join(' '));
+check(api.Art.ANIMALS.length >= 6, '동물이 여러 종이다');
+check(24 % api.Art.ANIMALS.length !== 0 || api.Art.ANIMALS.length !== 24,
+      '동물 수와 색 수의 주기가 달라서 조합이 겹치지 않는다');
+
 // 구역마다 다른 장소로 그려야 한다. 아홉 자리에 서로 다른 조각을 넣어 보냈으니
 // 이름이 아홉 개 다 달라야 한다
 const names = api.Art.placeNames();
@@ -256,7 +262,9 @@ for (let y = 0; y < MAP_H; ++y) {
             const edge   = (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1);
             const pillar = (x % 2 === 0 && y % 2 === 0);
             const block  = ((x * 7 + y * 13) % 3 === 0);
-            v.setUint8(o + 1 + x, edge || pillar ? 1 : (block ? 2 : 0));
+            // 2 = 부서지는 블록, 4 = 밀 수 있는 상자
+            const kind = ((x * 5 + y * 3) % 7 === 0) ? 4 : 2;
+            v.setUint8(o + 1 + x, edge || pillar ? 1 : (block ? kind : 0));
         }
         for (let x = 0; x < MAP_W; ++x) {
             // 아이템 네 종류가 다 한 번씩은 그려지게 깐다
@@ -346,8 +354,8 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
           api.frame(now);
       }
 
-      // 이벤트 열다섯 종류를 다 먹인다. 종류마다 그리는 코드와 소리가 다르다
-      for (let type = 1; type <= 15; ++type) {
+      // 이벤트 열여섯 종류를 다 먹인다. 종류마다 그리는 코드와 소리가 다르다
+      for (let type = 1; type <= 16; ++type) {
           feed(event(type, 11, 12, 0, 2));
       }
       now += 16; api.frame(now);

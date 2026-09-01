@@ -78,7 +78,7 @@ struct GameMap
         if (tx < 0 || tx >= MAP_W || ty < 0 || ty >= MAP_H) {
             return false;
         }
-        return tile[ty][tx] == TILE_BLOCK;
+        return IsBreakableTile(tile[ty][tx]);
     }
 
     // block_percent 를 따로 받는 이유는 밀도를 바꿔가며 재보기 위해서다.
@@ -173,7 +173,7 @@ struct GameMap
             char line[MAP_W + 1];
             for (int x = 0; x < MAP_W; ++x) {
                 line[x] = (tile[y][x] == TILE_WALL)  ? '#'
-                        : (tile[y][x] == TILE_BLOCK) ? '*'
+                        : IsBreakableTile(tile[y][x]) ? '*'
                         :                              '.';
             }
             line[MAP_W] = '\0';
@@ -203,7 +203,7 @@ struct GameMap
                 uint8_t t = tile[y][x];
                 if (t == TILE_WALL) break;
                 danger[y][x] = true;
-                if (t == TILE_BLOCK) break;
+                if (IsBreakableTile(t)) break;
             }
         }
 
@@ -276,7 +276,13 @@ private:
                 else {
                     // 고정 벽과 스폰이 아니면 전부 상자 후보다.
                     // 상자가 곧 아이템이고 곧 시계다. 파낸 만큼만 판이 열린다
-                    tile[y][x] = (rnd.Next(100) < block_percent) ? TILE_BLOCK : TILE_EMPTY;
+                    if (rnd.Next(100) < block_percent) {
+                        // 그중 일부는 **밀 수 있는** 상자다.
+                        // 부수는 것 말고 미는 선택지가 생긴다
+                        tile[y][x] = (rnd.Next(100) < BOX_PERCENT) ? TILE_BOX : TILE_BLOCK;
+                    } else {
+                        tile[y][x] = TILE_EMPTY;
+                    }
                 }
             }
         }
@@ -367,7 +373,7 @@ private:
         for (int y = cy - 3; y <= cy + 3; ++y) {
             for (int x = cx - 3; x <= cx + 3; ++x) {
                 if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) continue;
-                if (tile[y][x] == TILE_BLOCK) ++n;
+                if (IsBreakableTile(tile[y][x])) ++n;
             }
         }
         return n;
@@ -449,7 +455,7 @@ private:
                 if (nx <= 0 || ny <= 0 || nx >= MAP_W - 1 || ny >= MAP_H - 1) continue;
                 if (seen[ny][nx]) continue;
 
-                if (tile[ny][nx] == TILE_BLOCK) {
+                if (IsBreakableTile(tile[ny][nx])) {
                     tile[ny][nx] = TILE_EMPTY;   // 벽을 헐어 길을 낸다
                     seen[ny][nx] = true;
                 }
@@ -484,7 +490,7 @@ private:
                 if (seen[ny][nx]) continue;
                 seen[ny][nx] = true;
 
-                if (tile[ny][nx] == TILE_BLOCK) {
+                if (IsBreakableTile(tile[ny][nx])) {
                     if (n < cap) { bx[n] = nx; by[n] = ny; ++n; }
                 }
                 else if (tile[ny][nx] == TILE_EMPTY) {
@@ -547,7 +553,7 @@ private:
         for (int y = cy - r; y <= cy + r; ++y) {
             for (int x = cx - r; x <= cx + r; ++x) {
                 if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
-                if (tile[y][x] == TILE_BLOCK) tile[y][x] = TILE_EMPTY;
+                if (IsBreakableTile(tile[y][x])) tile[y][x] = TILE_EMPTY;
             }
         }
     }

@@ -222,6 +222,7 @@ inline void RouteEvent(uint8_t type, int x, int y, int who, const char* data, in
         case EVT_BLAST:
         case EVT_CHAIN:
         case EVT_BLOCK:
+        case EVT_PUSH:
             SendToWatchers(x, y, PEEK_TILES, data, len);
             return;
 

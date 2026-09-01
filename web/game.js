@@ -126,12 +126,14 @@ const PLAYER_COLORS = [
 ];
 const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 
-// 머리 장식. 색과 **다른 주기로** 돌린다.
+// 어떤 동물인가. 색과 **다른 주기로** 돌린다.
 //
 // 색 24개 중에는 반드시 비슷한 게 생긴다. 빨강 계열만 넷이다.
-// 장식이 6가지고 색이 24가지인데 주기가 다르므로,
-// 색이 같은 사람끼리는 장식이 다르고 장식이 같은 사람끼리는 색이 다르다
-const crestOf = (id) => id % 6;
+// 동물이 8종이고 색이 24가지인데 주기가 다르므로,
+// 색이 같은 사람끼리는 동물이 다르고 동물이 같으면 색이 다르다.
+//
+// 그리고 동물은 **실루엣**이라 안개 너머와 작은 표에서도 읽힌다
+const animalOf = (id) => id % 8;
 
 // ── 화면 크기 ────────────────────────────────────────────────
 //
@@ -146,9 +148,11 @@ function resize() {
   view.w = G.C.sectorW + G.C.peek * 2;
   view.h = G.C.sectorH + G.C.peek * 2;
 
-  const availW = Math.max(360, window.innerWidth  - 48);
-  const availH = Math.max(320, window.innerHeight - 150);
-  const ts = Math.max(16, Math.min(44,
+  // 화면을 최대한 쓴다. 위에 얇은 띠 하나만 빼고 나머지는 전부 판이다.
+  // 캐릭터가 작게 느껴지던 것의 절반이 여기서 풀린다
+  const availW = Math.max(360, window.innerWidth  - 16);
+  const availH = Math.max(320, window.innerHeight - 34);
+  const ts = Math.max(16, Math.min(72,
     Math.floor(Math.min(availW / view.w, availH / view.h))));
 
   Art.setScale(ts);
@@ -604,7 +608,7 @@ function drawPlayer(id, p, alpha, now, T) {
 
   Art.drawChar(ctx, px, py, r, colorOf(id), {
     face: p.face | 0,
-    crest: crestOf(id),
+    animal: animalOf(id),
     moving: !!p.moving && !dead,
     walk: p.walk || 0,
     t: now,
@@ -826,7 +830,7 @@ function drawHUD(now) {
     const stats = [
       { kind: ITEM.BUBBLE, c: '#4dabf7', v: 1 + me.bubble_lv, max: 5, t: '물풍선' },
       { kind: ITEM.POWER,  c: '#ff922b', v: 2 + me.power_lv,  max: 6, t: '물줄기' },
-      { kind: ITEM.ROLLER, c: '#51cf66', v: me.speed_lv,      max: 4, t: '속도'   },
+      { kind: ITEM.ROLLER, c: '#51cf66', v: me.speed_lv,      max: 7, t: '속도'   },
     ];
 
     stats.forEach((st, i) => {
@@ -910,10 +914,10 @@ function drawHUD(now) {
     const x = W - 10 - 150 + (1 - slide) * 40;
 
     panel(x, y, 150, 26, 5);
-    Art.drawFace(ctx, x + 18, y + 14, 7, colorOf(k.killer), crestOf(k.killer));
+    Art.drawFace(ctx, x + 18, y + 14, 7, colorOf(k.killer), animalOf(k.killer));
     label('P' + k.killer, x + 30, y + 18, 11, '#fff');
     label('▸', x + 66, y + 18, 12, 'rgba(255,255,255,0.4)');
-    Art.drawFace(ctx, x + 92, y + 14, 7, colorOf(k.victim), crestOf(k.victim));
+    Art.drawFace(ctx, x + 92, y + 14, 7, colorOf(k.victim), animalOf(k.victim));
     ctx.globalAlpha *= 0.7;
     label('P' + k.victim, x + 104, y + 18, 11, 'rgba(255,255,255,0.9)');
     ctx.restore();
@@ -1055,7 +1059,7 @@ function drawResults(now) {
     const medal = r.place === 1 ? '#ffd166' : r.place === 2 ? '#d0d7e2' : r.place === 3 ? '#d08c5a' : 'rgba(255,255,255,0.45)';
     label(String(r.place), px + 20, y + 17, r.place <= 3 ? 15 : 13, medal, 'left');
 
-    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(r.id), crestOf(r.id));
+    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(r.id), animalOf(r.id));
     label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 72, y + 16, 12,
           mine ? '#fff' : 'rgba(255,255,255,0.78)');
 
@@ -1192,6 +1196,24 @@ Hooks.event = function (type, x, y, who, val) {
       }
       Sound.crack(pan);
       break;
+
+    // 상자를 밀었다. x,y 가 밀리기 전 자리, val 이 방향
+    case EVT.PUSH: {
+      const PX = [1, -1, 0, 0], PY = [0, 0, 1, -1];
+      const nx = x + PX[val], ny = y + PY[val];
+
+      if (G.tiles[y] && G.tiles[ny]) {
+        G.tiles[y][x]   = TILE.EMPTY;
+        G.tiles[ny][nx] = TILE.BOX;
+        dirtyRows.add(y);
+        dirtyRows.add(ny);
+      }
+
+      // 밀린 방향으로 먼지가 인다. 밀었다는 게 보여야 다음에도 민다
+      FX.push(cx, cy, PX[val], PY[val], T, now, Art.placeAt(x, y).crate);
+      Sound.push(pan);
+      break;
+    }
 
     case EVT.DROP:
       G.items[y][x] = val;

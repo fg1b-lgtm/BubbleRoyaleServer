@@ -197,6 +197,25 @@ const FX = (() => {
              shape: 'ring', glow: true });
     },
 
+    // 상자를 밀었다. 밀린 방향으로 먼지가 끌린다.
+    // 밀었다는 게 눈에 보여야 "이건 밀 수 있는 것" 이라는 걸 배운다
+    push(x, y, dx, dy, T, now, color) {
+      for (let i = 0; i < 9; ++i) {
+        emit({ x: x + rnd(-T * .3, T * .3), y: y + rnd(-T * .3, T * .3),
+               vx: dx * T * rnd(0.01, 0.05) + rnd(-.05, .05),
+               vy: dy * T * rnd(0.01, 0.05) + rnd(-.05, .05),
+               r: T * rnd(0.06, 0.14), r1: T * 0.3,
+               color: 'rgba(210,200,185,0.45)',
+               drag: 0.92, life: rnd(240, 420), now, shape: 'soft' });
+      }
+      for (let i = 0; i < 3; ++i) {
+        emit({ x, y, vx: -dx * T * rnd(0.02, 0.06), vy: -dy * T * rnd(0.02, 0.06),
+               r: T * rnd(0.06, 0.11), color,
+               grav: T * 0.002, drag: 0.94, life: rnd(300, 480), now,
+               shape: 'chip', rot: rnd(0, 6.28), spin: rnd(-.3, .3) });
+      }
+    },
+
     // 걸을 때 발밑에서 이는 먼지. 아주 작게. 없으면 걷는 게 안 느껴진다
     step(x, y, T, now) {
       emit({ x: x + rnd(-T * .12, T * .12), y, vx: rnd(-.05, .05), vy: rnd(-.06, -.01),

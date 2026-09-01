@@ -17,59 +17,62 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  /* 화면을 판이 다 쓴다.
+     설명은 위에 아주 작은 한 줄로 접어두고, 게임판이 세로를 전부 가져간다.
+     캐릭터가 작게 느껴지던 게 여기서 절반은 풀린다 */
   body {
     margin: 0;
     color: var(--ink);
-    font: 13px/1.5 "Pretendard", "Segoe UI", system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 12px; padding: 14px;
+    font: 12px/1.4 "Pretendard", "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    height: 100vh; overflow: hidden;
     background:
       radial-gradient(1200px 700px at 50% -10%, #16202e 0%, #0a0e14 55%, #06090d 100%);
   }
 
   header {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
     width: 100%; justify-content: center;
+    height: 26px; padding: 0 10px;
+    font-size: 11px; color: var(--dim);
+    overflow: hidden; white-space: nowrap;
   }
   .mark {
-    font-weight: 800; font-size: 15px; letter-spacing: .18em;
+    font-weight: 800; font-size: 11px; letter-spacing: .16em;
     background: linear-gradient(180deg, #ffffff, #8fc7de);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
   .chip {
-    display: inline-flex; align-items: center; gap: 7px;
+    display: inline-flex; align-items: center; gap: 5px;
     background: var(--panel); border: 1px solid var(--line);
-    border-radius: 999px; padding: 5px 12px; font-size: 12px; color: var(--dim);
+    border-radius: 999px; padding: 2px 8px; font-size: 11px; color: var(--dim);
   }
   .chip b { color: var(--ink); font-weight: 600; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bad); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
   .on  { color: var(--good); }
   .off { color: var(--bad); }
+  .keys { opacity: .5; }
+  .keys kbd + kbd { margin-left: 1px; }
 
-  /* 판을 액자에 넣는다. 테두리와 바깥 그림자가 있으면 화면이 창문처럼 보인다 */
   #stage {
     position: relative; line-height: 0;
-    border-radius: 10px; padding: 6px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
-    box-shadow: 0 24px 60px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.05) inset;
+    flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+    min-height: 0; width: 100%;
   }
-  canvas { display: block; border-radius: 6px; background: #06090d; }
+  canvas {
+    display: block; border-radius: 6px; background: #06090d;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
+  }
 
-  footer {
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
-    color: var(--dim); font-size: 12px;
-  }
   kbd {
-    display: inline-block; min-width: 20px; text-align: center;
+    display: inline-block; min-width: 15px; text-align: center;
     background: rgba(255,255,255,0.07); border: 1px solid var(--line);
-    border-bottom-width: 2px; border-radius: 4px;
-    padding: 2px 6px; font: inherit; font-size: 11px; color: var(--ink);
+    border-radius: 3px; padding: 0 4px; font: inherit; font-size: 10px; color: var(--ink);
   }
   button {
     background: rgba(255,255,255,0.07); color: var(--ink);
     border: 1px solid var(--line); border-radius: 999px;
-    padding: 5px 14px; font: inherit; font-size: 12px; cursor: pointer;
-    transition: background .12s ease, border-color .12s ease;
+    padding: 2px 10px; font: inherit; font-size: 11px; cursor: pointer;
   }
   button:hover { background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.2); }
 </style>
@@ -77,20 +80,13 @@
 <header>
   <span class="mark">BUBBLE ROYALE</span>
   <span class="chip"><span class="dot"></span><span id="conn" class="off">연결 안 됨</span></span>
-  <span class="chip">판 모양 <b id="theme">—</b></span>
+  <span class="chip"><b id="theme">—</b></span>
+  <span class="keys"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 물풍선 <kbd>R</kbd> 다시 <kbd>M</kbd> 소리</span>
   <span class="chip"><span id="sound" class="on">소리 켜짐</span></span>
   <button id="restart">다시 시작</button>
 </header>
 
 <div id="stage"><canvas id="cv"></canvas></div>
-
-<footer>
-  <span><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> 또는 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동</span>
-  <span><kbd>Space</kbd> 물풍선</span>
-  <span><kbd>R</kbd> 다시 시작</span>
-  <span><kbd>M</kbd> 소리</span>
-  <span style="opacity:.55">그림도 소리도 파일 없이 그때그때 만든다</span>
-</footer>
 
 <!-- 순서가 있다.
      audio · art · fx 는 서로를 모른다. net 이 상태를 들고,

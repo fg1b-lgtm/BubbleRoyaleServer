@@ -424,6 +424,12 @@ const Sound = (() => {
     // 낼 때마다 음이 흔들려서 백 번을 들어도 기계로 안 들린다
     crack(pan) { play('crate', { pan, gain: 0.42, rate: rnd(0.82, 1.25) }); },
 
+    // 상자를 밀었다. 나무가 바닥에 끌리는 소리. 낮게 깎아서 둔탁하게
+    push(pan) {
+      play('crate', { pan, gain: 0.30, rate: rnd(0.45, 0.6), cut: 1400, filter: 'lowpass' });
+      play('step',  { pan, gain: 0.18, rate: rnd(0.5, 0.7) });
+    },
+
     // 내 발소리. 아주 작게. 없으면 걷는 게 안 느껴지고 크면 지겹다
     step(pan) {
       if (!gate('step', 130)) return;

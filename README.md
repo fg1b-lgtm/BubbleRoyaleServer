@@ -143,14 +143,14 @@ build.bat ..\tools\probe.cpp
 최근 확인:
 
 ```
-movetest    28 PASS / 0 FAIL
-bubbletest  59 PASS / 0 FAIL
+movetest    32 PASS / 0 FAIL
+bubbletest  66 PASS / 0 FAIL
 floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest  22 PASS / 0 FAIL
-roundsim    20판 전부 결판, 평균 2분 52초
+clienttest  25 PASS / 0 FAIL
+roundsim    20판 전부 결판, 평균 3분 6초
 봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
 
 AOI 전후 (walker 12명 30초, 봇 12)

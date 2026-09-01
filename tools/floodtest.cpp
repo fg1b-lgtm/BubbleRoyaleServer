@@ -297,19 +297,33 @@ static void Test7_StraddleBoundary()
 
     OpenBoard(1234);
 
-    // 잠기는 구역과 안 잠기는 구역이 맞닿은 세로 경계를 찾는다
+    // 잠기는 구역과 안 잠기는 구역이 맞닿은 세로 경계를 찾는다.
+    //
+    // **몇 번째로 잠기는지까지 같이 찾아야 한다.**
+    // 9/1 에 잠기는 순서를 "구석 먼저, 변 나중" 으로 바꿨더니 이 구역이
+    // 1단계가 아니라 2~3단계에 잠기게 됐다. 1단계만 돌리고 재던 시험이 깨졌다.
+    // 단계를 박아두지 말고 **그 구역이 잠길 때까지** 돌린다
     int sector = -1;
+    int order  = -1;
     for (int i = 0; i < g_game.flood_outer; ++i) {
         int s  = g_game.flood_order[i];
         int sx = s % SECTOR_COLS;
         int sy = s / SECTOR_COLS;
-        if (sx == 0 && sy == SECTOR_ROWS / 2) { sector = s; break; }
+        if (sx == 0 && sy == SECTOR_ROWS / 2) { sector = s; order = i; break; }
     }
 
     if (sector < 0) {
         printf("  이 씨앗에는 맞는 경계가 없다. 건너뛴다\n");
         return;
     }
+
+    // 그 구역이 몇 단계에 잠기나
+    int stage = 0, seen = 0;
+    for (int i = 0; i < FLOOD_STAGES; ++i) {
+        seen += FLOOD_COUNT[i];
+        if (order < seen) { stage = i; break; }
+    }
+    printf("  왼쪽 가운데 구역은 %d단계에 잠긴다 (순서 %d번째)\n", stage + 1, order + 1);
 
     int me = Join(SECTOR_W, SECTOR_H / 2 + SECTOR_H * (SECTOR_ROWS / 2));
     Player& p = g_game.players[me];
@@ -318,7 +332,7 @@ static void Test7_StraddleBoundary()
     // 몸은 잠긴 구역까지 걸치지만 과반수는 안전한 쪽에 있다
     const int stand = SECTOR_W * TILE_UNITS + 10;
 
-    for (int t = 1; t <= g_game.flood_fill[0] + 5; ++t) {
+    for (int t = 1; t <= g_game.flood_fill[stage] + 5; ++t) {
         p.px = stand;   // 매 틱 그 자리를 유지한다
         Tick();
     }

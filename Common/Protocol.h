@@ -58,6 +58,10 @@ enum EventType : uint8_t
     EVT_DROP       = 13,   // 부서진 블록에서 아이템이 떨어졌다. value 가 ItemType
     EVT_RING       = 14,   // 최종 구역 안 물이 한 겹 차올랐다. value 가 남은 폭
     EVT_POP        = 15,   // 갇힌 사람을 몸으로 부딪쳐 터뜨렸다. who 가 당한 쪽, value 가 터뜨린 쪽
+
+    // 상자를 밀었다. x,y 가 **밀리기 전** 자리, value 가 방향 (0 오른 1 왼 2 아래 3 위).
+    // 새 자리는 화면이 계산한다. 두 칸을 다 보내면 바이트가 두 개 더 든다
+    EVT_PUSH       = 16,
 };
 
 
