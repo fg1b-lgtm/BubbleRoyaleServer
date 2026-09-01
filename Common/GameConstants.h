@@ -225,6 +225,11 @@ enum ItemType : uint8_t
     ITEM_BUBBLE = 1,   // 동시 설치 +1
     ITEM_POWER  = 2,   // 물줄기 +1
     ITEM_ROLLER = 3,   // 이동 속도 +1
+
+    // 물줄기를 한 번에 상한 위까지 올린다.
+    // 벽에서는 절대 안 나온다. 킬 드롭과 최종 보급에서만 나온다.
+    // 뒤처진 사람이 한 번에 따라잡을 수 있는 유일한 길이다 (SPEC 2.5)
+    ITEM_ULTRA  = 4,
 };
 
 // ── 화면 ───────────────────────────────────────────────────
@@ -245,3 +250,13 @@ constexpr int FLOOD_ESCAPE_TICKS  = TICK_RATE * 2;       // 2초
 constexpr int STAT_CAP_FROM_WALL  = 4;    // 벽에서 나오는 수치형의 상한
 constexpr int ITEM_DROP_PERCENT   = 40;   // 블록을 부술 때 아이템이 나올 확률
 constexpr int KILL_DROP_PERCENT   = 50;   // 죽을 때 흘리는 비율
+
+// 울트라로만 갈 수 있는 물줄기 상한. 벽에서 나오는 것으로는 STAT_CAP_FROM_WALL 까지다
+constexpr int STAT_CAP_ULTRA = 6;
+
+// 사람을 잡았을 때 울트라가 같이 떨어질 확률.
+// 이게 있어야 잡는 것이 파밍보다 확실히 낫고, 뒤처진 사람도 한 번에 따라잡는다
+constexpr int ULTRA_DROP_PERCENT = 25;
+
+// 흘린 아이템을 시체 주변 몇 칸까지 뿌리나
+constexpr int LOOT_SPREAD = 3;

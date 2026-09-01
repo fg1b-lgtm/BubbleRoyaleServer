@@ -68,6 +68,12 @@ inline void UpdateRing()
         g_game.ring_x1 = g_game.ring_x0 + SECTOR_W - 1;
         g_game.ring_y1 = g_game.ring_y0 + SECTOR_H - 1;
         g_game.ring_next = (int)g_game.tick + g_game.ring_step;
+
+        // 최종 구역이 되면 정중앙에 보급을 하나 떨군다 (SPEC 2.5).
+        //
+        // 하나뿐이고 자리가 전원에게 보이므로 **먹으러 가는 것 자체가 위험**하다.
+        // 그 과정에서 교전이 강제되는 것이 이 보급의 목적이다.
+        DropItemNear(MAP_W / 2, MAP_H / 2, ITEM_ULTRA);
         return;
     }
 

@@ -72,7 +72,7 @@ const EVT = {
   FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15,
 };
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3 };
-const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3 };
+const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4 };
 const SECT = { OPEN:0, WARNING:1, FLOODED:2 };
 const PF   = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8 };
 const HEADER_SIZE = 4;
@@ -188,6 +188,9 @@ const sfx = (() => {
     item()   { tone(950, 1500, 0.07, 'square', 0.07); },
     death()  { noise(0.35, 0.22, 400); tone(240, 55, 0.35, 'sine', 0.16); },
     drop()   { tone(600, 900, 0.06, 'sine', 0.05); },
+    // 울트라. 흔한 게 아니라 크게 들려야 한다
+    ultra()  { tone(500, 1400, 0.30, 'square', 0.20);
+               setTimeout(() => tone(1000, 1900, 0.25, 'square', 0.16), 90); },
     // 마무리. 물풍선이 터지는 소리라 짧고 통통하게
     pop()    { tone(1400, 300, 0.14, 'sine', 0.26); noise(0.12, 0.18, 1800); },
 
@@ -435,12 +438,13 @@ function onEvent(v) {
 
     case EVT.DROP:
       items[y][x] = val;
+      if (val === ITEM.ULTRA) burst(x, y, '#ffd166', TS * 2.0, 3);
       sfx.drop();
       break;
 
     case EVT.ITEM:
       items[y][x] = ITEM.NONE;
-      if (w === myId) sfx.item();
+      if (w === myId) (val === ITEM.ULTRA ? sfx.ultra() : sfx.item());
       break;
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
@@ -660,12 +664,27 @@ function draw() {
       const it = items[y][x];
       if (it === ITEM.NONE) continue;
 
+      const cx2 = x * TS + TS / 2, cy2 = y * TS + TS / 2;
+
+      // 울트라만 크게 그린다. 대비가 있어야 특수가 특별해진다 (SPEC 2.7 의 6위)
+      if (it === ITEM.ULTRA) {
+        const beat = 0.5 + 0.5 * Math.sin(now / 140);
+        ctx.fillStyle = 'rgba(255,209,102,' + (0.5 + 0.45 * beat) + ')';
+        ctx.beginPath();
+        ctx.arc(cx2, cy2, TS * (0.34 + 0.08 * beat), 0, 7);
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        continue;
+      }
+
       ctx.fillStyle = it === ITEM.BUBBLE ? '#4dabf7'
                     : it === ITEM.POWER  ? '#ff922b'
                     :                      '#51cf66';
       // 작고 잦은 것이라 연출을 줄인다. 크게 하면 3분 뒤에 피로해진다
       ctx.beginPath();
-      ctx.arc(x * TS + TS / 2, y * TS + TS / 2, TS * 0.22, 0, 7);
+      ctx.arc(cx2, cy2, TS * 0.22, 0, 7);
       ctx.fill();
     }
   }

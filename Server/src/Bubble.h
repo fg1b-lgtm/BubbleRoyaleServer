@@ -227,12 +227,78 @@ inline void PickUpItems()
         g_game.item[ty][tx] = ITEM_NONE;
 
         // 벽에서 나온 수치형은 상한 4 에서 멈춘다.
-        // 상한 위는 킬 드롭과 중앙에서만 나온다
+        // 상한 위는 킬 드롭과 최종 보급에서만 나온다
         if (kind == ITEM_BUBBLE && p.bubble_lv < STAT_CAP_FROM_WALL) ++p.bubble_lv;
         if (kind == ITEM_POWER  && p.power_lv  < STAT_CAP_FROM_WALL) ++p.power_lv;
         if (kind == ITEM_ROLLER && p.speed_lv  < STAT_CAP_FROM_WALL) ++p.speed_lv;
 
+        // 울트라는 한 번에 상한 위까지 올린다. 이게 역전 장치다
+        if (kind == ITEM_ULTRA) {
+            p.power_lv = STAT_CAP_ULTRA;
+        }
+
         PushEvent(EVT_ITEM, tx, ty, i, kind);
+    }
+}
+
+// 아이템 하나를 이 자리 근처의 빈 칸에 떨군다. 놓을 데가 없으면 false
+inline bool DropItemNear(int cx, int cy, uint8_t kind)
+{
+    for (int r = 0; r <= LOOT_SPREAD; ++r) {
+        for (int y = cy - r; y <= cy + r; ++y) {
+            for (int x = cx - r; x <= cx + r; ++x) {
+                // 테두리만 훑는다. 안쪽은 이미 지난 바퀴에서 봤다
+                int ax = (x - cx < 0) ? cx - x : x - cx;
+                int ay = (y - cy < 0) ? cy - y : y - cy;
+                if (ax != r && ay != r) {
+                    continue;
+                }
+                if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) {
+                    continue;
+                }
+                if (g_game.map.tile[y][x] != TILE_EMPTY) {
+                    continue;
+                }
+                if (g_game.item[y][x] != ITEM_NONE) {
+                    continue;
+                }
+
+                g_game.item[y][x] = kind;
+                PushEvent(EVT_DROP, x, y, 0xFF, kind);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// 죽은 사람이 가진 것의 절반을 주변에 흘린다.
+//
+// 이게 없으면 사람을 잡을 이유가 "하나 줄었다" 뿐이다.
+// 흘리게 하면 **잡는 것이 파밍보다 확실히 낫다** 가 되고, 그래야 서로 찾아다닌다.
+//
+// 반올림해서 흘린다. 하나 가진 사람을 잡아도 하나는 나와야 잡을 맛이 난다.
+inline void DropKillLoot(int slot)
+{
+    const Player& p = g_game.players[slot];
+
+    struct { uint8_t kind; int lv; } stat[3] = {
+        { ITEM_BUBBLE, p.bubble_lv },
+        { ITEM_POWER,  p.power_lv  },
+        { ITEM_ROLLER, p.speed_lv  },
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        int n = (stat[i].lv * KILL_DROP_PERCENT + 99) / 100;   // 올림
+        for (int k = 0; k < n; ++k) {
+            DropItemNear(p.judge_tx, p.judge_ty, stat[i].kind);
+        }
+    }
+
+    // 울트라는 벽에서 절대 안 나온다. 여기와 최종 보급에서만 나온다.
+    // 뒤처진 사람이 한 번에 따라잡는 유일한 길이라 역전 장치가 된다
+    if (g_game.drop_rnd.Next(100) < ULTRA_DROP_PERCENT) {
+        DropItemNear(p.judge_tx, p.judge_ty, ITEM_ULTRA);
     }
 }
 
@@ -243,7 +309,9 @@ inline void KillPlayer(int slot)
     p.trap_ticks = 0;
     p.dir_x      = 0;
     p.dir_y      = 0;
+
     PushEvent(EVT_DEATH, p.judge_tx, p.judge_ty, slot, 0);
+    DropKillLoot(slot);
 }
 
 // 물줄기에 맞았는지 본다. 걸치기가 값을 하는 곳이 여기다

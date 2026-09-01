@@ -375,6 +375,7 @@ struct RoundResult
     int  alive_at[8];        // 30초마다 살아 있는 수
     int  tiles_per_head[8];  // 30초마다 한 명당 안 잠긴 칸 수
     int  item_sum;
+    int  winner_items;   // 승자가 들고 끝낸 아이템 수. 스노볼 지표다
     int  blocks_broken;
 };
 
@@ -476,7 +477,9 @@ static void PlayRound(unsigned int seed, RoundResult& r)
 
     for (int i = 0; i < PLAYER_MAX; ++i) {
         const Player& p = g_game.players[i];
-        r.item_sum += p.bubble_lv + p.power_lv + p.speed_lv;
+        int have = p.bubble_lv + p.power_lv + p.speed_lv;
+        r.item_sum += have;
+        if (p.alive) r.winner_items = have;
     }
 
     int left = 0;
@@ -496,7 +499,7 @@ int main(int argc, char** argv)
     printf("=== 봇 %d명, %d판 ===\n\n", PLAYER_MAX, rounds);
 
     long long ticks = 0, bubble = 0, water = 0, first = 0, items = 0, broken = 0;
-    long long self_kill = 0;
+    long long self_kill = 0, win_items = 0;
     long long alive_at[8] = {}, tiles_at[8] = {};
     int unfinished = 0;
     int longest = 0, shortest = 999999;
@@ -510,6 +513,7 @@ int main(int argc, char** argv)
         water  += r.by_water;
         self_kill += r.by_self;
         items  += r.item_sum;
+        win_items += r.winner_items;
         broken += r.blocks_broken;
         if (r.first_kill_tick > 0) first += r.first_kill_tick;
         if (r.alive_end > 1) ++unfinished;
@@ -549,10 +553,10 @@ int main(int argc, char** argv)
     }
 
     printf("\n--- 아이템 ---\n");
-    printf("  부순 블록 %lld 개, 사람당 아이템 %lld.%lld 개\n",
+    printf("  부순 블록 %lld 개, 살아남은 사람의 아이템 %lld.%lld 개\n",
            broken / rounds,
-           items / rounds / PLAYER_MAX,
-           (items * 10 / rounds / PLAYER_MAX) % 10);
+           win_items / rounds, (win_items * 10 / rounds) % 10);
+    printf("  (상한은 물풍선 4 + 물줄기 4 + 롤러 4 = 12. 울트라를 먹으면 물줄기만 6)\n");
 
     return 0;
 }

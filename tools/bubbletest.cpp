@@ -506,6 +506,88 @@ static void Test10_Pickup()
     Check(p.power_lv == STAT_CAP_FROM_WALL, "상한에서 멈춘다");
 }
 
+// ── 시험 11 : 죽으면 가진 것의 절반을 흘리는가 ───────────────
+static void Test11_KillLoot()
+{
+    printf("\n=== 시험 11: 킬 드롭 ===\n");
+
+    OpenBoard();
+    int me = Join(20, 20);
+    Player& p = g_game.players[me];
+    p.bubble_lv = 4;
+    p.power_lv  = 2;
+    p.speed_lv  = 1;
+
+    KillPlayer(me);
+
+    int found[5] = {};
+    for (int y = 0; y < MAP_H; ++y) {
+        for (int x = 0; x < MAP_W; ++x) {
+            uint8_t it = g_game.item[y][x];
+            if (it != ITEM_NONE) ++found[it];
+        }
+    }
+
+    printf("  물풍선 4 / 물줄기 2 / 롤러 1 을 가진 사람이 죽었다\n");
+    printf("  흘린 것: 물풍선 %d, 물줄기 %d, 롤러 %d, 울트라 %d\n",
+           found[ITEM_BUBBLE], found[ITEM_POWER], found[ITEM_ROLLER], found[ITEM_ULTRA]);
+
+    Check(found[ITEM_BUBBLE] == 2, "물풍선 4 개 중 2 개를 흘렸다");
+    Check(found[ITEM_POWER]  == 1, "물줄기 2 개 중 1 개를 흘렸다");
+    Check(found[ITEM_ROLLER] == 1, "롤러 1 개도 1 개는 흘린다 (올림)");
+
+    // 아무것도 없는 사람을 잡으면 아무것도 안 나온다
+    OpenBoard();
+    int poor = Join(20, 20);
+    KillPlayer(poor);
+
+    int any = 0;
+    for (int y = 0; y < MAP_H; ++y)
+        for (int x = 0; x < MAP_W; ++x)
+            if (g_game.item[y][x] != ITEM_NONE && g_game.item[y][x] != ITEM_ULTRA) ++any;
+    Check(any == 0, "빈손인 사람을 잡으면 수치형은 안 나온다");
+}
+
+// ── 시험 12 : 울트라는 벽에서 안 나오고 상한 위로 올린다 ─────
+static void Test12_Ultra()
+{
+    printf("\n=== 시험 12: 울트라 ===\n");
+
+    OpenBoard();
+    int me = Join(10, 10);
+    Player& p = g_game.players[me];
+
+    // 벽에서 나오는 것으로는 상한까지만
+    for (int i = 0; i < 10; ++i) {
+        g_game.item[10][10] = ITEM_POWER;
+        Tick();
+    }
+    printf("  벽에서 나온 것만 먹었을 때 물줄기 %d (상한 %d)\n",
+           p.power_lv, STAT_CAP_FROM_WALL);
+    Check(p.power_lv == STAT_CAP_FROM_WALL, "벽에서는 상한까지만 오른다");
+
+    // 울트라 하나면 상한 위로
+    g_game.item[10][10] = ITEM_ULTRA;
+    Tick();
+    printf("  울트라를 먹은 뒤 물줄기 %d (울트라 상한 %d)\n",
+           p.power_lv, STAT_CAP_ULTRA);
+    Check(p.power_lv == STAT_CAP_ULTRA, "울트라는 상한 위로 올린다");
+
+    // 블록을 아무리 부숴도 울트라는 안 나온다
+    OpenBoard();
+    int ultra_from_wall = 0;
+    for (int i = 0; i < 3000; ++i) {
+        int x = 1 + (i % (MAP_W - 2));
+        int y = 1 + ((i / (MAP_W - 2)) % (MAP_H - 2));
+        g_game.map.tile[y][x] = TILE_BLOCK;
+        g_game.item[y][x] = ITEM_NONE;
+        BreakBlock(x, y);
+        if (g_game.item[y][x] == ITEM_ULTRA) ++ultra_from_wall;
+    }
+    printf("  블록 3000 개를 부숴서 나온 울트라: %d 개\n", ultra_from_wall);
+    Check(ultra_from_wall == 0, "울트라는 벽에서 절대 안 나온다");
+}
+
 int main()
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -521,6 +603,8 @@ int main()
     Test8_Count();
     Test9_Drop();
     Test10_Pickup();
+    Test11_KillLoot();
+    Test12_Ultra();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
