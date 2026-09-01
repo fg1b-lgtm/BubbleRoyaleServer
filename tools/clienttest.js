@@ -56,6 +56,7 @@ function makeCtx() {
         drawImage: nop('drawImage'),
         createLinearGradient: () => { bump('gradient'); return grad; },
         createRadialGradient: () => { bump('gradient'); return grad; },
+        createPattern: () => { bump('pattern'); return {}; },
     };
 }
 
@@ -208,7 +209,7 @@ const feed = (v) => api.onPacket(v);
 
 // WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
 // (21 + peek 1 + 조각 9 = 31 바이트)
-feed(pkt(5, 31, (v, o) => {
+feed(pkt(5, 32, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -223,14 +224,20 @@ feed(pkt(5, 31, (v, o) => {
     v.setUint8(o + 15, 80);          // body_num
     v.setUint8(o + 16, 100);         // body_den
     v.setUint8(o + 17, 3);           // peek_tiles
-    v.setUint32(o + 18, 1234, true); // seed
+    v.setUint8(o + 18, 2);           // cam_hysteresis
+    v.setUint32(o + 19, 1234, true); // seed
     // 아홉 자리에 조각 번호. 열 가지 장소가 다 한 번씩은 그려지게 섞어 넣는다
     const kinds = [0, 3, 7, 2, 9, 5, 6, 8, 1];
-    for (let i = 0; i < 9; ++i) v.setUint8(o + 22 + i, kinds[i]);
+    for (let i = 0; i < 9; ++i) v.setUint8(o + 23 + i, kinds[i]);
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
 check(api.Art.V.TS >= 14, '화면 크기에 맞춰 타일 크기를 골랐다 (' + api.Art.V.TS + 'px)');
+
+// 9/1 부터 화면이 판 전체가 아니라 **내 구역 + 가장자리 세 칸**이다.
+// 판이 좁아진 만큼 타일이 커진다. 캐릭터 얼굴이 보이는 게 여기서 나온다
+check(api.Art.V.TS >= 24,
+      '구역만 보여주니 타일이 커졌다 (판 전체를 보여줄 때는 19px 였다)');
 check(api.Art.V.WH > 0, '벽에 높이가 있다 (' + api.Art.V.WH + 'px)');
 
 // 구역마다 다른 장소로 그려야 한다. 아홉 자리에 서로 다른 조각을 넣어 보냈으니

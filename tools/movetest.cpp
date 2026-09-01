@@ -274,12 +274,17 @@ static void Test6_MapDeterminism()
 }
 
 // ── 시험 7 : 모서리에 걸렸을 때 서버가 돌게 도와주나 ─────────
-static void Test7_CornerAssist()
+// ── 시험 8 : 벽에 닿으면 서는가 ──────────────────────────────
+//
+// 9/1 에 코너 보정을 껐다. 원래는 모서리에서 옆으로 밀어줬는데,
+// 돌려보니 **벽에 조금만 비벼도 대각선으로 스윽 미끄러졌다.**
+// 이 게임은 물풍선을 어느 칸에 놓을지가 판단의 전부라, 서고 싶은 데 못 서면 무너진다.
+//
+// 그래서 여기서 재는 것이 뒤집혔다. "잘 돌아지나" 가 아니라 **"안 밀리나"** 다.
+static void Test7_NoSlide()
 {
-    printf("\n=== 시험 8: 코너 보정 ===\n");
+    printf("\n=== 시험 8: 벽에 닿으면 선다 ===\n");
 
-    // 세로 벽을 세우고, 한 줄만 뚫어둔다.
-    // 플레이어는 뚫린 줄이 아니라 그 옆 줄에서 반쯤 어긋난 채로 달려온다
     GameMap m;
     MakeOpenMap(m);
     for (int y = 1; y < MAP_H - 1; ++y) {
@@ -287,80 +292,64 @@ static void Test7_CornerAssist()
     }
     m.tile[6][8] = TILE_EMPTY;   // (8,6) 한 칸만 통로
 
-    // 5번 줄에 있지만 6번 줄 경계 가까이 붙어 있다.
-    // 사람이 통로 한가운데를 정확히 맞춰 달리는 일은 없다
     Player p = MakePlayer(3, 5);
-    p.py    = 5 * TILE_UNITS + (TILE_UNITS - 30);
+    p.py    = 5 * TILE_UNITS + (TILE_UNITS - 30);   // 6번 줄 경계에 바짝 붙어 있다
     p.dir_x = 1;
-    p.dir_y = 0;   // 아래는 안 누른다. 순수하게 서버가 도와주는지만 본다
+    p.dir_y = 0;                                    // 아래는 안 누른다
 
     int start_y = p.py;
     bool passed = false;
-
     for (int t = 0; t < 120; ++t) {
         MovePlayer(m, p);
         if (p.px / TILE_UNITS > 8) { passed = true; break; }
     }
 
-    printf("  세로 %d -> %d 로 밀려서 가로 타일 %d 까지 갔다\n",
-           start_y, p.py, p.px / TILE_UNITS);
+    printf("  세로 %d -> %d, 가로 타일 %d\n", start_y, p.py, p.px / TILE_UNITS);
 
-    Check(passed, "옆으로 안 눌렀는데도 모서리를 돌아 통로를 지났다");
-    Check(p.py / TILE_UNITS == 6, "뚫린 줄로 정렬됐다");
+    Check(!passed, "옆을 안 눌렀으면 통로를 못 지난다 (안 밀어준다)");
+    Check(p.px + PLAYER_HALF < 8 * TILE_UNITS, "벽 앞에서 몸이 닿는 데까지만 간다");
 
-    // 반대쪽도 되어야 한다. 아니면 위아래가 비대칭이라 손맛이 이상해진다
-    GameMap m2;
-    MakeOpenMap(m2);
-    for (int y = 1; y < MAP_H - 1; ++y) {
-        m2.tile[y][8] = TILE_WALL;
-    }
-    m2.tile[4][8] = TILE_EMPTY;
+    // **줄이 안 바뀌는 것**이 규칙이다. 자리가 아니라 줄이다.
+    //
+    // 줄 맞춤이 내 칸 한가운데로 당기므로 세로 값 자체는 움직인다.
+    // 그건 미끄러진 게 아니라 제자리를 잡은 것이다.
+    // 미끄러졌다는 건 **다른 줄로 넘어갔다**는 뜻이고, 그건 절대 안 된다
+    printf("  줄 %d -> %d, 칸 안 위치 %d -> %d (한가운데가 %d)\n",
+           start_y / TILE_UNITS, p.py / TILE_UNITS,
+           start_y % TILE_UNITS, p.py % TILE_UNITS, TILE_UNITS / 2);
+    Check(p.py / TILE_UNITS == start_y / TILE_UNITS, "다른 줄로 안 넘어간다");
+    Check(p.py % TILE_UNITS == TILE_UNITS / 2, "내 줄 한가운데로 맞춰진다");
 
+    // 도와주지 않을 뿐이지 막는 게 아니다.
+    //
+    // 벽 앞까지 오른쪽으로 간 다음, 아래를 눌러 통로 줄에 맞추고, 다시 오른쪽.
+    // 사람이 실제로 하는 순서 그대로다. **맞추는 일을 사람이 한다**는 게 이 변경의 요지다
     Player q = MakePlayer(3, 5);
-    q.py    = 5 * TILE_UNITS + 30;   // 이번엔 위쪽 경계에 붙어 있다
-    q.dir_x = 1;
+    q.py    = 5 * TILE_UNITS + (TILE_UNITS - 30);
 
+    q.dir_x = 1; q.dir_y = 0;
+    for (int t = 0; t < 80; ++t) MovePlayer(m, q);      // 벽 앞까지
+
+    q.dir_x = 0; q.dir_y = 1;
+    for (int t = 0; t < 12; ++t) MovePlayer(m, q);      // 통로 줄로 내려간다
+
+    q.dir_x = 1; q.dir_y = 0;
     bool passed2 = false;
     for (int t = 0; t < 120; ++t) {
-        MovePlayer(m2, q);
+        MovePlayer(m, q);
         if (q.px / TILE_UNITS > 8) { passed2 = true; break; }
     }
-    Check(passed2, "위쪽으로도 똑같이 돌아진다 (위아래 대칭)");
+    printf("  맞추고 나서 가로 타일 %d, 세로 타일 %d\n", q.px / TILE_UNITS, q.py / TILE_UNITS);
+    Check(passed2, "본인이 줄을 맞추면 통로를 지난다");
 
-    // 옆이 막혀 있으면 도와줄 데가 없다. 그냥 서야 한다.
-    //
-    // 9/1 에 기준이 바뀌었다. 전에는 "경계에서 90 안쪽일 때만" 도와줬는데,
-    // 몸이 벽을 못 넘게 하고 나니 통로 안에서 중심이 102~154 사이에만 있을 수 있어서
-    // 그 조건에 영영 안 닿게 됐다. 벽에 안 파묻히게 했더니 코너를 못 돌게 된 것이다.
-    // 그래서 지금은 **기울어진 쪽이 뚫려 있으면 도와준다** (CORNER_ASSIST = 128).
-    // 미끄럽지 않은 이유는 한 틱에 speed 만큼만 밀기 때문이다.
-    GameMap m3;
-    MakeOpenMap(m3);
-    for (int y = 1; y < MAP_H - 1; ++y) {
-        m3.tile[y][8] = TILE_WALL;
-    }
-    // 통로를 안 뚫는다. 완전히 막힌 벽이다
-
-    Player r = MakePlayer(3, 5);
-    r.py    = TileCenter(5);
-    r.dir_x = 1;
-
-    bool passed3 = false;
-    for (int t = 0; t < 120; ++t) {
-        MovePlayer(m3, r);
-        if (r.px / TILE_UNITS > 8) { passed3 = true; break; }
-    }
-    Check(!passed3, "돌아갈 데가 없으면 안 도와준다 (벽을 못 지난다)");
-
-    // 위아래가 다 막힌 통로 안에서는 옆으로 안 밀린다.
-    // 밀 데가 없는데 밀면 캐릭터가 벽에 비벼진다
+    // 위아래가 다 막힌 통로 안에서도 옆으로 안 밀린다
     GameMap m4;
     MakeOpenMap(m4);
     for (int x = 1; x < MAP_W - 1; ++x) {
         m4.tile[4][x] = TILE_WALL;
         m4.tile[6][x] = TILE_WALL;
     }
-    m4.tile[5][10] = TILE_WALL;   // 통로 끝을 막는다
+    m4.tile[5][10] = TILE_WALL;
 
     Player u = MakePlayer(3, 5);
     u.dir_x = 1;
@@ -370,6 +359,63 @@ static void Test7_CornerAssist()
     printf("  막힌 통로에서 세로 %d -> %d\n", uy, u.py);
     Check(u.py == uy, "위아래가 다 막히면 옆으로 안 밀린다");
     Check(u.px + PLAYER_HALF < 10 * TILE_UNITS, "통로 끝에서도 몸이 벽에 안 닿는다");
+}
+
+// ── 시험 9 : 몸이 벽 칸에 한 점도 안 들어가는가 ──────────────
+//
+// 이게 이 파일에서 제일 중요한 시험이다.
+//
+// 중심이 있는 칸만 보면 **대각선이 빈다.** 오른쪽으로 가는데 몸이 위아래 두 줄에
+// 걸쳐 있으면, 들어가려는 칸 위쪽이 벽일 때 그 벽에 몸 귀퉁이가 박힌다.
+// 처음 만들었을 때 6000틱 중 1775틱이 그랬다. 눈으로는 "벽에 파묻힌 채로 다닌다".
+//
+// 그래서 사방으로 오래 돌아다니면서 **한 틱이라도 겹치면 잡는다.**
+static void Test8_NeverInsideWall()
+{
+    printf("\n=== 시험 9: 몸이 벽에 안 들어간다 ===\n");
+
+    static const int RX[4] = { 1, 0, -1, 0 };
+    static const int RY[4] = { 0, 1, 0, -1 };
+
+    GameMap m;
+    MakeOpenMap(m);
+    for (int y = 2; y < MAP_H - 1; y += 2) {
+        for (int x = 2; x < MAP_W - 1; x += 2) {
+            m.tile[y][x] = TILE_WALL;   // 봄버맨 격자
+        }
+    }
+
+    for (int mode = 0; mode < 2; ++mode) {
+        Player p = MakePlayer(3, 3);
+        p.trap_ticks = mode ? 1000000 : 0;   // 갇힌 상태로도 똑같이 확인한다
+
+        int overlap = 0, inside = 0;
+
+        for (int t = 0; t < 6000; ++t) {
+            int d = (t / 37) % 4;
+            p.dir_x = RX[d];
+            p.dir_y = RY[d];
+            MovePlayer(m, p);
+
+            if (m.IsSolid(p.px / TILE_UNITS, p.py / TILE_UNITS)) ++inside;
+
+            int x0, x1, y0, y1;
+            BodySpanAxis(p.px, &x0, &x1);
+            BodySpanAxis(p.py, &y0, &y1);
+            for (int y = y0; y <= y1; ++y) {
+                for (int x = x0; x <= x1; ++x) {
+                    if (m.tile[y][x] == TILE_WALL) ++overlap;
+                }
+            }
+        }
+
+        printf("  %s: 몸이 겹친 틱 %d, 중심이 벽 안인 틱 %d\n",
+               mode ? "갇힘  " : "안 갇힘", overlap, inside);
+        Check(overlap == 0, mode ? "갇혀서도 몸이 벽에 안 들어간다"
+                                 : "돌아다녀도 몸이 벽에 안 들어간다");
+        Check(inside == 0,  mode ? "갇혀서도 벽을 안 통과한다"
+                                 : "벽을 안 통과한다");
+    }
 }
 
 int main(int argc, char** argv)
@@ -383,7 +429,8 @@ int main(int argc, char** argv)
     Test4_Slide();
     Test5_Speed();
     Test6_MapDeterminism();
-    Test7_CornerAssist();
+    Test7_NoSlide();
+    Test8_NeverInsideWall();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
 

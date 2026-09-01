@@ -78,7 +78,7 @@ ws.onmessage = (e) => {
             myId: u8(), mapW: u8(), mapH: u8(), sectorW: u8(), sectorH: u8(),
             tickRate: u8(), tileUnits: u16(), fuse: u16(), trap: u16(),
             floodEsc: u16(), blast: u8(), bodyNum: u8(), bodyDen: u8(),
-            peek: u8(), seed: u32(),
+            peek: u8(), camHyst: u8(), seed: u32(),
         };
         ++welcomeCount;
         seeds.add(welcome.seed);

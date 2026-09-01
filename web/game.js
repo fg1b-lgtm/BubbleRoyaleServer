@@ -29,6 +29,23 @@ const dirtyRows = new Set();
 let foamSegs = [];         // 물가 선분 [ax,ay,bx,by, ...]
 let foamKey = '';          // 구역 상태가 바뀔 때만 다시 계산한다
 
+// ── 카메라 ───────────────────────────────────────────────────
+//
+// 판 전체(45x39)를 보여주다가 9/1 에 **내 구역만** 보여주게 바꿨다.
+//
+// AOI 가 내 구역 사람만 보내주는데 화면이 판 전체를 보여주면
+// 옆 구역 사람이 그냥 사라져서 버그로 보인다.
+// **보내는 것과 보이는 것을 같게** 만드는 게 SPEC 3절의 요지다.
+//
+// 화면은 내 구역(15x13) + 가장자리 밖 세 칸 = 21x19 칸이다.
+// 판이 좁아진 만큼 타일이 커져서 캐릭터 얼굴이 보인다. 덤으로 얻은 것이다.
+//
+// 바깥 세 칸은 안개를 씌운다. 지형은 보이고 사람은 안 보인다.
+// "저기가 있다는 건 알지만 누가 있는지는 모른다" 가 그림으로 설명된다
+let camSector = 0;
+let view = { x0: 0, y0: 0, w: 21, h: 19 };
+let noiseCv = null;
+
 // 시간. 멈춤(hit stop) 동안 gameTime 이 안 흐른다
 let gameTime = 0, lastFrame = 0, snapAtGame = 0;
 let killFeed = [];
@@ -37,6 +54,8 @@ let lastBeep = -1;
 let lastPhase = -1;
 let danger = false;
 let bubbleTiles = new Set();
+let killPop = -9999;    // 내가 잡은 순간. HUD 킬 수가 튀어오른다
+const pickFlash = {};   // 아이템 종류별로 마지막에 먹은 시각
 
 // ── 한 판의 기록 ─────────────────────────────────────────────
 //
@@ -115,14 +134,17 @@ const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 function resize() {
   if (!G.C) return;
 
+  view.w = G.C.sectorW + G.C.peek * 2;
+  view.h = G.C.sectorH + G.C.peek * 2;
+
   const availW = Math.max(360, window.innerWidth  - 48);
   const availH = Math.max(320, window.innerHeight - 150);
-  const ts = Math.max(14, Math.min(30,
-    Math.floor(Math.min(availW / G.C.mapW, availH / G.C.mapH))));
+  const ts = Math.max(16, Math.min(44,
+    Math.floor(Math.min(availW / view.w, availH / view.h))));
 
   Art.setScale(ts);
-  W = G.C.mapW * ts;
-  H = G.C.mapH * ts;
+  W = view.w * ts;
+  H = view.h * ts;
 
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cv.width  = Math.round(W * dpr);
@@ -131,8 +153,11 @@ function resize() {
   cv.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  // 미리 그려두는 종이는 **판 전체** 크기다. 화면만 그 일부를 잘라 쓴다
+  const mapPxW = G.C.mapW * ts, mapPxH = G.C.mapH * ts;
+
   floorCv = document.createElement('canvas');
-  floorCv.width = Math.round(W * dpr); floorCv.height = Math.round(H * dpr);
+  floorCv.width = Math.round(mapPxW * dpr); floorCv.height = Math.round(mapPxH * dpr);
   floorCtx = floorCv.getContext('2d');
   floorCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -140,10 +165,23 @@ function resize() {
   rowCv = [];
   for (let y = 0; y < G.C.mapH; ++y) {
     const c = document.createElement('canvas');
-    c.width = Math.round(W * dpr); c.height = Math.round(rowH * dpr);
+    c.width = Math.round(mapPxW * dpr); c.height = Math.round(rowH * dpr);
     const g = c.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     rowCv.push({ cv: c, g });
+  }
+
+  // 안개용 잡티. 64x64 한 장을 만들어 두고 타일처럼 깐다.
+  // 매 프레임 점을 찍으면 화면이 지글거리고 느리다
+  noiseCv = document.createElement('canvas');
+  noiseCv.width = 64; noiseCv.height = 64;
+  {
+    const g = noiseCv.getContext('2d');
+    for (let i = 0; i < 900; ++i) {
+      const a = Math.random() * 0.10;
+      g.fillStyle = 'rgba(200,220,240,' + a.toFixed(3) + ')';
+      g.fillRect((Math.random() * 64) | 0, (Math.random() * 64) | 0, 1, 1);
+    }
   }
 
   floorDirty = true;
@@ -204,6 +242,45 @@ function rebuildFoam() {
   }
 }
 
+// 카메라를 어느 구역에 둘 것인가.
+//
+// 살아 있으면 내 구역. 죽었으면 아직 살아 있는 사람을 따라간다.
+// 죽고 나서 빈 구역을 보고 있으면 관전이 아니라 정지 화면이다.
+//
+// 경계에서 화면이 덜덜 떨리지 않게 히스테리시스를 둔다.
+// 판정 칸은 경계를 넘는 순간 바뀌는데, 카메라까지 그러면
+// 경계에 서서 조금만 움직여도 화면이 왔다 갔다 한다
+function updateCamera() {
+  const me = G.players.get(G.myId);
+  let target = (me && (me.flags & PF.ALIVE)) ? me : null;
+
+  if (!target) {
+    for (const [id, p] of G.players) {
+      if ((p.flags & PF.ALIVE) && p.visible !== false) { target = p; break; }
+    }
+  }
+  if (!target) return;
+
+  const sw = G.C.sectorW, sh = G.C.sectorH;
+  const sx = Math.min(2, Math.floor(target.jtx / sw));
+  const sy = Math.min(2, Math.floor(target.jty / sh));
+  const want = sy * 3 + sx;
+
+  if (want !== camSector) {
+    // 새 구역 안쪽으로 히스테리시스만큼 들어와야 실제로 옮긴다
+    const inX = target.jtx - sx * sw;
+    const inY = target.jty - sy * sh;
+    const h = G.C.camHyst;
+    const deepX = (sx === (camSector % 3)) || (inX >= h && inX < sw - h);
+    const deepY = (sy === ((camSector / 3) | 0)) || (inY >= h && inY < sh - h);
+    if (deepX && deepY) camSector = want;
+  }
+
+  const cx = camSector % 3, cy = (camSector / 3) | 0;
+  view.x0 = Math.max(0, Math.min(G.C.mapW - view.w, cx * sw - G.C.peek));
+  view.y0 = Math.max(0, Math.min(G.C.mapH - view.h, cy * sh - G.C.peek));
+}
+
 // ── 한 프레임 ────────────────────────────────────────────────
 function frame(ts) {
   requestAnimationFrame(frame);
@@ -218,6 +295,7 @@ function frame(ts) {
 
   rebuild();
   rebuildFoam();
+  updateCamera();
   drawWorld(gameTime, dt);
   drawHUD(gameTime);
 }
@@ -231,7 +309,12 @@ function drawWorld(now, dt) {
 
   FX.apply(ctx, now, W, H, dt);
 
-  ctx.drawImage(floorCv, 0, 0, W, H);
+  // 여기서부터는 **판 좌표**로 그린다. 카메라만큼 옮겨두면
+  // 아래 코드는 화면이 어디를 보고 있는지 몰라도 된다
+  ctx.save();
+  ctx.translate(-view.x0 * T, -view.y0 * T);
+
+  ctx.drawImage(floorCv, 0, 0, G.C.mapW * T, G.C.mapH * T);
 
   // ── 물 ─────────────────────────────────────────────────────
   for (let s = 0; s < 9; ++s) {
@@ -291,16 +374,23 @@ function drawWorld(now, dt) {
     for (const b of G.blasts) {
       const age = Math.max(0, Math.min(1, 1 - (b.until - now) / total));
       const heat = Math.max(0, 1 - age * 3);      // 앞의 1/3 만 하얗게 탄다
+
+      // **맞는 동안은 계속 진해야 한다.**
+      //
+      // 처음에는 시간에 비례해 옅어지게 했다. 그랬더니 아직 맞는데 안전해 보였다.
+      // 물이 옅어지는 걸 보고 들어갔다가 맞으면 그건 난이도가 아니라 거짓말이다.
+      // 그래서 70% 까지는 그대로 두고 마지막 30% 에서만 빠르게 사라진다
+      const fade = age < 0.7 ? 0 : (age - 0.7) / 0.3;
       const px = b.x * T, py = b.y * T;
 
       const g = ctx.createLinearGradient(px, py, px, py + T);
-      g.addColorStop(0,   'rgba(' + (150 + heat * 105) + ',' + (215 + heat * 40) + ',255,' + (0.80 - age * 0.45) + ')');
-      g.addColorStop(1,   'rgba(' + (60 + heat * 90)  + ',' + (150 + heat * 80) + ',235,' + (0.68 - age * 0.40) + ')');
+      g.addColorStop(0,   'rgba(' + (150 + heat * 105) + ',' + (215 + heat * 40) + ',255,' + (0.82 - fade * 0.75) + ')');
+      g.addColorStop(1,   'rgba(' + (60 + heat * 90)  + ',' + (150 + heat * 80) + ',235,' + (0.72 - fade * 0.68) + ')');
       ctx.fillStyle = g;
       ctx.fillRect(px, py, T, T);
 
       // 물줄기가 안 이어지는 쪽에만 밝은 선. 십자 바깥 윤곽만 남는다
-      ctx.fillStyle = 'rgba(235,250,255,' + (0.85 - age * 0.6) + ')';
+      ctx.fillStyle = 'rgba(235,250,255,' + (0.90 - fade * 0.85) + ')';
       const e = Math.max(1.5, T * 0.09);
       if (!hit.has(b.x + ',' + (b.y - 1))) ctx.fillRect(px, py, T, e);
       if (!hit.has(b.x + ',' + (b.y + 1))) ctx.fillRect(px, py + T - e, T, e);
@@ -332,8 +422,12 @@ function drawWorld(now, dt) {
   const rowH = Art.V.TOP + T + Art.V.BOT;
   const me = G.players.get(G.myId);
 
-  for (let y = 0; y < rows; ++y) {
-    ctx.drawImage(rowCv[y].cv, 0, y * T - Art.V.TOP, W, rowH);
+  // 화면에 안 걸치는 줄은 건너뛴다. 39줄이 아니라 20줄만 그린다
+  const yStart = Math.max(0, view.y0 - 1);
+  const yEnd   = Math.min(rows, view.y0 + view.h + 1);
+
+  for (let y = yStart; y < yEnd; ++y) {
+    ctx.drawImage(rowCv[y].cv, 0, y * T - Art.V.TOP, G.C.mapW * T, rowH);
 
     // 아이템은 벽보다 앞, 사람보다 뒤
     for (let x = 0; x < G.C.mapW; ++x) {
@@ -350,11 +444,67 @@ function drawWorld(now, dt) {
 
     const ps = bucketP[y];
     if (ps) for (const [id, p] of ps) {
+      // 죽은 사람은 안 그린다.
+      //
+      // 전에는 흐리게 남겨뒀는데 판 위에 유령이 늘어서 거슬렸다.
+      // 죽었으면 없는 것이다. 어디서 죽었는지는 킬 피드가 말해준다
+      if (!(p.flags & PF.ALIVE)) continue;
       drawPlayer(id, p, alpha, now, T);
     }
   }
 
   FX.draw(ctx, now);
+
+  // ── 안개 ───────────────────────────────────────────────────
+  //
+  // 내 구역 바깥 세 칸. 지형은 보이고 사람은 안 보인다.
+  // 서버가 거기 사람을 안 보내주므로 **안 보이는 게 맞다.**
+  // 안개를 씌우면 그게 규칙이 아니라 날씨처럼 보인다
+  {
+    const sw = G.C.sectorW * T, sh = G.C.sectorH * T;
+    const sx = (camSector % 3) * sw;
+    const sy = ((camSector / 3) | 0) * sh;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+    ctx.rect(sx, sy, sw, sh);
+    ctx.clip('evenodd');
+
+    ctx.fillStyle = 'rgba(150,175,200,0.30)';
+    ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+
+    // 천천히 흐르는 안개 덩어리 둘
+    for (let i = 0; i < 2; ++i) {
+      const t2 = now / (i ? 9000 : 6000) + i * 2;
+      const gx = sx + sw * (0.5 + Math.cos(t2) * 0.9);
+      const gy = sy + sh * (0.5 + Math.sin(t2 * 0.8) * 0.9);
+      const g2 = ctx.createRadialGradient(gx, gy, 0, gx, gy, sw * 0.5);
+      g2.addColorStop(0, 'rgba(200,215,235,0.18)');
+      g2.addColorStop(1, 'rgba(200,215,235,0)');
+      ctx.fillStyle = g2;
+      ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+    }
+
+    // 잡티. 미리 만들어둔 64x64 를 타일처럼 깐다
+    if (noiseCv) {
+      const pat = ctx.createPattern(noiseCv, 'repeat');
+      if (pat) {
+        ctx.globalAlpha = 0.55;
+        ctx.fillStyle = pat;
+        ctx.fillRect(view.x0 * T, view.y0 * T, view.w * T, view.h * T);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+
+    // 내가 아는 데의 경계
+    ctx.strokeStyle = 'rgba(190,225,255,0.30)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
+  }
+
+  ctx.restore();   // 카메라 되돌리기. 여기부터는 다시 화면 좌표다
 
   // ── 마감 ───────────────────────────────────────────────────
   //
@@ -384,36 +534,6 @@ function drawWorld(now, dt) {
     eg.addColorStop(1, 'rgba(200,40,40,' + (0.25 + 0.25 * pulse) + ')');
     ctx.fillStyle = eg;
     ctx.fillRect(0, 0, W, H);
-  }
-
-  // ── 안 보이는 데 ───────────────────────────────────────────
-  //
-  // 서버가 AOI 로 **내 구역 사람만** 보내준다 (SPEC 4절).
-  // 그런데 화면은 판 전체를 보여준다. 그대로 두면 옆 구역 사람이 그냥 사라져서
-  // 버그로 보인다. 안 보내는 데를 **안 보이게 그려야** 앞뒤가 맞는다.
-  //
-  // 어둡게 덮되 완전히 가리지는 않는다. 지형과 물은 계속 보여야
-  // 어디로 도망칠지 정할 수 있다. 사람만 모르는 것이다.
-  //
-  // 죽어서 관전 중이면 안 덮는다. 그때는 서버도 전부 보내준다
-  if (me && (me.flags & PF.ALIVE)) {
-    const sw = G.C.sectorW * T, sh = G.C.sectorH * T;
-    const sx = Math.min(2, Math.floor(me.jtx / G.C.sectorW)) * sw;
-    const sy = Math.min(2, Math.floor(me.jty / G.C.sectorH)) * sh;
-    const m  = G.C.peek * T;
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(4,8,14,0.52)';
-    ctx.beginPath();
-    ctx.rect(0, 0, W, H);
-    ctx.rect(sx - m, sy - m, sw + m * 2, sh + m * 2);
-    ctx.fill('evenodd');
-
-    // 내가 아는 데의 경계. 여기까지가 내 눈이다
-    ctx.strokeStyle = 'rgba(180,220,255,0.22)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(sx - m + 1, sy - m + 1, sw + m * 2 - 2, sh + m * 2 - 2);
-    ctx.restore();
   }
 
   FX.drawFlash(ctx, now, W, H);
@@ -627,6 +747,25 @@ function drawHUD(now) {
     label('SLOT', W / 2 + 78, 46, 9, 'rgba(255,255,255,0.30)', 'right', 2);
   }
 
+  // 내가 몇을 잡았나. 잡는 순간 튀어오른다.
+  //
+  // 킬이 밋밋했던 이유 중 하나가 **숫자가 안 오르는 것**이었다.
+  // 뭘 했는지가 어디에도 안 남으면 한 게 아닌 것 같다
+  {
+    const kills = statOf(G.myId).kills;
+    const pop = Math.max(0, 1 - (now - killPop) / 450);
+
+    panel(W / 2 - 90 - 66, 10, 60, 44, 8);
+    label('KILL', W / 2 - 90 - 54, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+
+    ctx.save();
+    ctx.translate(W / 2 - 90 - 16, 48);
+    const k = 1 + Art.overshoot(Math.min(1, pop * 2)) * 0.5 * pop;
+    ctx.scale(k, k);
+    bigNum(String(kills), 0, 0, 20, pop > 0 ? '#ffd166' : '#fff', 'right');
+    ctx.restore();
+  }
+
   // 시각. 침수 일정이 몇 분에 오는지가 이 숫자로만 읽힌다
   {
     const sec = Math.floor(G.tick / G.C.tickRate);
@@ -641,27 +780,53 @@ function drawHUD(now) {
   //
   // 숫자만 적으면 몇 개인지는 알아도 상한까지 얼마 남았는지를 모른다.
   // 칸으로 그리면 둘 다 한눈에 보인다
+  // 내가 뭘 들고 있는지가 **제일 크게** 보여야 한다.
+  //
+  // 전에는 아래 구석에 작은 칸으로 그렸다. 싸우는 중에 그걸 볼 여유가 없어서
+  // 자기가 뭘 먹었는지도 모르고 끝났다.
+  //
+  // 그래서 아이템 그림을 판에서 쓰는 것과 **똑같이** 그리고, 숫자를 크게 붙인다.
+  // 먹은 직후에는 그 칸이 튀어오르고 밝아진다. 뭘 먹었는지가 그 순간 보인다
   const me = G.players.get(G.myId);
   if (me) {
-    const bx = 10, by = H - 62, bw = 186, bh = 52;
-    panel(bx, by, bw, bh, 8);
+    const cell = 62, gap = 8;
+    const bw = cell * 3 + gap * 4, bh = 60;
+    const bx = (W - bw) / 2, by = H - bh - 10;
+    panel(bx, by, bw, bh, 10);
 
     const stats = [
-      { c: '#4dabf7', v: 1 + me.bubble_lv, max: 5, t: '물풍선' },
-      { c: '#ff922b', v: 2 + me.power_lv,  max: 6, t: '물줄기' },
-      { c: '#51cf66', v: me.speed_lv,      max: 4, t: '속도'   },
+      { kind: ITEM.BUBBLE, c: '#4dabf7', v: 1 + me.bubble_lv, max: 5, t: '물풍선' },
+      { kind: ITEM.POWER,  c: '#ff922b', v: 2 + me.power_lv,  max: 6, t: '물줄기' },
+      { kind: ITEM.ROLLER, c: '#51cf66', v: me.speed_lv,      max: 4, t: '속도'   },
     ];
-    stats.forEach((s, i) => {
-      const y = by + 15 + i * 13;
-      ctx.fillStyle = s.c;
-      ctx.beginPath(); ctx.arc(bx + 15, y - 3, 4, 0, 7); ctx.fill();
-      label(s.t, bx + 25, y, 10, 'rgba(255,255,255,0.55)');
 
-      for (let k = 0; k < s.max; ++k) {
-        ctx.fillStyle = k < s.v ? s.c : 'rgba(255,255,255,0.12)';
-        ctx.fillRect(bx + 74 + k * 13, y - 8, 10, 7);
+    stats.forEach((st, i) => {
+      const x = bx + gap + i * (cell + gap);
+      const flash = Math.max(0, 1 - (now - (pickFlash[st.kind] || -9999)) / 500);
+
+      if (flash > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,' + (flash * 0.16) + ')';
+        Art.rr(ctx, x - 2, by + 4, cell + 4, bh - 8, 7); ctx.fill();
       }
-      label(String(s.v), bx + bw - 12, y, 11, '#fff', 'right');
+
+      // 판에서 쓰는 것과 같은 그림. 같은 걸 봐야 연결이 된다
+      ctx.save();
+      ctx.translate(x + cell / 2, by + 22);
+      const k = 1 + flash * 0.35;
+      ctx.scale(k, k);
+      Art.drawItem(ctx, 0, 0, 30, st.kind, now);
+      ctx.restore();
+
+      bigNum(String(st.v), x + cell / 2, by + 50, 19,
+             flash > 0 ? '#ffffff' : st.c, 'center');
+      label(st.t, x + cell / 2, by + bh - 2, 9, 'rgba(255,255,255,0.45)', 'center', 1);
+
+      // 상한까지 얼마 남았나. 가는 선으로만
+      for (let m = 0; m < st.max; ++m) {
+        ctx.fillStyle = m < st.v ? st.c : 'rgba(255,255,255,0.14)';
+        ctx.fillRect(x + 6 + m * ((cell - 12) / st.max), by + 6,
+                     (cell - 12) / st.max - 2, 3);
+      }
     });
   }
 
@@ -1016,7 +1181,11 @@ Hooks.event = function (type, x, y, who, val) {
                 val === ITEM.ULTRA ? '#ffd166' :
                 val === ITEM.BUBBLE ? '#4dabf7' :
                 val === ITEM.POWER ? '#ff922b' : '#51cf66');
-      if (mine) (val === ITEM.ULTRA ? Sound.ultra(pan) : Sound.item(pan));
+      if (mine) {
+        // 뭘 먹었는지 HUD 의 그 칸이 튀어오른다. 먹은 순간에만 눈이 간다
+        pickFlash[val === ITEM.ULTRA ? ITEM.POWER : val] = now;
+        (val === ITEM.ULTRA ? Sound.ultra(pan) : Sound.item(pan));
+      }
       break;
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
@@ -1047,16 +1216,32 @@ Hooks.event = function (type, x, y, who, val) {
       break;
 
     // 마무리. 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
+    // 마무리. 이 게임에서 제일 통쾌해야 하는 순간인데 밋밋했다.
+    //
+    // 밋밋했던 이유는 **당한 쪽이 그냥 사라져서**다. 터뜨렸다는 증거가 안 남는다.
+    // 그래서 셋을 더한다.
+    //   당한 쪽 색으로 물풍선이 터지듯 조각이 흩어진다
+    //   내가 잡았으면 화면이 더 오래 멈추고 더 크게 흔들린다
+    //   HUD 킬 수가 튀어오른다
     case EVT.POP:
-      FX.kill(cx, cy, T, now, colorOf(val));
-      FX.shake(0.5);
-      FX.stop(70, performance.now());     // 아주 잠깐 화면이 멈춘다
-      FX.flashOut('rgba(255,255,255,0.55)', 120, now);
+      FX.pop(cx, cy, T, now, colorOf(who), colorOf(val));
       statOf(val).kills += 1;
       markDead(who);
       killFeed.unshift({ killer: val, victim: who, born: now });
       killFeed = killFeed.slice(0, 5);
       Sound.pop(pan);
+
+      if (val === G.myId) {
+        // 내가 잡았다. 여기만 아끼지 않는다
+        FX.shake(0.85);
+        FX.stop(120, performance.now());
+        FX.punch(1.2);
+        FX.flashOut('rgba(255,255,255,0.65)', 160, now);
+        killPop = now;
+      } else {
+        FX.shake(0.35);
+        FX.stop(50, performance.now());
+      }
       break;
 
     case EVT.DEATH:

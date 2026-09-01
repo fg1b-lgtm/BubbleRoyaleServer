@@ -113,6 +113,10 @@ struct WelcomeBody
 
     // AOI 가 구역 밖 몇 칸까지 보여주나. 화면이 "내가 아는 데" 를 그리는 데 쓴다
     uint8_t  peek_tiles;
+
+    // 카메라가 구역을 바꾸려면 경계를 몇 칸 넘어야 하나.
+    // 0 이면 경계에 서 있을 때 화면이 덜덜 떨린다
+    uint8_t  cam_hysteresis;
     uint32_t seed;
 
     // 아홉 자리에 어떤 조각이 깔렸나 (SectorTemplates.h 의 번호).

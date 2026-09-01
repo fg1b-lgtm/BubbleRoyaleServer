@@ -163,6 +163,40 @@ const FX = (() => {
       }
     },
 
+    // 갇힌 사람을 몸으로 부딪쳐 터뜨렸다.
+    //
+    // kill 과 따로 두는 이유는 **물풍선이 터지는 것처럼** 보여야 하기 때문이다.
+    // 당한 쪽 색 조각이 사방으로 흩어져야 "저 사람이 터졌다" 가 읽힌다.
+    // 그냥 사라지면 내가 뭘 했는지 증거가 안 남는다
+    pop(x, y, T, now, victimColor, killerColor) {
+      // 물방울이 터지는 순간. 얇은 고리가 확 퍼진다
+      emit({ x, y, r: T * 0.3, r1: T * 2.6, color: '#ffffff', life: 260, now,
+             shape: 'ring', glow: true });
+      emit({ x, y, r: T * 0.2, r1: T * 1.7, color: victimColor, life: 420, now,
+             shape: 'ring', glow: true });
+
+      // 당한 쪽 조각. 물풍선 껍질처럼 튄다
+      for (let i = 0; i < 26; ++i) {
+        const a = rnd(0, 6.283);
+        const v = T * rnd(0.05, 0.19);
+        emit({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - T * 0.02,
+               r: T * rnd(0.05, 0.13), color: i % 3 ? victimColor : '#ffffff',
+               grav: T * 0.0018, drag: 0.93, life: rnd(420, 760), now, glow: true });
+      }
+
+      // 물보라
+      for (let i = 0; i < 6; ++i) {
+        emit({ x: x + rnd(-T * .4, T * .4), y: y + rnd(-T * .4, T * .4),
+               vx: rnd(-.25, .25), vy: rnd(-.3, -.05),
+               r: T * rnd(0.3, 0.6), r1: T * 1.2, color: 'rgba(210,240,255,0.35)',
+               drag: 0.97, life: rnd(500, 900), now, shape: 'soft' });
+      }
+
+      // 잡은 쪽 색으로 한 겹 더. 누가 잡았는지가 색으로 남는다
+      emit({ x, y, r: T * 0.4, r1: T * 3.2, color: killerColor, life: 520, now,
+             shape: 'ring', glow: true });
+    },
+
     // 걸을 때 발밑에서 이는 먼지. 아주 작게. 없으면 걷는 게 안 느껴진다
     step(x, y, T, now) {
       emit({ x: x + rnd(-T * .12, T * .12), y, vx: rnd(-.05, .05), vy: rnd(-.06, -.01),

@@ -58,7 +58,8 @@ inline int CornerAssistAxis(const GameMap& map,
                             int move_pos, int side_pos,
                             int step, bool moving_is_x, int speed)
 {
-    if (step == 0) {
+    // 0 이면 안 도와준다. 벽에 닿으면 선다 (GameConstants.h 참고)
+    if (step == 0 || CORNER_ASSIST <= 0) {
         return side_pos;
     }
 
@@ -102,6 +103,33 @@ inline int CornerAssistAxis(const GameMap& map,
     return side_pos;   // 밀어봐야 거기도 벽이다. 그냥 선다
 }
 
+// 줄 맞춤. 가는 축과 직각인 축을 지금 칸 한가운데로 당긴다.
+//
+// 코너 보정을 끄고 나니 통로를 못 지나가게 됐다.
+// 통로가 한 칸인데 몸이 0.8 이라, 들어가려면 중심이 칸의 가운데 20% 안에 있어야 한다.
+// 키보드로 그걸 맞출 수는 없다.
+//
+// 그렇다고 옆 칸으로 밀어주면 벽에 비빌 때마다 다른 줄로 미끄러진다.
+// 그래서 **내 칸 안에서만** 당긴다. 줄은 절대 안 바뀐다.
+// 줄을 바꾸는 건 여전히 사람이 직접 누른다.
+inline int CenterAxis(int side_pos, int speed)
+{
+    if (LANE_SNAP_PERCENT <= 0) {
+        return side_pos;
+    }
+
+    int t      = side_pos / TILE_UNITS;
+    int center = t * TILE_UNITS + TILE_UNITS / 2;
+    int d      = center - side_pos;
+
+    int step = speed * LANE_SNAP_PERCENT / 100;
+    if (step < 1) step = 1;
+    if (d >  step) d =  step;
+    if (d < -step) d = -step;
+
+    return side_pos + d;
+}
+
 // 한 축으로만 움직여본다. 몸이 벽에 닿으면 거기서 선다.
 //
 // 9/1 에 기준을 바꿨다. 전에는 **몸 중심**이 들어가려는 칸만 봤다.
@@ -137,11 +165,22 @@ inline int StepAxis(const GameMap& map, int pos, int other_pos, int step, bool i
         return want;
     }
 
-    int other_t = other_pos / TILE_UNITS;
-    int tx = is_x ? t_edge  : other_t;
-    int ty = is_x ? other_t : t_edge;
+    // 반대 축으로 몸이 걸친 칸을 **전부** 본다.
+    //
+    // 중심이 있는 칸 하나만 보면 대각선이 빈다.
+    // 오른쪽으로 가는데 몸이 위아래 두 줄에 걸쳐 있으면, 들어가려는 칸 위쪽이
+    // 벽일 때 그 벽에 몸 귀퉁이가 박힌다. 그게 6000틱 중 1775틱이었다.
+    int o0, o1;
+    BodySpanAxis(other_pos, &o0, &o1);
 
-    if (map.IsSolid(tx, ty)) {
+    bool blocked = false;
+    for (int o = o0; o <= o1; ++o) {
+        int tx = is_x ? t_edge : o;
+        int ty = is_x ? o      : t_edge;
+        if (map.IsSolid(tx, ty)) { blocked = true; break; }
+    }
+
+    if (blocked) {
         // 몸 끝이 그 칸 경계에 닿는 데까지만 간다
         if (step > 0) {
             return t_edge * TILE_UNITS - PLAYER_HALF - 1;
@@ -164,15 +203,32 @@ inline int StepAxis(const GameMap& map, int pos, int other_pos, int step, bool i
 //
 //   반대로 밀어낼 데가 없는 경우는 안 생긴다.
 //   통로가 한 칸(256)이고 몸이 204 라 가운데 52 만큼의 자리가 언제나 남는다.
-inline int ClampAxis(const GameMap& map, int pos, int other_t, bool is_x, int speed)
+inline int ClampAxis(const GameMap& map, int pos, int other_pos, bool is_x, int speed)
 {
     int t = pos / TILE_UNITS;
 
     int lo_limit = 0;
     int hi_limit = (is_x ? MAP_W : MAP_H) * TILE_UNITS - 1;
 
-    bool prev_solid = is_x ? map.IsSolid(t - 1, other_t) : map.IsSolid(other_t, t - 1);
-    bool next_solid = is_x ? map.IsSolid(t + 1, other_t) : map.IsSolid(other_t, t + 1);
+    // 여기도 반대 축으로 몸이 걸친 칸을 전부 본다. 대각선 때문이다.
+    //
+    // 격자에서 홀수 줄을 달릴 때, 몸이 짝수 줄까지 걸치면 그 줄에는 기둥이 있다.
+    // 그래서 짝수 칸을 지날 때마다 통로 한가운데로 끌려온다.
+    // 끌려오는 양이 한 틱에 speed 만큼이라 미끄러지듯 정렬된다.
+    // 봄버맨류에서 칸에 맞춰 서지는 느낌이 이런 식으로 나온다
+    int o0, o1;
+    BodySpanAxis(other_pos, &o0, &o1);
+
+    bool prev_solid = false, next_solid = false;
+    for (int o = o0; o <= o1; ++o) {
+        if (is_x) {
+            if (map.IsSolid(t - 1, o)) prev_solid = true;
+            if (map.IsSolid(t + 1, o)) next_solid = true;
+        } else {
+            if (map.IsSolid(o, t - 1)) prev_solid = true;
+            if (map.IsSolid(o, t + 1)) next_solid = true;
+        }
+    }
 
     if (prev_solid) lo_limit = t * TILE_UNITS + PLAYER_HALF;
     if (next_solid) hi_limit = (t + 1) * TILE_UNITS - PLAYER_HALF - 1;

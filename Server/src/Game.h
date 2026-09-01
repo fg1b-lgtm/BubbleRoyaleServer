@@ -525,10 +525,14 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // 한 방향만 누르고 있을 때만이다. 두 방향을 누르고 있으면 본인이 조준하는 중이라
     // 서버가 끼어들면 오히려 방해가 된다.
     // 갇혔을 때는 안 도와준다. 물방울에 갇힌 채로 미끄러지면 이상하다
-    if (!trapped && p.dir_x != 0 && p.dir_y == 0) {
+    // 한 방향만 누르고 있을 때만이다.
+    // 두 방향을 누르고 있으면 본인이 조준하는 중이라 끼어들면 방해가 된다
+    if (p.dir_x != 0 && p.dir_y == 0) {
+        p.py = CenterAxis(p.py, speed);
         p.py = CornerAssistAxis(map, p.px, p.py, p.dir_x * speed, true, speed);
     }
-    else if (!trapped && p.dir_y != 0 && p.dir_x == 0) {
+    else if (p.dir_y != 0 && p.dir_x == 0) {
+        p.px = CenterAxis(p.px, speed);
         p.px = CornerAssistAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
     }
 
@@ -543,10 +547,8 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // 옆으로 달리는 동안 위쪽 칸이 벽으로 바뀌는 경우가 있다.
     // 가는 축은 StepAxis 가 보지만 옆 축은 아무도 안 봐서, 여기서 한 번 훑는다
     {
-        int tx = p.px / TILE_UNITS;
-        int ty = p.py / TILE_UNITS;
-        p.py = ClampAxis(map, p.py, tx, false, speed);
-        p.px = ClampAxis(map, p.px, ty, true,  speed);
+        p.py = ClampAxis(map, p.py, p.px, false, speed);
+        p.px = ClampAxis(map, p.px, p.py, true,  speed);
     }
 
     // 벽에 막혀 한 칸도 못 갔으면 걷는 그림을 쓰지 않는다.
