@@ -70,7 +70,10 @@ inline void BuildDangerMap(int lookahead)
                 uint8_t t = g_game.map.tile[y][x];
                 if (t == TILE_WALL) break;
                 g_danger[y][x] = true;
-                if (t == TILE_BLOCK || t == TILE_BUBBLE) break;
+                // 물줄기는 부술 수 있는 것에서 멈춘다. **밀 수 있는 상자도 포함**이다.
+                // 9/1 에 상자를 넣고 여기를 안 고쳐서, 봇이 상자 뒤까지 위험하다고 봤다.
+                // 안 죽지는 않지만 갈 수 있는 데를 안 가서 판이 늘어진다
+                if (IsBreakableTile(t) || t == TILE_BUBBLE) break;
             }
         }
     }

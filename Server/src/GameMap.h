@@ -408,7 +408,7 @@ private:
                 int x = cx - 3 + rnd.Next(7);
                 int y = cy - 3 + rnd.Next(7);
                 if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
-                if (tile[y][x] == TILE_BLOCK) tile[y][x] = TILE_EMPTY;
+                if (IsBreakableTile(tile[y][x])) tile[y][x] = TILE_EMPTY;
             }
 
             // 너무 적으면 채운다. 스폰 바로 옆은 비워둔 채로 둔다
@@ -511,12 +511,16 @@ private:
         int n = CollectPocketBlocks(sx, sy, bx, by, 512);
 
         for (int i = 0; i < n; ++i) {
+            // 도로 세울 때 **원래 무엇이었는지**를 기억해야 한다.
+            // 그냥 TILE_BLOCK 으로 되돌리면 밀 수 있던 상자가 조용히 일반 블록이 된다.
+            // 밀도는 맞고 규칙만 바뀌는 종류의 버그라 시험으로도 안 잡힌다
+            uint8_t was = tile[by[i]][bx[i]];
             tile[by[i]][bx[i]] = TILE_EMPTY;
 
             if (CanEscape(sx, sy, range)) {
                 return true;
             }
-            tile[by[i]][bx[i]] = TILE_BLOCK;   // 이걸론 안 됐다. 도로 세운다
+            tile[by[i]][bx[i]] = was;
         }
         return false;
     }
