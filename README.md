@@ -148,7 +148,7 @@ floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest   9 PASS / 0 FAIL
+clienttest  15 PASS / 0 FAIL
 roundsim    20판 전부 결판, 평균 1분 49초
 봇 24개 12초  접속 666 = left 666 = fully closed 666, 에러 0
 ```
@@ -181,7 +181,12 @@ BubbleRoyale.sln
 ├─ Client/src/        테스트용 콘솔 클라이언트
 ├─ web/
 │   ├─ bridge.js         WebSocket ↔ TCP 다리 (Node 기본 모듈만)
-│   └─ index.html        Canvas 클라이언트
+│   ├─ index.html        판 밖 껍데기. HUD 는 캔버스가 직접 그린다
+│   ├─ audio.js          소리. 층 쌓기 · 울림 · 덕킹 · 상황 따라 붙는 음악
+│   ├─ art.js            아트 디렉션. 팔레트 · 높이 있는 벽 · 캐릭터 · 물
+│   ├─ fx.js             파티클과 카메라 (흔들림 · 멈춤 · 번쩍임)
+│   ├─ net.js            프로토콜과 판의 상태
+│   └─ game.js           그리는 순서 · 깊이 정렬 · HUD · 입력
 ├─ tools/             검증 도구
 ├─ practice/          학습용 재작성 연습 (아래 참고)
 ├─ devlog/            매일의 개발 로그
