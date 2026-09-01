@@ -36,6 +36,69 @@ let banner = null;
 let lastBeep = -1;
 let lastPhase = -1;
 let danger = false;
+let bubbleTiles = new Set();
+
+// ── 한 판의 기록 ─────────────────────────────────────────────
+//
+// 판이 끝나면 "이겼다" 세 글자로 끝났다. 한 판의 이야기가 통째로 사라진다.
+// 내가 몇 등을 했는지, 몇을 잡았는지, 얼마나 버텼는지가 남아야
+// 다음 판에 그걸 올리려고 한다.
+//
+// 서버에 뭘 더 안 물어도 된다. 이벤트가 어차피 전원에게 오므로
+// 누가 누구를 잡았고 언제 죽었는지를 화면이 이미 다 보고 있다
+let roundStats = new Map();   // id -> {kills, diedTick, place}
+let placeNext = 0;            // 죽은 순서. 늦게 죽을수록 좋은 등수다
+
+function statOf(id) {
+  let st = roundStats.get(id);
+  if (!st) { st = { kills: 0, diedTick: -1, place: 0 }; roundStats.set(id, st); }
+  return st;
+}
+
+function resetStats() {
+  roundStats = new Map();
+  placeNext = 0;
+}
+
+// 죽은 순서대로 뒤에서부터 등수를 준다.
+// 스물넷이 붙었으면 제일 먼저 죽은 사람이 24등이다
+function markDead(id) {
+  const st = statOf(id);
+  if (st.diedTick >= 0) return;      // 이미 죽었다. 두 번 안 센다
+  st.diedTick = G.tick;
+  st.place = -(++placeNext);         // 나중에 살아 있는 수를 더해 실제 등수로 바꾼다
+}
+
+// 판이 끝났다. 살아남은 사람을 앞에 놓고 등수를 매긴다
+function finishStats() {
+  let alive = 0;
+  for (const [id, p] of G.players) if (p.flags & PF.ALIVE) ++alive;
+
+  const total = G.players.size;
+  for (const [id, p] of G.players) {
+    const st = statOf(id);
+    if (st.diedTick < 0) st.place = 1;            // 끝까지 살아 있었다
+    else                 st.place = total + 1 + st.place;   // place 가 음수다
+  }
+}
+
+// 결과표에 올릴 줄. 등수 순으로 정렬해서 돌려준다
+function statRows() {
+  const rows = [];
+  for (const [id, p] of G.players) {
+    const st = statOf(id);
+    rows.push({
+      id,
+      place: st.place || 99,
+      kills: st.kills,
+      alive: !!(p.flags & PF.ALIVE),
+      items: (p.bubble_lv || 0) + (p.power_lv || 0) + (p.speed_lv || 0),
+      secs: st.diedTick < 0 ? G.tick / G.C.tickRate : st.diedTick / G.C.tickRate,
+    });
+  }
+  rows.sort((a, b) => a.place - b.place);
+  return rows;
+}
 
 const PLAYER_COLORS = [
   '#ff6b6b', '#4dabf7', '#51cf66', '#ffd43b', '#cc5de8', '#ff922b',
@@ -215,27 +278,39 @@ function drawWorld(now, dt) {
 
   // ── 물줄기 ─────────────────────────────────────────────────
   //
-  // 바닥에 깔린 물이라 벽보다 아래에 그린다.
-  // 터진 직후에는 하얗게 타오르고, 사그라들면서 파란 물웅덩이가 된다
+  // **어디까지 닿는지가 한눈에 보여야 한다.** 그게 이 그림의 유일한 임무다.
+  //
+  // 처음에는 칸마다 둥근 빛을 퍼뜨렸다. 예뻤는데 빛이 칸 밖으로 새서
+  // 실제 사거리보다 넓어 보였다. 어디까지 위험한지를 못 읽으면 그건 연출이 아니라 방해다.
+  //
+  // 그래서 **칸에 딱 맞게** 칠하고, 물줄기끼리 안 닿는 쪽에만 테두리를 긋는다.
+  // 그러면 십자 전체가 윤곽선 하나로 둘러싸여서 모양이 그대로 읽힌다.
   G.blasts = G.blasts.filter(b => b.until > now);
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (const b of G.blasts) {
+  if (G.blasts.length) {
     const total = (G.C.blast / G.C.tickRate) * 1000;
-    const age = 1 - (b.until - now) / total;
-    const cx = b.x * T + T / 2, cy = b.y * T + T / 2;
+    const hit = new Set();
+    for (const b of G.blasts) hit.add(b.x + ',' + b.y);
 
-    const heat = Math.max(0, 1 - age * 3.2);          // 앞의 1/3 만 하얗게 탄다
-    const r = T * (0.5 + Art.easeOut(Math.min(1, age * 2)) * 0.35);
+    for (const b of G.blasts) {
+      const age = Math.max(0, Math.min(1, 1 - (b.until - now) / total));
+      const heat = Math.max(0, 1 - age * 3);      // 앞의 1/3 만 하얗게 탄다
+      const px = b.x * T, py = b.y * T;
 
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.5);
-    g.addColorStop(0, 'rgba(' + (170 + heat * 85) + ',' + (225 + heat * 30) + ',255,' + (0.55 * (1 - age) + heat * 0.4) + ')');
-    g.addColorStop(0.6, 'rgba(90,180,240,' + (0.35 * (1 - age)) + ')');
-    g.addColorStop(1, 'rgba(60,140,220,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(cx - r * 1.5, cy - r * 1.5, r * 3, r * 3);
+      const g = ctx.createLinearGradient(px, py, px, py + T);
+      g.addColorStop(0,   'rgba(' + (150 + heat * 105) + ',' + (215 + heat * 40) + ',255,' + (0.80 - age * 0.45) + ')');
+      g.addColorStop(1,   'rgba(' + (60 + heat * 90)  + ',' + (150 + heat * 80) + ',235,' + (0.68 - age * 0.40) + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py, T, T);
+
+      // 물줄기가 안 이어지는 쪽에만 밝은 선. 십자 바깥 윤곽만 남는다
+      ctx.fillStyle = 'rgba(235,250,255,' + (0.85 - age * 0.6) + ')';
+      const e = Math.max(1.5, T * 0.09);
+      if (!hit.has(b.x + ',' + (b.y - 1))) ctx.fillRect(px, py, T, e);
+      if (!hit.has(b.x + ',' + (b.y + 1))) ctx.fillRect(px, py + T - e, T, e);
+      if (!hit.has((b.x - 1) + ',' + b.y)) ctx.fillRect(px, py, e, T);
+      if (!hit.has((b.x + 1) + ',' + b.y)) ctx.fillRect(px + T - e, py, e, T);
+    }
   }
-  ctx.restore();
 
   // ── 줄 정렬 ────────────────────────────────────────────────
   //
@@ -384,8 +459,11 @@ function drawPlayer(id, p, alpha, now, T) {
 
   ctx.globalAlpha = 1;
 
-  // 물에 잠긴 데 서 있다. 머리 위로 숨이 올라간다.
-  // 느낌표를 띄우면 글자고, 이건 그림이다
+  // 물에 잠긴 데 서 있다. 숨방울이 올라가고 **머리 위에 남은 시간이 뜬다.**
+  //
+  // 숨방울만으로는 "위험하다" 까지만 전해지고 "몇 초 남았나" 를 모른다.
+  // 2초 안에 못 나가면 죽는데 그 2초가 안 보이면 도망칠지 버틸지를 못 정한다.
+  // 판 위에 글자를 안 쓴다는 규칙의 유일한 예외다. 여기는 숫자가 정보 그 자체다
   if (p.flags & PF.DROWNING) {
     for (let i = 0; i < 3; ++i) {
       const t = ((now / 650) + i / 3) % 1;
@@ -398,7 +476,40 @@ function drawPlayer(id, p, alpha, now, T) {
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+
+    const left = drownLeft(p);
+    if (left !== null) {
+      const bar = Math.max(0, Math.min(1, left / (G.C.floodEsc / G.C.tickRate)));
+      const bw = T * 1.5, bh = Math.max(3, T * 0.16);
+      const bx = px - bw / 2, by = py - r * 2.1;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      Art.rr(ctx, bx - 1, by - 1, bw + 2, bh + 2, 2); ctx.fill();
+      ctx.fillStyle = bar > 0.4 ? '#ff9f43' : '#ff4d4d';
+      ctx.fillRect(bx, by, bw * bar, bh);
+
+      ctx.font = '800 ' + Math.round(T * 0.62) + 'px system-ui';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(left.toFixed(1), px, by - T * 0.20);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(left.toFixed(1), px, by - T * 0.20);
+      ctx.textAlign = 'left';
+    }
   }
+}
+
+// 물에 빠진 지 얼마나 됐나. 남은 초를 돌려준다. 안 빠졌으면 null.
+//
+// 서버가 남은 틱을 따로 안 보낸다. 보낼 수도 있지만 사람마다 매 틱 한 바이트씩
+// 늘어나는데, 클라이언트가 스스로 셀 수 있는 값이다.
+// 잠긴 순간의 틱만 적어두면 그 뒤는 뺄셈이다. 서버도 같은 틱으로 세므로 값이 같다
+function drownLeft(p) {
+  if (p.drownFrom === undefined) return null;
+  const gone = (G.tick - p.drownFrom) / G.C.tickRate;
+  const left = G.C.floodEsc / G.C.tickRate - gone;
+  return Math.max(0, left);
 }
 
 function inWater(tx, ty) {
@@ -648,20 +759,7 @@ function drawHUD(now) {
           W / 2, H / 2 + 26, 12, 'rgba(255,255,255,0.45)', 'center');
   }
   else if (G.phase === PHASE.OVER) {
-    scrim(0.55);
-    const t = Math.min(1, G.phaseTicks / (G.C.tickRate * 0.4));
-    const k = Art.overshoot(t);
-
-    ctx.save();
-    ctx.translate(W / 2, H / 2);
-    ctx.scale(0.6 + k * 0.4, 0.6 + k * 0.4);
-    if (G.winner === 0xFF)          bigNum('무승부', 0, 8, 44, '#ffd166', 'center');
-    else if (G.winner === G.myId)   bigNum('이겼다', 0, 8, 52, '#7ee787', 'center');
-    else                            bigNum('P' + G.winner + ' 승리', 0, 8, 40, '#8ab4ff', 'center');
-    ctx.restore();
-
-    const left = Math.max(0, Math.ceil((G.C.tickRate * 5 - G.phaseTicks) / G.C.tickRate));
-    label('다음 판까지 ' + left, W / 2, H / 2 + 44, 13, 'rgba(255,255,255,0.6)', 'center');
+    drawResults(now);
   }
   else if (me && !(me.flags & PF.ALIVE)) {
     // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다
@@ -675,6 +773,83 @@ function drawHUD(now) {
     label('서버와 끊겼다', W / 2, H / 2, 20, '#ff8f8f', 'center', 1);
     label('2초마다 다시 붙어 본다', W / 2, H / 2 + 24, 12, 'rgba(255,255,255,0.5)', 'center');
   }
+}
+
+// ── 결과 화면 ────────────────────────────────────────────────
+//
+// 한 판이 끝났을 때 "이겼다" 세 글자만 띄우면 그 판의 이야기가 통째로 사라진다.
+// 몇 등을 했고, 몇을 잡았고, 얼마나 버텼는지가 남아야 다음 판에 그걸 올리려고 한다.
+//
+// 등수를 제일 크게 쓴다. 배틀로얄에서 사람이 제일 먼저 보는 숫자다.
+// 내 줄은 색을 따로 준다. 스물넷이 늘어서면 내 줄을 못 찾는다
+function drawResults(now) {
+  scrim(0.62);
+
+  const t = Math.min(1, G.phaseTicks / (G.C.tickRate * 0.45));
+  const k = Art.overshoot(t);
+
+  // 위쪽: 이겼는지 졌는지
+  ctx.save();
+  ctx.translate(W / 2, H * 0.20);
+  ctx.scale(0.7 + k * 0.3, 0.7 + k * 0.3);
+  if (G.winner === 0xFF)        bigNum('무승부', 0, 0, 40, '#ffd166', 'center');
+  else if (G.winner === G.myId) bigNum('이겼다', 0, 0, 48, '#7ee787', 'center');
+  else                          bigNum('P' + G.winner + ' 승리', 0, 0, 36, '#8ab4ff', 'center');
+  ctx.restore();
+
+  const rows = statRows();
+  const show = Math.min(rows.length, 8);
+  const rowH = 26;
+  const pw = Math.min(420, W - 40);
+  const px = (W - pw) / 2;
+  const py = H * 0.28;
+
+  panel(px, py, pw, 26 + show * rowH + 10, 10);
+
+  label('순위', px + 16,  py + 18, 10, 'rgba(255,255,255,0.40)', 'left', 1);
+  label('킬',   px + 210, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+  label('생존', px + 290, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+  label('아이템', px + pw - 16, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+
+  for (let i = 0; i < show; ++i) {
+    const r = rows[i];
+    const y = py + 26 + i * rowH;
+    const mine = (r.id === G.myId);
+
+    // 한 줄씩 차례로 나타난다. 한꺼번에 뜨면 어디를 볼지 모른다
+    const appear = Math.min(1, Math.max(0, (G.phaseTicks - i * 3) / (G.C.tickRate * 0.3)));
+    if (appear <= 0) continue;
+
+    ctx.save();
+    ctx.globalAlpha = appear;
+    ctx.translate((1 - Art.easeOut(appear)) * 24, 0);
+
+    if (mine) {
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      Art.rr(ctx, px + 8, y, pw - 16, rowH - 3, 4); ctx.fill();
+    }
+
+    const medal = r.place === 1 ? '#ffd166' : r.place === 2 ? '#d0d7e2' : r.place === 3 ? '#d08c5a' : 'rgba(255,255,255,0.45)';
+    label(String(r.place), px + 20, y + 17, r.place <= 3 ? 15 : 13, medal, 'left');
+
+    ctx.fillStyle = colorOf(r.id);
+    ctx.beginPath(); ctx.arc(px + 56, y + 11, 5, 0, 7); ctx.fill();
+    label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 68, y + 16, 12,
+          mine ? '#fff' : 'rgba(255,255,255,0.78)');
+
+    label(String(r.kills), px + 210, y + 16, 13, r.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
+
+    const mm = Math.floor(r.secs / 60), ss = Math.floor(r.secs % 60);
+    label(mm + ':' + String(ss).padStart(2, '0'), px + 290, y + 16, 12,
+          'rgba(255,255,255,0.65)', 'right');
+
+    label(String(r.items), px + pw - 16, y + 16, 12, 'rgba(255,255,255,0.65)', 'right');
+    ctx.restore();
+  }
+
+  const left = Math.max(0, Math.ceil((G.C.tickRate * 5 - G.phaseTicks) / G.C.tickRate));
+  label('다음 판까지 ' + left, W / 2, py + 26 + show * rowH + 34, 13,
+        'rgba(255,255,255,0.55)', 'center');
 }
 
 function scrim(a) {
@@ -712,6 +887,22 @@ Hooks.conn = function () {
 Hooks.snapshot = function (prevPhase) {
   snapAtGame = gameTime;
 
+  // 물에 잠기기 시작한 틱을 적어둔다. 남은 시간을 여기서 뺀다
+  for (const p of G.players.values()) {
+    if (p.flags & PF.DROWNING) {
+      if (p.drownFrom === undefined) p.drownFrom = G.tick;
+    } else {
+      p.drownFrom = undefined;
+    }
+  }
+
+  // 물풍선이 어디 있었는지 기억해둔다.
+  // 다음 틱에 그 자리에서 EVT_BLAST 가 오면 그게 **폭발의 중심**이다.
+  // 중심에만 큰 연출을 주고 뻗어나간 칸에는 물방울만 튀긴다.
+  // 칸마다 큰 원을 터뜨리면 사거리보다 훨씬 넓어 보인다
+  bubbleTiles = new Set();
+  for (const b of G.bubbles) bubbleTiles.add(b.tx + ',' + b.ty);
+
   // 내가 위험한가. 음악의 층수와 캐릭터 표정이 여기서 갈린다
   const me = G.players.get(G.myId);
   danger = false;
@@ -729,8 +920,12 @@ Hooks.snapshot = function (prevPhase) {
     if (sec !== lastBeep) { lastBeep = sec; Sound.tick(sec); }
   }
   if (prevPhase !== G.phase) {
+    if (G.phase === PHASE.COUNTDOWN) resetStats();
     if (G.phase === PHASE.PLAYING) { Sound.start(); FX.flashOut('#ffffff', 220, gameTime); }
-    if (G.phase === PHASE.OVER)    (G.winner === G.myId ? Sound.win() : Sound.lose());
+    if (G.phase === PHASE.OVER) {
+      finishStats();
+      (G.winner === G.myId ? Sound.win() : Sound.lose());
+    }
     lastBeep = -1;
   }
 };
@@ -743,12 +938,22 @@ Hooks.event = function (type, x, y, who, val) {
   const mine = (who === G.myId);
 
   switch (type) {
-    case EVT.BLAST:
+    // 물줄기가 이 칸을 덮었다. 폭발 하나에 칸 수만큼 온다.
+    // 그래서 **중심에서만** 크게 터뜨린다. 칸마다 터뜨리면 사거리보다 넓어 보이고
+    // 소리도 다섯 번 겹쳐서 찢어진다
+    case EVT.BLAST: {
       G.blasts.push({ x, y, until: now + (G.C.blast / G.C.tickRate) * 1000 });
-      FX.burstWater(cx, cy, T, now, false);
-      FX.shake(0.16);
-      Sound.boom(pan);
+
+      const isCenter = bubbleTiles.has(x + ',' + y);
+      if (isCenter) {
+        FX.burstWater(cx, cy, T, now, false);
+        FX.shake(0.16);
+        Sound.boom(pan);
+      } else {
+        FX.splash(cx, cy, T, now);
+      }
       break;
+    }
 
     case EVT.BUBBLE:
       FX.pickup(cx, cy, T, now, '#8fd8ff');
@@ -817,12 +1022,15 @@ Hooks.event = function (type, x, y, who, val) {
       FX.shake(0.5);
       FX.stop(70, performance.now());     // 아주 잠깐 화면이 멈춘다
       FX.flashOut('rgba(255,255,255,0.55)', 120, now);
+      statOf(val).kills += 1;
+      markDead(who);
       killFeed.unshift({ killer: val, victim: who, born: now });
       killFeed = killFeed.slice(0, 5);
       Sound.pop(pan);
       break;
 
     case EVT.DEATH:
+      markDead(who);
       FX.kill(cx, cy, T, now, '#ff6b6b');
       Sound.death(pan);
       if (mine) { FX.shake(0.6); FX.flashOut('rgba(180,30,30,0.6)', 300, now); }

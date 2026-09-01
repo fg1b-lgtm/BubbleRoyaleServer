@@ -143,7 +143,13 @@ static void Test3_Wall()
 
     GameMap m;
     MakeOpenMap(m);
-    m.tile[5][8] = TILE_WALL;   // (8,5) 에 벽 하나
+
+    // 벽 **기둥 하나**만 두면 이제 코너 보정이 돌아가게 해준다 (9/1 변경).
+    // 여기서 재려는 건 "안 뚫고 지나가나" 니까 돌아갈 데가 없어야 한다.
+    // 세로로 통째로 막는다
+    for (int y = 1; y < MAP_H - 1; ++y) {
+        m.tile[y][8] = TILE_WALL;
+    }
 
     Player p = MakePlayer(3, 5);
     p.dir_x = 1;
@@ -162,9 +168,13 @@ static void Test3_Wall()
 
     Check(!inside_wall, "벽 안으로 들어가지 않았다");
     Check(p.px / TILE_UNITS == 7, "벽 바로 앞 타일에 서 있다");
-
-    // 벽에 붙으면 판정도 결국 따라와야 한다. 안 그러면 벽에 붙은 채 계속 안 맞는다
     Check(p.judge_tx == 7, "벽 앞에 오래 서 있으면 판정도 따라온다");
+
+    // 9/1 부터는 **몸이** 벽에 안 닿는다. 중심이 아니라 몸 끝이 기준이다.
+    // 전에는 중심이 타일 끝(8*256-1)까지 가서 몸이 벽에 0.4칸 파묻혔다
+    printf("  몸 오른쪽 끝 %d, 벽이 시작하는 자리 %d\n",
+           p.px + PLAYER_HALF, 8 * TILE_UNITS);
+    Check(p.px + PLAYER_HALF < 8 * TILE_UNITS, "몸이 벽 칸에 한 점도 안 들어간다");
 }
 
 // ── 시험 4 : 벽을 타고 미끄러지나 ────────────────────────────
@@ -317,17 +327,22 @@ static void Test7_CornerAssist()
     }
     Check(passed2, "위쪽으로도 똑같이 돌아진다 (위아래 대칭)");
 
-    // 너무 멀리 어긋나 있으면 도와주면 안 된다.
-    // 다 도와주면 원하는 칸에 못 서고 미끄러운 게임이 된다
+    // 옆이 막혀 있으면 도와줄 데가 없다. 그냥 서야 한다.
+    //
+    // 9/1 에 기준이 바뀌었다. 전에는 "경계에서 90 안쪽일 때만" 도와줬는데,
+    // 몸이 벽을 못 넘게 하고 나니 통로 안에서 중심이 102~154 사이에만 있을 수 있어서
+    // 그 조건에 영영 안 닿게 됐다. 벽에 안 파묻히게 했더니 코너를 못 돌게 된 것이다.
+    // 그래서 지금은 **기울어진 쪽이 뚫려 있으면 도와준다** (CORNER_ASSIST = 128).
+    // 미끄럽지 않은 이유는 한 틱에 speed 만큼만 밀기 때문이다.
     GameMap m3;
     MakeOpenMap(m3);
     for (int y = 1; y < MAP_H - 1; ++y) {
         m3.tile[y][8] = TILE_WALL;
     }
-    m3.tile[6][8] = TILE_EMPTY;
+    // 통로를 안 뚫는다. 완전히 막힌 벽이다
 
     Player r = MakePlayer(3, 5);
-    r.py    = TileCenter(5);   // 칸 한가운데. 통로에서 한 칸 반 떨어져 있다
+    r.py    = TileCenter(5);
     r.dir_x = 1;
 
     bool passed3 = false;
@@ -335,7 +350,26 @@ static void Test7_CornerAssist()
         MovePlayer(m3, r);
         if (r.px / TILE_UNITS > 8) { passed3 = true; break; }
     }
-    Check(!passed3, "칸 한가운데면 안 도와준다 (다 도와주면 미끄러워진다)");
+    Check(!passed3, "돌아갈 데가 없으면 안 도와준다 (벽을 못 지난다)");
+
+    // 위아래가 다 막힌 통로 안에서는 옆으로 안 밀린다.
+    // 밀 데가 없는데 밀면 캐릭터가 벽에 비벼진다
+    GameMap m4;
+    MakeOpenMap(m4);
+    for (int x = 1; x < MAP_W - 1; ++x) {
+        m4.tile[4][x] = TILE_WALL;
+        m4.tile[6][x] = TILE_WALL;
+    }
+    m4.tile[5][10] = TILE_WALL;   // 통로 끝을 막는다
+
+    Player u = MakePlayer(3, 5);
+    u.dir_x = 1;
+    int uy = u.py;
+    for (int t = 0; t < 60; ++t) MovePlayer(m4, u);
+
+    printf("  막힌 통로에서 세로 %d -> %d\n", uy, u.py);
+    Check(u.py == uy, "위아래가 다 막히면 옆으로 안 밀린다");
+    Check(u.px + PLAYER_HALF < 10 * TILE_UNITS, "통로 끝에서도 몸이 벽에 안 닿는다");
 }
 
 int main(int argc, char** argv)

@@ -29,7 +29,7 @@ inline void PlayTick()
 
     // 2) 사람을 움직인다
     for (int i = 0; i < PLAYER_MAX; ++i) {
-        if (g_game.players[i].s != nullptr) {
+        if (Occupied(g_game.players[i])) {
             MovePlayer(g_game.map, g_game.players[i]);
         }
     }
@@ -98,7 +98,7 @@ inline void GameTick()
         if (AliveCount() <= 1) {
             g_game.winner = -1;
             for (int i = 0; i < PLAYER_MAX; ++i) {
-                if (g_game.players[i].s != nullptr && g_game.players[i].alive) {
+                if (Occupied(g_game.players[i]) && g_game.players[i].alive) {
                     g_game.winner = i;
                 }
             }

@@ -429,13 +429,23 @@ static void Test7_OwnBubble()
     printf("  나간 뒤 타일 %d\n", out_tile);
     Check(out_tile > 10, "놓은 칸에서 나갈 수 있다");
 
-    // 다시 들어가려고 한다
+    // 다시 들어가려고 한다.
+    //
+    // 위아래를 막는다. 안 막으면 코너 보정이 물풍선을 **돌아서** 지나가게 해준다.
+    // 그것도 맞는 동작이지만(물풍선은 한 칸이니까), 여기서 재려는 건 그게 아니라
+    // **놓은 그 칸에 다시 못 들어온다**는 것이다
+    g_game.map.tile[9][10]  = TILE_WALL;
+    g_game.map.tile[11][10] = TILE_WALL;
+
     p.dir_x = -1;
     for (int t = 0; t < 20; ++t) {
         Tick();
     }
-    printf("  돌아오려 한 뒤 타일 %d\n", p.px / TILE_UNITS);
-    Check(p.px / TILE_UNITS == 11, "나가면 다시 못 들어온다");
+    printf("  돌아오려 한 뒤 타일 (%d,%d), 몸 왼쪽 끝 %d\n",
+           p.judge_tx, p.judge_ty, p.px - PLAYER_HALF);
+
+    Check(!(p.judge_tx == 10 && p.judge_ty == 10), "놓은 칸에 다시 못 들어온다");
+    Check(p.px - PLAYER_HALF >= 11 * TILE_UNITS, "몸도 물풍선 칸에 안 들어간다");
 }
 
 // ── 시험 8 : 놓을 수 있는 개수 ───────────────────────────────

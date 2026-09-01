@@ -23,7 +23,7 @@
 //   [Session]  주소가 붙는 모든 것
 #include "Network.h"
 #include "GameConstants.h"
-#include "GameTick.h"
+#include "Bot.h"
 
 // 자리가 없어서 못 앉은 사람. 보고는 있고 다음 판에 앉는다.
 //
@@ -173,8 +173,8 @@ static void SendSnapshot()
 
     for (int i = 0; i < PLAYER_MAX; ++i) {
         const Player& p = g_game.players[i];
-        if (p.s == nullptr) {
-            continue;
+        if (!Occupied(p)) {
+            continue;   // 빈 자리. 봇은 세션이 없어도 나간다
         }
 
         PlayerState ps;
@@ -282,7 +282,12 @@ static void HandleJob(const Job* j){
     switch (j->type) {
         case JobType::Enter: {
             // 판에 앉힌다. 이건 틱 스레드에서만 부른다. 그래서 g_game 에 자물쇠가 없다
+            // 자리가 봇으로 차 있으면 봇을 하나 빼고 사람을 앉힌다.
+            // 사람이 봇보다 우선이다
             int slot = AddPlayer(s);
+            if (slot < 0 && DropOneBot()) {
+                slot = AddPlayer(s);
+            }
             if (slot < 0) {
                 // 끊지 않는다. 보고 있다가 다음 판에 앉는다
                 printf("[Tick] %s:%d board is full — spectating\n", s->ip, s->port);
@@ -294,8 +299,28 @@ static void HandleJob(const Job* j){
             printf("[Tick] %s:%d entered as p%d at tile (%d,%d)\n",
                    s->ip, s->port, slot, p.judge_tx, p.judge_ty);
 
-            // 판이 어떻게 생겼는지는 접속한 사람에게만 보낸다
-            SendWelcome(s, slot);
+            // 봇만 돌고 있던 판이면 사람이 오는 순간 새로 시작한다.
+            //
+            // "판이 도는 중에 들어오면 그 판은 관전" 은 사람들 사이의 규칙이다 (SPEC 2.1).
+            // 남들이 파밍한 판에 빈손으로 끼워 넣으면 억울하니까 그렇게 정했다.
+            // 그런데 상대가 전부 봇이면 억울할 사람이 없다.
+            // 이 규칙을 그대로 두면 링크를 연 사람이 봇 경기를 최대 5분 구경하게 된다.
+            //
+            // 판을 다시 깔면 map_changed 가 서고, 틱 루프가 전원에게 WELCOME 을 다시 보낸다
+            if (HumanCount() == 1 && g_game.phase != ROUND_WAITING) {
+                printf("[Tick] first human joined a bot-only round — restarting\n");
+                RestartGame();
+                break;
+            }
+
+            // 판이 어떻게 생겼는지는 접속한 사람에게만 보낸다.
+            //
+            // 이 틱에 판이 새로 깔릴 예정이면 여기서 안 보낸다.
+            // 틱 끝에서 map_changed 를 보고 전원에게 다시 보내므로 두 번 가게 된다.
+            // 판 39줄이 두 번 가는 것이라 그냥 낭비가 아니다
+            if (!g_game.map_changed) {
+                SendWelcome(s, slot);
+            }
             break;
         }
         case JobType::Leave:
@@ -479,6 +504,15 @@ static DWORD WINAPI TickThread(LPVOID)
         // 3) 게임 한 틱. 여기서 만지는 것은 전부 이 스레드 것이라 자물쇠가 없다
         uint8_t phase_before = g_game.phase;
 
+        // 봇은 입력원이다. 사람이 보낸 주문을 처리한 다음, 게임을 돌리기 전에 둔다.
+        //
+        // GameTick 안에서 안 부르는 이유는 Bot.h 가 GameTick.h 를 쓰기 때문이다.
+        // 안에서 부르면 서로가 서로를 필요로 하게 된다
+        if (g_bot_target > 0 && g_game.phase == ROUND_WAITING) {
+            FillBots(g_bot_target);
+        }
+        BotThinkAll();
+
         GameTick();
 
         // 판이 새로 깔렸으면 전원에게 판을 다시 보낸다.
@@ -525,7 +559,7 @@ static DWORD WINAPI TickThread(LPVOID)
             && g_game.phase == ROUND_PLAYING && tick % TICK_RATE == 0) {
             for (int i = 0; i < PLAYER_MAX; ++i) {
                 Player& p = g_game.players[i];
-                if (p.s == nullptr) {
+                if (!Occupied(p)) {
                     continue;
                 }
 
@@ -577,6 +611,8 @@ static void ShutdownWorkers(HANDLE* workers, int count)
 // 순서: 완료 포트 만들고 -> 워커 띄우고 -> listen 열고 -> accept 만 반복
 // Server.exe            SPEC 그대로. 침수가 6분에 걸쳐 진행된다
 // Server.exe fast       침수 일정만 10배로 당긴다. 손맛 볼 때 6분을 기다릴 수는 없다
+// Server.exe bots 0     봇을 안 채운다. 사람끼리만 하고 싶을 때
+// Server.exe bots 24    자리를 꽉 채운다
 int main(int argc, char** argv)
 {
     // 로그를 모아뒀다가 한꺼번에 내보내지 않고 바로 찍게 한다.
@@ -591,8 +627,16 @@ int main(int argc, char** argv)
     // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
     unsigned int map_seed   = 1234;
     int          flood_scale = 1;
-    if (argc > 1 && argv[1][0] == 'f') {
-        flood_scale = 10;
+
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i][0] == 'f') {
+            flood_scale = 10;
+        }
+        else if (argv[i][0] == 'b' && i + 1 < argc) {
+            g_bot_target = atoi(argv[++i]);
+            if (g_bot_target < 0)          g_bot_target = 0;
+            if (g_bot_target > PLAYER_MAX) g_bot_target = PLAYER_MAX;
+        }
     }
 
     InitGame(map_seed, flood_scale);
@@ -602,6 +646,7 @@ int main(int argc, char** argv)
            flood_scale, g_game.flood_warn[0] / TICK_RATE);
     printf("[Server] round starts with %d players, %d s countdown\n",
            ROUND_MIN_PLAYERS, ROUND_COUNTDOWN_TICKS / TICK_RATE);
+    printf("[Server] bots fill up to %d (Server.exe bots N to change)\n", g_bot_target);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);

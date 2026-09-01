@@ -105,6 +105,18 @@ const FX = (() => {
              life: 380, now, shape: 'ring', glow: true });
     },
 
+    // 물줄기가 뻗어나간 칸. 중심이 아니라서 작게만 튄다.
+    // 여기에 큰 고리를 그리면 칸마다 원이 생겨서 사거리를 못 읽는다
+    splash(x, y, T, now) {
+      for (let i = 0; i < 4; ++i) {
+        const a = rnd(0, 6.283);
+        const v = T * rnd(0.02, 0.05);
+        emit({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - T * 0.015,
+               r: T * rnd(0.04, 0.08), color: '#dff3ff',
+               grav: T * 0.0014, drag: 0.94, life: rnd(200, 380), now, glow: true });
+      }
+    },
+
     // 상자가 부서진다. 그냥 사라지면 부순 게 아니라 지워진 것처럼 보인다
     breakCrate(x, y, T, now, color, edge) {
       for (let i = 0; i < 8; ++i) {

@@ -212,7 +212,7 @@ inline void PickUpItems()
 {
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& p = g_game.players[i];
-        if (p.s == nullptr || !p.alive) {
+        if (!Occupied(p) || !p.alive) {
             continue;
         }
 
@@ -319,7 +319,7 @@ inline void ResolveHits()
 {
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& p = g_game.players[i];
-        if (p.s == nullptr || !p.alive) {
+        if (!Occupied(p) || !p.alive) {
             continue;
         }
 
@@ -390,7 +390,7 @@ inline void PopTrappedPlayers()
 {
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& v = g_game.players[i];
-        if (v.s == nullptr || !v.alive || v.trap_ticks <= 0) {
+        if (!Occupied(v) || !v.alive || v.trap_ticks <= 0) {
             continue;
         }
 
@@ -401,7 +401,7 @@ inline void PopTrappedPlayers()
 
             Player& a = g_game.players[j];
             // 갇힌 사람끼리는 서로 못 터뜨린다
-            if (a.s == nullptr || !a.alive || a.trap_ticks > 0) {
+            if (!Occupied(a) || !a.alive || a.trap_ticks > 0) {
                 continue;
             }
 
@@ -423,7 +423,7 @@ inline void UpdateTimers()
 {
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& p = g_game.players[i];
-        if (p.s == nullptr || !p.alive) {
+        if (!Occupied(p) || !p.alive) {
             continue;
         }
 

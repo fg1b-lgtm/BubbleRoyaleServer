@@ -152,7 +152,7 @@ inline void UpdateFlood()
     // 3) 물에 잠긴 데 있는 사람
     for (int i = 0; i < PLAYER_MAX; ++i) {
         Player& p = g_game.players[i];
-        if (p.s == nullptr || !p.alive) {
+        if (!Occupied(p) || !p.alive) {
             continue;
         }
 

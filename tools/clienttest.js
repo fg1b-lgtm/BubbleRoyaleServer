@@ -45,6 +45,7 @@ function makeCtx() {
         setTransform: nop('setTransform'),
         clearRect: nop('clearRect'), fillRect: nop('fillRect'),
         strokeRect: nop('strokeRect'), fillText: nop('fillText'),
+        strokeText: nop('strokeText'), measureText: () => ({ width: 10 }),
         beginPath: nop('beginPath'), closePath: nop('closePath'),
         moveTo: nop('moveTo'), lineTo: nop('lineTo'),
         quadraticCurveTo: nop('quadraticCurveTo'),
@@ -189,7 +190,7 @@ check(true, '다섯 파일이 처음부터 끝까지 돌았다');
 // 스크립트 맨 위의 const 는 전역 **객체**에 안 붙는다. 전역 렉시컬 환경에 들어간다.
 // 브라우저에서는 스크립트끼리 그 환경을 같이 쓰므로 서로 잘 보이는데,
 // 밖에서 sandbox.G 로 꺼내려 하면 없다. 같은 realm 에서 식을 하나 굴려서 가져온다
-const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, onPacket: onPacket, frame: frame })', sandbox);
+const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, onPacket: onPacket, frame: frame, statRows: statRows })', sandbox);
 
 // ── 진짜와 같은 모양의 패킷을 만들어 먹인다 ──────────────────
 const HEADER_SIZE = 4;
@@ -342,11 +343,22 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
       feed(snapshot(9, 2, true));
       now += 16; api.frame(now);
 
-      for (const phase of [0, 1, 3]) {
+      // 기다림 -> 카운트다운 순으로 넘긴다. 카운트다운에서 판의 기록이 초기화된다
+      for (const phase of [0, 1]) {
           now += 16;
           feed(snapshot(9, phase, true));
           api.frame(now);
       }
+
+      // 그다음에 사람이 죽는다. 이 기록이 결과 화면에 남아 있어야 한다
+      feed(snapshot(20, 2, true));
+      feed(event(15, 11, 12, 0, 2));   // POP  : 0번이 2번에게 당했다
+      feed(event(5,  20, 20, 3, 0));   // DEATH: 3번이 물에 빠져 죽었다
+      now += 16; api.frame(now);
+
+      // 판이 끝난다
+      feed(snapshot(21, 3, true));
+      now += 16; api.frame(now);
 
       // 조각이 다 사라질 만큼 시간을 흘려보낸다
       for (let i = 0; i < 8; ++i) { now += 200; api.frame(now); }
@@ -363,6 +375,15 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
   }
 
   // ── 무엇을 그렸나 ────────────────────────────────────────────
+  // 결과 화면이 이벤트만 보고 한 판의 기록을 세는지 확인한다.
+  // 위에서 POP(who=0, value=2) 과 DEATH(who=0) 를 먹였다
+  const rows = api.statRows();
+  console.log('  결과표 ' + rows.length + ' 줄: '
+              + rows.map(r => r.place + '등 P' + r.id + ' 킬' + r.kills).join(', '));
+  check(rows.length === 4, '판에 있던 사람이 전부 결과표에 오른다');
+  check(rows.some(r => r.kills > 0), '누가 몇 명을 잡았는지 이벤트만 보고 셌다');
+  check(rows[0].place === 1, '등수가 1등부터 매겨진다');
+
   console.log();
   console.log('  캔버스가 받은 명령');
   for (const k of Object.keys(calls).sort()) {

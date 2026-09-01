@@ -21,7 +21,17 @@
 
 struct Player
 {
-    Session* s;          // 이 자리의 주인. nullptr 이면 빈 자리
+    // 이 자리의 주인.
+    //   s != nullptr           사람이 앉아 있다
+    //   s == nullptr && is_bot 봇이 앉아 있다
+    //   s == nullptr && !is_bot 빈 자리
+    Session* s;
+
+    // 봇인가. 세션이 없으므로 보낼 것도 없고 끊길 일도 없다.
+    //
+    // 혼자 접속하면 "한 명 더 들어오면 시작한다" 만 보고 끝난다.
+    // 링크를 받은 사람이 게임을 한 번도 못 보는 것이라, 봇이 자리를 채운다
+    bool is_bot;
 
     int px, py;          // 위치. 고정소수점 units. 타일 하나가 TILE_UNITS
     int judge_tx;        // 판정 타일. 위치와 따로 논다. 이 둘이 다른 순간이 걸치기다
@@ -220,7 +230,8 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     g_game.round_no    = 0;
 
     for (int i = 0; i < PLAYER_MAX; ++i) {
-        g_game.players[i].s = nullptr;
+        g_game.players[i].s      = nullptr;
+        g_game.players[i].is_bot = false;
     }
     for (int i = 0; i < MAX_BUBBLE; ++i) {
         g_game.bubbles[i].used = false;
@@ -244,12 +255,23 @@ inline int TileCenter(int t)
     return t * TILE_UNITS + TILE_UNITS / 2;
 }
 
-// 판에 앉힌다. 자리가 없으면 -1
-inline int AddPlayer(Session* s)
+// 이 자리에 누가 앉아 있나. 사람이든 봇이든.
+//
+// 봇이 생기면서 "s 가 nullptr 이면 빈 자리" 가 더는 안 맞는다.
+// 그 판단을 한 곳으로 모은다. 안 그러면 봇이 안 움직이거나,
+// 스냅샷에 안 나가거나, 빈 자리로 세어져서 판이 안 끝난다
+inline bool Occupied(const Player& p)
+{
+    return p.s != nullptr || p.is_bot;
+}
+
+// 판에 앉힌다. 자리가 없으면 -1.
+// bot 이 true 면 세션 없이 앉는다
+inline int AddPlayer(Session* s, bool bot = false)
 {
     int slot = -1;
     for (int i = 0; i < PLAYER_MAX; ++i) {
-        if (g_game.players[i].s == nullptr) { slot = i; break; }
+        if (!Occupied(g_game.players[i])) { slot = i; break; }
     }
     if (slot < 0) {
         return -1;
@@ -299,6 +321,7 @@ inline int AddPlayer(Session* s)
     p.judge_ty     = ty;
     p.dir_x        = 0;
     p.dir_y        = 0;
+    p.is_bot       = bot;
     p.face         = FACE_DOWN;   // 들어오면 화면 앞쪽을 본다
     p.moving       = false;
     p.bubble_lv    = 0;
@@ -356,9 +379,66 @@ inline int AliveCount()
 {
     int n = 0;
     for (int i = 0; i < PLAYER_MAX; ++i) {
-        if (g_game.players[i].s != nullptr && g_game.players[i].alive) ++n;
+        if (Occupied(g_game.players[i]) && g_game.players[i].alive) ++n;
     }
     return n;
+}
+
+// 사람이 몇 명 앉아 있나 (봇 빼고)
+inline int HumanCount()
+{
+    int n = 0;
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (g_game.players[i].s != nullptr) ++n;
+    }
+    return n;
+}
+
+inline int BotCount()
+{
+    int n = 0;
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (g_game.players[i].is_bot) ++n;
+    }
+    return n;
+}
+
+// 봇을 하나 빼서 사람에게 자리를 내준다.
+// **죽은 봇부터** 뺀다. 살아 있는 봇을 지우면 판이 그 자리에서 어색해진다
+inline bool DropOneBot()
+{
+    int pick = -1;
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        if (!g_game.players[i].is_bot) continue;
+        if (!g_game.players[i].alive) { pick = i; break; }
+        if (pick < 0) pick = i;
+    }
+    if (pick < 0) {
+        return false;
+    }
+
+    g_game.spawn_used[g_game.players[pick].spawn_slot] = false;
+    g_game.players[pick].is_bot = false;
+    g_game.players[pick].alive  = false;
+    --g_game.player_count;
+    return true;
+}
+
+// 자리를 봇으로 채운다.
+//
+// 왜 필요한가.
+//   혼자 접속하면 "한 명 더 들어오면 시작한다" 만 보고 끝난다.
+//   링크를 받은 사람이 게임을 한 번도 못 보는 것이다.
+//
+// 사람이 들어올 자리를 남겨두지 않는다. 들어오면 그때 봇을 하나 뺀다.
+// 남겨두면 사람이 안 올 때 그 자리가 계속 비어 있다
+inline void FillBots(int target)
+{
+    if (target > PLAYER_MAX) target = PLAYER_MAX;
+
+    while (g_game.player_count < target) {
+        if (AddPlayer(nullptr, true) < 0) break;
+    }
 }
 
 inline void EnterPhase(uint8_t phase)
@@ -457,6 +537,17 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // 막힌 축만 서고 나머지 축은 계속 가게 하기 위해서다. 벽을 타고 미끄러진다
     p.px = StepAxis(map, p.px, p.py, p.dir_x * speed, true);
     p.py = StepAxis(map, p.py, p.px, p.dir_y * speed, false);
+
+    // 몸이 벽에 파묻혀 있으면 빼낸다.
+    //
+    // 옆으로 달리는 동안 위쪽 칸이 벽으로 바뀌는 경우가 있다.
+    // 가는 축은 StepAxis 가 보지만 옆 축은 아무도 안 봐서, 여기서 한 번 훑는다
+    {
+        int tx = p.px / TILE_UNITS;
+        int ty = p.py / TILE_UNITS;
+        p.py = ClampAxis(map, p.py, tx, false, speed);
+        p.px = ClampAxis(map, p.px, ty, true,  speed);
+    }
 
     // 벽에 막혀 한 칸도 못 갔으면 걷는 그림을 쓰지 않는다.
     // 누르고 있는지가 아니라 갔는지를 본다. 안 그러면 벽에 대고 제자리걸음을 한다

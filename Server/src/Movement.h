@@ -102,7 +102,17 @@ inline int CornerAssistAxis(const GameMap& map,
     return side_pos;   // 밀어봐야 거기도 벽이다. 그냥 선다
 }
 
-// 한 축으로만 움직여본다. 가려는 칸이 막혀 있으면 경계 앞에 세운다.
+// 한 축으로만 움직여본다. 몸이 벽에 닿으면 거기서 선다.
+//
+// 9/1 에 기준을 바꿨다. 전에는 **몸 중심**이 들어가려는 칸만 봤다.
+// 그러면 몸이 타일보다 작아서(0.8) 벽 칸에 0.4 만큼 파묻힌 채로 설 수 있었다.
+// 화면으로 보면 캐릭터가 벽에 반쯤 박혀 있다. 벽에 걸치기가 되는 셈이었다.
+//
+// 이제 보는 것은 중심이 아니라 **가는 쪽 몸 끝**이다.
+// 몸 끝이 벽 칸에 들어가려 하면 경계 바로 앞에서 세운다.
+//
+// 걸치기는 안 없어진다. 걸치기는 **물줄기**에 대해 일어나는 것이고,
+// 물줄기는 빈 칸에만 깔린다. 벽에만 안 걸쳐지는 것이다.
 //
 //   pos       움직일 축의 지금 위치
 //   other_pos 안 움직이는 축의 위치. 어느 칸을 볼지 정하는 데 필요하다
@@ -114,28 +124,70 @@ inline int StepAxis(const GameMap& map, int pos, int other_pos, int step, bool i
         return pos;
     }
 
-    int want   = pos + step;
-    int t_now  = pos  / TILE_UNITS;
-    int t_want = want / TILE_UNITS;
+    int want = pos + step;
 
-    // 같은 칸 안에서 움직이는 거라면 벽을 볼 이유가 없다.
-    // 한 틱 이동량이 TILE_UNITS 보다 훨씬 작아서 칸은 한 번에 하나씩만 바뀐다
-    if (t_want == t_now) {
+    // 가려는 쪽 몸 끝. 오른쪽으로 가면 오른쪽 끝, 왼쪽으로 가면 왼쪽 끝
+    int edge   = (step > 0) ? want + PLAYER_HALF : want - PLAYER_HALF;
+    int t_now  = pos  / TILE_UNITS;
+    int t_edge = edge / TILE_UNITS;
+
+    // 몸 끝이 아직 내 칸 안이면 볼 것이 없다.
+    // 내 칸이 벽일 수는 없고, 내가 놓은 물풍선이면 나가는 건 허용해야 한다
+    if (t_edge == t_now) {
         return want;
     }
 
     int other_t = other_pos / TILE_UNITS;
-    int tx = is_x ? t_want  : other_t;
-    int ty = is_x ? other_t : t_want;
+    int tx = is_x ? t_edge  : other_t;
+    int ty = is_x ? other_t : t_edge;
 
     if (map.IsSolid(tx, ty)) {
-        // 막혔다. 지금 칸 안에서 갈 수 있는 끝까지만 간다.
-        // 칸 밖으로 한 칸도 나가면 안 되므로 오른쪽은 TILE_UNITS - 1 이다
+        // 몸 끝이 그 칸 경계에 닿는 데까지만 간다
         if (step > 0) {
-            return t_now * TILE_UNITS + (TILE_UNITS - 1);
+            return t_edge * TILE_UNITS - PLAYER_HALF - 1;
         }
-        return t_now * TILE_UNITS;
+        return (t_edge + 1) * TILE_UNITS + PLAYER_HALF;
     }
 
     return want;
+}
+
+// 몸이 이미 벽에 파묻혀 있으면 빼낸다.
+//
+// StepAxis 만으로는 부족하다. 옆으로 달리는 동안 **세상이 바뀌기** 때문이다.
+//   위가 뚫린 데서 위쪽으로 치우쳐 서 있다가 그대로 오른쪽으로 달리면,
+//   위가 벽인 칸에 들어가면서 몸이 그 벽에 파묻힌다.
+//   가는 축은 StepAxis 가 보지만 옆 축은 아무도 안 본다.
+//
+// 그래서 매 틱 양쪽 축을 다 훑어서, 몸이 들어갈 수 있는 범위 안으로 되돌린다.
+// 한 번에 speed 만큼만 옮긴다. 확 튀면 순간이동처럼 보인다.
+//
+//   반대로 밀어낼 데가 없는 경우는 안 생긴다.
+//   통로가 한 칸(256)이고 몸이 204 라 가운데 52 만큼의 자리가 언제나 남는다.
+inline int ClampAxis(const GameMap& map, int pos, int other_t, bool is_x, int speed)
+{
+    int t = pos / TILE_UNITS;
+
+    int lo_limit = 0;
+    int hi_limit = (is_x ? MAP_W : MAP_H) * TILE_UNITS - 1;
+
+    bool prev_solid = is_x ? map.IsSolid(t - 1, other_t) : map.IsSolid(other_t, t - 1);
+    bool next_solid = is_x ? map.IsSolid(t + 1, other_t) : map.IsSolid(other_t, t + 1);
+
+    if (prev_solid) lo_limit = t * TILE_UNITS + PLAYER_HALF;
+    if (next_solid) hi_limit = (t + 1) * TILE_UNITS - PLAYER_HALF - 1;
+
+    if (lo_limit > hi_limit) {
+        return pos;   // 있을 수 없다. 그래도 억지로 밀지는 않는다
+    }
+
+    int want = pos;
+    if (want < lo_limit) want = lo_limit;
+    if (want > hi_limit) want = hi_limit;
+
+    int move = want - pos;
+    if (move >  speed) move =  speed;
+    if (move < -speed) move = -speed;
+
+    return pos + move;
 }
