@@ -257,6 +257,12 @@ struct Report
 
     int dig_max;              // 스폰에서 나가는 데 부숴야 하는 블록 겹 수
     int dig_stuck;            // 아예 못 나가는 스폰
+
+    // 제일 가까운 두 스폰 사이의 거리 (칸, 가로세로 중 큰 쪽).
+    //
+    // 조각 안에서만 떨어뜨려 놓으면 안 된다. 조각 경계 너머의 스폰과 붙기 때문이다.
+    // 물줄기 사거리가 2 이므로 최소한 그 두 배는 떨어져야 시작하자마자 사정권이 아니다
+    int spawn_min_gap;
 };
 
 static void Measure(const GameMap& m, int range, Report& r)
@@ -302,6 +308,18 @@ static void Measure(const GameMap& m, int range, Report& r)
             if (bones.tile[y][x] != TILE_EMPTY) continue;
             ++r.struct_open;
             if (OpenNeighbors(bones, x, y) <= 1) ++r.struct_dead_ends;
+        }
+    }
+
+    r.spawn_min_gap = 9999;
+    for (int i = 0; i < m.spawn_count; ++i) {
+        for (int j = i + 1; j < m.spawn_count; ++j) {
+            int dx = m.spawn_x[i] - m.spawn_x[j];
+            int dy = m.spawn_y[i] - m.spawn_y[j];
+            if (dx < 0) dx = -dx;
+            if (dy < 0) dy = -dy;
+            int gap = (dx > dy) ? dx : dy;
+            if (gap < r.spawn_min_gap) r.spawn_min_gap = gap;
         }
     }
 
@@ -379,6 +397,8 @@ int main(int argc, char** argv)
     int worst = 0, worst_seed = 0;
     int bad_maps = 0;
     int spread_max = 0;
+    int gap_min = 9999;
+    unsigned int gap_seed = 0;
     long long pocket_total = 0;
     long long struct_open = 0, struct_dead = 0, struct_big = 0;
     int dig_worst = 0, dig_stuck_total = 0;
@@ -410,6 +430,7 @@ int main(int argc, char** argv)
 
         int spread = r.spawn_block_max - r.spawn_block_min;
         if (spread > spread_max) spread_max = spread;
+        if (r.spawn_min_gap < gap_min) { gap_min = r.spawn_min_gap; gap_seed = seed; }
 
         if (r.worst_escape > worst) { worst = r.worst_escape; worst_seed = (int)seed; }
         if (r.death_tiles > 0 || r.dig_stuck > 0) ++bad_maps;
@@ -443,6 +464,7 @@ int main(int argc, char** argv)
 
     printf("\n--- 공정성 ---\n");
     printf("  스폰 주변(반경3) 블록 수 차이: 최대 %d 개\n", spread_max);
+    printf("  제일 가까운 두 스폰: %d 칸 (씨앗 %u)\n", gap_min, gap_seed);
 
     printf("\n--- 판정 ---\n");
     Check(death == 0,
@@ -457,6 +479,11 @@ int main(int argc, char** argv)
           "아무리 부숴도 못 나가는 스폰이 없다");
     Check(dig_worst <= 3,
           "스폰에서 세 겹 안에 밖으로 나간다 (7.5초)");
+    // 물줄기가 사거리 2 로 뻗으니 5칸이면 겨우 밖이다.
+    // 조각 안에서 아무리 잘 떨어뜨려도 조각을 붙이는 순간 경계 너머와 가까워질 수 있어서
+    // 조각이 아니라 붙여놓은 판에서 잰다
+    Check(gap_min >= BLAST_BASE_RANGE * 3,
+          "제일 가까운 두 스폰도 기본 사거리의 세 배만큼 떨어져 있다");
     Check(spread_max <= 12,
           "스폰끼리 주변 블록 수 차이가 12개 이하다");
 

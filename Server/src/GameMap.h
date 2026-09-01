@@ -9,14 +9,19 @@
 // 여기는 계산만 한다. 소켓도 세션도 모른다.
 // 그래야 tools/movetest.cpp 처럼 서버를 안 켜고도 판정을 시험할 수 있다.
 //
-// 아직 안 하는 것
-//   SPEC 2.2 의 "미리 만들어둔 15종 중 9개를 랜덤 배치" 는 파일 로딩이 필요하다.
-//   지금은 같은 규칙(고정 기둥, 변 가운데 통로, 스폰 주변 비우기)으로 그 자리에서 만든다.
-//   조각 파일은 나중에 이 Generate 만 바꿔 끼우면 된다.
+// 조각은 손으로 그린 10종에서 온다 (SectorTemplates.h).
+// 확률로만 만들던 때는 규칙은 맞는데 어디를 가도 같은 데 같았다.
+// 손으로 그린 조각에는 광장과 골목과 문턱이 있어서 "거기" 라고 부를 수 있다.
+//
+// 이 파일이 하는 일은 셋이다.
+//   ① 10종 중 9개를 뽑아 뒤집어 가며 3x3 으로 붙인다
+//   ② 조각이 '?' 로 남겨둔 자리에 블록을 확률로 깐다
+//   ③ 붙이고 나서 생긴 문제만 고친다 (스폰 공정성, 놓으면 죽는 칸)
 #pragma once
 
 #include <cstdio>
 #include "GameConstants.h"
+#include "SectorTemplates.h"
 
 // 매판 같은 맵이 나오면 안 되지만, 로그를 다시 보려면 같은 맵이 다시 나와야 한다.
 // 그래서 시각이 아니라 씨앗 하나로 정한다. 씨앗만 적어두면 그 판이 그대로 재현된다.
@@ -34,14 +39,27 @@ struct MapRandom
     }
 };
 
+constexpr int SECTOR_SLOTS = SECTOR_COLS * SECTOR_ROWS;   // 9
+
 struct GameMap
 {
     uint8_t tile[MAP_H][MAP_W];
+
+    // 조각이 "여기는 길이다" 라고 정해둔 칸.
+    //
+    // 이 칸에는 나중에 무슨 일이 있어도 블록을 깔지 않는다.
+    // 조각을 그릴 때 길만으로 관문과 스폰이 전부 이어지도록 검사해뒀는데,
+    // 뒤에 도는 손질(BalanceSpawnBlocks)이 그 위에 블록을 하나 얹으면 그 보장이 깨진다.
+    bool street[MAP_H][MAP_W];
 
     // 스폰 자리. 판이 시작할 때 여기에 사람을 앉힌다
     int spawn_x[SPAWN_TOTAL];
     int spawn_y[SPAWN_TOTAL];
     int spawn_count = 0;
+
+    // 이 판이 어떤 조각으로 짜였나. 로그와 tools/maptest 가 본다
+    uint8_t sector_template[SECTOR_SLOTS] = {};
+    uint8_t sector_flip[SECTOR_SLOTS]     = {};   // 1 = 좌우, 2 = 상하
 
     unsigned int seed = 0;
 
@@ -72,79 +90,68 @@ struct GameMap
         seed = s;
         spawn_count = 0;
 
-        // 1) 일단 전부 통로로 깔고 테두리만 벽으로 두른다
+        // 1) 조각 10종에서 9개를 뽑는다.
+        //
+        //    섞어놓고 앞에서 아홉 개를 가져간다 (피셔-예이츠).
+        //    "랜덤으로 하나씩 뽑고 겹치면 다시" 로 하면 뽑을수록 느려지고,
+        //    운이 나쁘면 안 끝난다. 섞는 쪽은 몇 번 도는지가 정해져 있다.
+        int pick[SECTOR_TEMPLATE_COUNT];
+        for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
+            pick[i] = i;
+        }
+        for (int i = SECTOR_TEMPLATE_COUNT - 1; i > 0; --i) {
+            int j = rnd.Next(i + 1);
+            int t = pick[i]; pick[i] = pick[j]; pick[j] = t;
+        }
+
+        // 2) 아홉 자리에 하나씩 찍는다. 자리마다 뒤집기가 따로 걸린다.
+        //
+        //    돌리기는 못 한다. 조각이 15x13 이라 90도 돌리면 13x15 가 되어 안 맞는다.
+        //    뒤집기 넷이면 같은 조각도 매번 다르게 보인다.
+        for (int slot = 0; slot < SECTOR_SLOTS; ++slot) {
+            sector_template[slot] = (uint8_t)pick[slot];
+            sector_flip[slot]     = (uint8_t)rnd.Next(4);   // 0 그대로 / 1 좌우 / 2 상하 / 3 둘 다
+
+            StampSector(slot, SECTOR_TEMPLATES[pick[slot]], sector_flip[slot],
+                        rnd, block_percent);
+        }
+
+        // 3) 판 바깥 테두리는 무조건 벽이다.
+        //    조각은 자기가 판 끝에 놓일지 안쪽에 놓일지 모른다. 여기서 정리한다
         for (int y = 0; y < MAP_H; ++y) {
             for (int x = 0; x < MAP_W; ++x) {
-                bool edge = (x == 0 || y == 0 || x == MAP_W - 1 || y == MAP_H - 1);
-                tile[y][x] = edge ? TILE_WALL : TILE_EMPTY;
+                if (x == 0 || y == 0 || x == MAP_W - 1 || y == MAP_H - 1) {
+                    tile[y][x]   = TILE_WALL;
+                    street[y][x] = false;
+                }
             }
         }
 
-        // 2) 봄버맨식 고정 기둥. x 와 y 가 둘 다 짝수인 교차점
-        for (int y = 2; y < MAP_H - 1; y += 2) {
-            for (int x = 2; x < MAP_W - 1; x += 2) {
-                tile[y][x] = TILE_WALL;
-            }
-        }
-
-        // 3) 스폰 자리를 먼저 정한다. 블록을 깔기 전에 잡아야 주변을 비울 수 있다.
-        //    조각 하나에 세 자리. 서로 최대한 떨어뜨린다
-        // 조각 안에서만 떨어뜨리면 안 된다.
-        // 조각 경계를 사이에 둔 두 스폰이 붙어버리기 때문이다.
+        // 4) 테두리를 두르면서 생긴 막다른 칸을 벽으로 메운다.
         //
-        // 처음에 쓰던 (1,1) (13,1) (7,11) 은 조각 안에서는 잘 떨어져 있는데,
-        // 옆 조각의 (1,1) 이 (16,1) 이라 (13,1) 과 3칸 거리였다.
-        // 물줄기 사거리가 2 인데 3칸이면 시작하자마자 사정권이다.
-        //
-        // 아래 배치는 전체 27개 스폰의 최소 거리를 가장 크게 만드는 조합이다.
-        // 3칸 -> 9칸
-        const int local_x[SPAWN_PER_SECTOR] = { 2, 5, 10 };
-        const int local_y[SPAWN_PER_SECTOR] = { 2, 8,  4 };
+        //    조각은 사방이 열려 있다고 치고 그렸다. 그런데 판 가장자리에 놓이면
+        //    한쪽이 통째로 막히면서, 안 그랬으면 지나가는 길이었을 칸이
+        //    들어갔다 도로 나와야 하는 주머니가 된다.
+        //    거기서 마주치면 피할 데가 없다. 그건 실력이 아니라 자리 운이다.
+        SealDeadEnds();
 
-        for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
-            for (int sx = 0; sx < SECTOR_COLS; ++sx) {
-                for (int i = 0; i < SPAWN_PER_SECTOR; ++i) {
-                    int gx = sx * SECTOR_W + local_x[i];
-                    int gy = sy * SECTOR_H + local_y[i];
+        // 5) 조각과 조각이 맞닿는 자리를 확인한다.
+        //    조각마다 관문을 뚫어놨으니 보통은 할 일이 없다. 안전장치다
+        OpenSeams();
 
-                    spawn_x[spawn_count] = gx;
-                    spawn_y[spawn_count] = gy;
-                    ++spawn_count;
-                }
-            }
-        }
-
-        // 4) 파괴 가능 블록을 확률로 깐다
-        for (int y = 1; y < MAP_H - 1; ++y) {
-            for (int x = 1; x < MAP_W - 1; ++x) {
-                if (tile[y][x] != TILE_EMPTY) {
-                    continue;
-                }
-                if (rnd.Next(100) < block_percent) {
-                    tile[y][x] = TILE_BLOCK;
-                }
-            }
-        }
-
-        // 5) 스폰 주변을 비운다. 시작하자마자 블록에 갇히면 안 된다.
-        //    기둥까지 지운다. 시작 직후 갇히는 것보다 기둥 몇 개 없는 게 낫다
-        for (int i = 0; i < spawn_count; ++i) {
-            ClearAround(spawn_x[i], spawn_y[i], SPAWN_CLEAR_RADIUS);
-            ConnectSpawnToLanes(spawn_x[i], spawn_y[i]);
-        }
-
-        // 6) 조각 경계의 가운데 세 칸은 반드시 통로.
-        //    조각을 어떻게 붙여도 옆 조각으로 건너갈 수 있어야 한다
-        OpenSectorGates();
-
-        // 7) 스폰끼리 주변 블록 수를 비슷하게 맞춘다.
+        // 6) 스폰끼리 주변 블록 수를 비슷하게 맞춘다.
         //    블록은 곧 아이템이라, 여기가 어긋나면 1분 뒤 아이템 차이가 된다
         BalanceSpawnBlocks(rnd);
 
-        // 8) 물풍선을 놓으면 무조건 죽는 칸을 없앤다.
-        //    블록을 그냥 확률로 깔면 자잘한 주머니가 잔뜩 생기는데,
+        // 7) 물풍선을 놓으면 무조건 죽는 칸을 없앤다.
+        //    '?' 자리에 블록을 확률로 깔면 자잘한 주머니가 생기는데,
         //    그런 칸에서는 실력으로 살 방법이 없다. 그건 패배가 아니라 벌칙이다
         OpenDeathTraps(BLAST_BASE_RANGE);
+    }
+
+    const char* SectorName(int slot) const
+    {
+        return SECTOR_TEMPLATES[sector_template[slot]].name;
     }
 
     void Dump() const
@@ -216,31 +223,128 @@ struct GameMap
     }
 
 private:
-    // 스폰을 고속도로에 붙인다.
+    // 조각 하나를 판에 찍는다.
     //
-    // 기둥은 x 와 y 가 둘 다 짝수인 자리에만 있다.
-    // 그래서 x 나 y 가 홀수인 줄에는 기둥이 하나도 없다. 끝까지 뚫린 길이다.
-    // 그 줄까지만 뚫어주면 시작하자마자 땅부터 파는 일이 없어진다.
+    //   slot  0..8. 왼쪽 위부터 오른쪽 아래로
+    //   flip  1 이 켜져 있으면 좌우, 2 가 켜져 있으면 상하로 뒤집는다
     //
-    // 홀수 줄만 건드리므로 기둥은 하나도 안 부순다. 격자 뼈대가 그대로 남는다
-    void ConnectSpawnToLanes(int cx, int cy)
+    // 뒤집기는 읽는 자리를 바꾸는 것으로 한다. 조각을 복사해서 돌린 뒤 찍는 게 아니라,
+    // 찍을 때 반대쪽 글자를 읽는다. 임시 배열이 필요 없다.
+    void StampSector(int slot, const SectorTemplate& t, int flip,
+                     MapRandom& rnd, int block_percent)
     {
-        int lane_y = (cy % 2 == 1) ? cy : cy + 1;
-        if (lane_y >= MAP_H - 1) lane_y = cy - 1;
+        int ox = (slot % SECTOR_COLS) * SECTOR_W;
+        int oy = (slot / SECTOR_COLS) * SECTOR_H;
 
-        int lane_x = (cx % 2 == 1) ? cx : cx + 1;
-        if (lane_x >= MAP_W - 1) lane_x = cx - 1;
+        for (int ly = 0; ly < SECTOR_H; ++ly) {
+            const char* row = t.row[(flip & 2) ? (SECTOR_H - 1 - ly) : ly];
 
-        // 가로 고속도로까지 내려가서 좌우로 뚫는다
-        OpenCell(cx, lane_y);
-        for (int d = -SPAWN_LANE_REACH; d <= SPAWN_LANE_REACH; ++d) {
-            OpenCell(cx + d, lane_y);
+            for (int lx = 0; lx < SECTOR_W; ++lx) {
+                char c = row[(flip & 1) ? (SECTOR_W - 1 - lx) : lx];
+
+                int x = ox + lx;
+                int y = oy + ly;
+
+                // 길은 여기서 한 번만 정해지고 그 뒤로 아무도 못 바꾼다
+                street[y][x] = (c == '.' || c == 's');
+
+                if (c == '#') {
+                    tile[y][x] = TILE_WALL;
+                }
+                else if (c == 's') {
+                    tile[y][x] = TILE_EMPTY;
+                    if (spawn_count < SPAWN_TOTAL) {
+                        spawn_x[spawn_count] = x;
+                        spawn_y[spawn_count] = y;
+                        ++spawn_count;
+                    }
+                }
+                else if (c == '.') {
+                    tile[y][x] = TILE_EMPTY;
+                }
+                else {
+                    // '?' 자리. 여기가 아이템 상자이자 시계다
+                    tile[y][x] = (rnd.Next(100) < block_percent) ? TILE_BLOCK : TILE_EMPTY;
+                }
+            }
         }
+    }
 
-        // 세로 고속도로도 같이
-        OpenCell(lane_x, cy);
-        for (int d = -SPAWN_LANE_REACH; d <= SPAWN_LANE_REACH; ++d) {
-            OpenCell(lane_x, cy + d);
+    // 이웃이 하나뿐인 칸을 벽으로 메운다. 없어질 때까지 돈다.
+    //
+    // 왜 뚫지 않고 메우나.
+    //   뚫으면 조각에 그려둔 모양이 망가진다. 벽 하나를 헐면 옆 칸이 또 이상해진다.
+    //   메우는 쪽은 아무것도 안 망가뜨린다. 이웃이 하나뿐인 칸은 지나다니는 길이 아니라
+    //   들어갔다 그대로 나와야 하는 끝이라서, 없애도 어디와 어디 사이가 끊기지 않는다.
+    //
+    // 벽이 아닌 것은 전부 열린 것으로 센다. 블록은 부수면 없어지니 구조가 아니다.
+    // tools/maptest 의 "뼈대" 도 같은 기준으로 잰다.
+    //
+    // 스폰은 건드리지 않는다. 스폰이 사라지면 사람이 앉을 데가 없어진다
+    void SealDeadEnds()
+    {
+        static const int DX[4] = { 1, -1,  0,  0 };
+        static const int DY[4] = { 0,  0,  1, -1 };
+
+        for (int pass = 0; pass < 8; ++pass) {
+            bool changed = false;
+
+            for (int y = 1; y < MAP_H - 1; ++y) {
+                for (int x = 1; x < MAP_W - 1; ++x) {
+                    if (tile[y][x] == TILE_WALL) continue;
+                    if (IsSpawn(x, y))           continue;
+
+                    int open = 0;
+                    for (int d = 0; d < 4; ++d) {
+                        if (tile[y + DY[d]][x + DX[d]] != TILE_WALL) ++open;
+                    }
+
+                    if (open <= 1) {
+                        tile[y][x]   = TILE_WALL;
+                        street[y][x] = false;
+                        changed = true;
+                    }
+                }
+            }
+
+            if (!changed) {
+                return;
+            }
+        }
+    }
+
+    bool IsSpawn(int x, int y) const
+    {
+        for (int i = 0; i < spawn_count; ++i) {
+            if (spawn_x[i] == x && spawn_y[i] == y) return true;
+        }
+        return false;
+    }
+
+    // 조각이 맞닿는 자리에 벽이 서 있으면 헐어낸다.
+    //
+    // 아래 조각의 (7,12) 와 위 조각의 (7,0) 이 바로 맞닿게 좌표를 잡아뒀고,
+    // 조각 열 종 전부 그 자리를 길로 그려놨다 (SectorTemplates.h 의 약속 ①).
+    // 그래서 이 함수는 보통 아무것도 안 한다.
+    //
+    // 그래도 둔다. 나중에 조각을 하나 더 그렸는데 관문을 안 뚫어두면
+    // 그 판은 구역 하나가 통째로 못 가는 데가 되고, 그건 돌려봐야만 알게 된다.
+    void OpenSeams()
+    {
+        for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
+            for (int sx = 0; sx < SECTOR_COLS; ++sx) {
+                int ox = sx * SECTOR_W;
+                int oy = sy * SECTOR_H;
+
+                if (sx + 1 < SECTOR_COLS) {                   // 오른쪽 조각과
+                    OpenCell(ox + SECTOR_W - 1, oy + SECTOR_H / 2);
+                    OpenCell(ox + SECTOR_W,     oy + SECTOR_H / 2);
+                }
+                if (sy + 1 < SECTOR_ROWS) {                   // 아래 조각과
+                    OpenCell(ox + SECTOR_W / 2, oy + SECTOR_H - 1);
+                    OpenCell(ox + SECTOR_W / 2, oy + SECTOR_H);
+                }
+            }
         }
     }
 
@@ -288,6 +392,10 @@ private:
                 int y = cy - 3 + rnd.Next(7);
                 if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
                 if (tile[y][x] != TILE_EMPTY) continue;
+
+                // 조각이 길이라고 그려둔 칸은 절대 막지 않는다.
+                // 여기를 하나 막으면 "블록이 최악으로 깔려도 안 갇힌다" 는 보장이 깨진다
+                if (street[y][x]) continue;
 
                 int dx = x - cx, dy = y - cy;
                 if (dx * dx + dy * dy <= SPAWN_CLEAR_RADIUS * SPAWN_CLEAR_RADIUS) continue;
@@ -411,52 +519,14 @@ private:
         }
     }
 
-    void ClearAround(int cx, int cy, int r)
-    {
-        for (int y = cy - r; y <= cy + r; ++y) {
-            for (int x = cx - r; x <= cx + r; ++x) {
-                if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) {
-                    continue;   // 테두리는 건드리지 않는다
-                }
-                tile[y][x] = TILE_EMPTY;
-            }
-        }
-    }
-
-    void OpenSectorGates()
-    {
-        // 세로 경계 (조각과 조각 사이의 세로줄)
-        for (int sx = 1; sx < SECTOR_COLS; ++sx) {
-            int x = sx * SECTOR_W;
-            for (int sy = 0; sy < SECTOR_ROWS; ++sy) {
-                int mid = sy * SECTOR_H + SECTOR_H / 2;
-                for (int d = -1; d <= 1; ++d) {
-                    OpenCell(x, mid + d);
-                    OpenCell(x - 1, mid + d);   // 양옆도 뚫어야 실제로 지나간다
-                    OpenCell(x + 1, mid + d);
-                }
-            }
-        }
-
-        // 가로 경계
-        for (int sy = 1; sy < SECTOR_ROWS; ++sy) {
-            int y = sy * SECTOR_H;
-            for (int sx = 0; sx < SECTOR_COLS; ++sx) {
-                int mid = sx * SECTOR_W + SECTOR_W / 2;
-                for (int d = -1; d <= 1; ++d) {
-                    OpenCell(mid + d, y);
-                    OpenCell(mid + d, y - 1);
-                    OpenCell(mid + d, y + 1);
-                }
-            }
-        }
-    }
-
+    // 한 칸을 확실히 길로 만든다.
+    // street 도 같이 켠다. 뒤에 도는 손질이 여기에 블록을 얹으면 안 되기 때문이다
     void OpenCell(int x, int y)
     {
         if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) {
             return;
         }
-        tile[y][x] = TILE_EMPTY;
+        tile[y][x]   = TILE_EMPTY;
+        street[y][x] = true;
     }
 };
