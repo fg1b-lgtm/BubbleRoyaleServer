@@ -69,6 +69,97 @@ static int PieceAt(int x, int y)
     return g_game.map.sector_template[sy * SECTOR_COLS + sx];
 }
 
+// ── 되감기 ───────────────────────────────────────────────────
+//
+// '봇이 자기 물풍선에 죽는다' 를 고치려면 그 봇의 마지막 몇 초를 봐야 한다.
+// 매 틱 자리·방향·이유·발밑 위험을 고리 버퍼에 남겨두고, 죽는 순간 되감아 찍는다.
+//
+// 숫자 하나(자살 12명)로는 왜 죽었는지 알 수 없다. 그 12명이 각자 어떻게 죽었는지
+// 봐야 고칠 데가 나온다
+constexpr int TRACE_LEN = 120;   // 4초
+
+struct Step
+{
+    int  tick;
+    int  tx, ty;
+    int  dx, dy;
+    uint8_t why;
+    bool danger;      // 발밑이 위험한가
+    bool trapped;
+    int  fx, fy;      // 도망 목표
+};
+
+// 방향을 뒤집을 때 **어느 규칙에서 어느 규칙으로** 바뀌었나.
+//
+// 되감기 몇 개로는 대표성이 없다. 판 전체에서 어느 쌍이 몇 번인지 세야
+// 어디를 고칠지 정할 수 있다. 상위 몇 개가 거의 전부를 차지한다
+static long long g_flip_pair[R_COUNT][R_COUNT];
+
+static Step   g_trace[PLAYER_MAX][TRACE_LEN];
+static int    g_trace_n[PLAYER_MAX];
+static bool   g_dump_on = false;
+static int    g_dumped  = 0;
+static int    g_dump_max = 3;
+
+static void TraceTick(int t)
+{
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        const Player& p = g_game.players[i];
+        if (!Occupied(p)) continue;
+
+        Step& st = g_trace[i][g_trace_n[i] % TRACE_LEN];
+        st.tick = t;
+        st.tx = p.judge_tx; st.ty = p.judge_ty;
+        st.dx = p.dir_x;    st.dy = p.dir_y;
+        st.why = g_reason[i];
+        st.danger = g_danger[p.judge_ty][p.judge_tx];
+        st.trapped = (p.trap_ticks > 0);
+        st.fx = g_flee_x[i]; st.fy = g_flee_y[i];
+        ++g_trace_n[i];
+    }
+}
+
+static const char* DirName(int dx, int dy)
+{
+    if (dx > 0) return "→";
+    if (dx < 0) return "←";
+    if (dy > 0) return "↓";
+    if (dy < 0) return "↑";
+    return "·";
+}
+
+// 죽은 봇의 마지막 TRACE_LEN 틱을 찍는다
+static void DumpTrace(int slot, const char* why_dead)
+{
+    if (!g_dump_on || g_dumped >= g_dump_max) return;
+    ++g_dumped;
+
+    printf("\n--- p%d 되감기 (%s) ---\n", slot, why_dead);
+    printf("  틱     자리      방향  이유          발밑  도망목표\n");
+
+    int n = g_trace_n[slot];
+    int from = n > TRACE_LEN ? n - TRACE_LEN : 0;
+
+    // 마지막 90틱(3초)만. 그 앞은 죽음과 상관없다
+    if (n - from > 90) from = n - 90;
+
+    int last_why = -1, run = 0;
+    for (int k = from; k < n; ++k) {
+        const Step& st = g_trace[slot][k % TRACE_LEN];
+
+        // 같은 이유가 이어지면 접어서 찍는다. 안 접으면 90줄이 다 똑같아 보인다
+        if ((int)st.why == last_why && k != n - 1) { ++run; continue; }
+        if (run > 0) { printf("       ... 같은 이유로 %d틱\n", run); run = 0; }
+        last_why = st.why;
+
+        printf("  %5d  (%2d,%2d)  %s   %-12s  %s   %s(%d,%d)\n",
+               st.tick, st.tx, st.ty, DirName(st.dx, st.dy),
+               BOT_REASON_NAME[st.why],
+               st.trapped ? "갇힘" : (st.danger ? "위험" : "  "),
+               st.fx >= 0 ? "" : "없음", st.fx, st.fy);
+    }
+}
+
 static int OpenTilesNotFlooded()
 {
     int n = 0;
@@ -113,6 +204,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     int drowning_before[PLAYER_MAX];
     bool alive_before[PLAYER_MAX];
     int  last_dx[PLAYER_MAX] = {}, last_dy[PLAYER_MAX] = {};
+    uint8_t last_why[PLAYER_MAX] = {};
     int sample = 0;
 
     for (int t = 1; t <= MAX_TICKS; ++t) {
@@ -124,6 +216,11 @@ static void PlayRound(unsigned int seed, RoundResult& r)
 
         }
 
+        // 되감기는 **정하고 나서, 움직이기 전에** 찍는다.
+        // 움직인 뒤에 찍으면 그 틱에 쓴 방향과 그때 서 있던 칸이 어긋나서
+        // 되감기를 읽을 수가 없다. 처음에 그렇게 찍었다가 한참 헤맸다
+        TraceTick(t);
+
         g_game.event_count = 0;
         GameTick();
 
@@ -132,6 +229,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             const GameEvent& ev = g_game.events[e];
             if (ev.type == EVT_TRAP && g_game.blast_owner[ev.y][ev.x] == (int8_t)ev.who) {
                 ++r.by_self;
+                DumpTrace(ev.who, "자기 물풍선에 갇혔다");
             }
         }
 
@@ -149,6 +247,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             if ((q.dir_x != 0 || q.dir_y != 0)
                 && q.dir_x == -last_dx[i] && q.dir_y == -last_dy[i]) {
                 ++r.flips;
+                ++g_flip_pair[last_why[i]][g_reason[i]];
 
                 // 물가 한 칸 안인가. 침수 경계에서 떠는 게 제일 잘 보인다
                 bool near_water = false;
@@ -157,7 +256,9 @@ static void PlayRound(unsigned int seed, RoundResult& r)
                 }
                 if (near_water || IsUnderWater(q.judge_tx, q.judge_ty)) ++r.wet_flips;
             }
-            if (q.dir_x != 0 || q.dir_y != 0) { last_dx[i] = q.dir_x; last_dy[i] = q.dir_y; }
+            if (q.dir_x != 0 || q.dir_y != 0) {
+                last_dx[i] = q.dir_x; last_dy[i] = q.dir_y; last_why[i] = g_reason[i];
+            }
         }
 
         for (int i = 0; i < PLAYER_MAX; ++i) {
@@ -175,6 +276,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
                     if (g_game.blast_owner[g_game.players[i].judge_ty]
                                           [g_game.players[i].judge_tx] == (int8_t)i) {
                         ++r.self_deaths;
+                        DumpTrace(i, "자기 물풍선에 죽었다");
                     }
                 }
                 if (r.first_kill_tick < 0) r.first_kill_tick = t;
@@ -255,7 +357,12 @@ int main(int argc, char** argv)
 
     // 두 번째 인자로 드롭 확률을 덮어쓴다. 상수를 고쳐 다시 빌드하지 않고
     // roundsim 40 20 처럼 여러 값을 연달아 돌려보라고 둔 것이다
-    if (argc > 2) {
+    // roundsim 1 40 trace  -> 자살한 봇의 마지막 3초를 되감아 찍는다
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "trace") == 0) g_dump_on = true;
+    }
+
+    if (argc > 2 && strcmp(argv[2], "trace") != 0) {
         g_drop_percent = atoi(argv[2]);
         if (g_drop_percent < 0)   g_drop_percent = 0;
         if (g_drop_percent > 100) g_drop_percent = 100;
@@ -323,6 +430,28 @@ int main(int argc, char** argv)
     // '이상해 보인다' 를 고칠 수 있으려면 숫자여야 한다
     printf("  방향을 한 틱 만에 뒤집은 횟수: %lld (그중 물가에서 %lld)\n",
            flips / rounds, wet / rounds);
+
+    // 어느 규칙 쌍이 번갈아 나오나. 위에서부터 다섯 개만
+    {
+        struct Pair { long long n; int a, b; } top[5] = {};
+        for (int a = 0; a < R_COUNT; ++a) {
+            for (int b = 0; b < R_COUNT; ++b) {
+                long long n = g_flip_pair[a][b];
+                if (n <= top[4].n) continue;
+                top[4] = { n, a, b };
+                for (int k = 4; k > 0 && top[k].n > top[k - 1].n; --k) {
+                    Pair t = top[k]; top[k] = top[k - 1]; top[k - 1] = t;
+                }
+            }
+        }
+        printf("  어느 규칙끼리 번갈아 나오나 (판당)\n");
+        for (int k = 0; k < 5; ++k) {
+            if (top[k].n == 0) break;
+            printf("    %-12s -> %-12s %5lld\n",
+                   BOT_REASON_NAME[top[k].a], BOT_REASON_NAME[top[k].b],
+                   top[k].n / rounds);
+        }
+    }
 
     printf("\n--- 압박 곡선 (30초마다) ---\n");
     printf("  시각    생존   한 명당 칸\n");
