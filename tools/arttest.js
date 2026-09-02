@@ -138,6 +138,41 @@ check(worst.d >= 12,
       + ', 색거리 ' + worst.d.toFixed(1) + ')');
 
 // ── 애니메이터 ───────────────────────────────────────────────
+// 장소마다 물건이 다르게 생겼나.
+//
+// 색만 다르고 모양이 같으면 같은 판에 페인트를 열 번 칠한 것이다.
+// 벽 무늬와 상자 무늬를 종류별로 세어, 열 곳이 몇 가지 모양을 쓰는지 본다
+console.log('');
+console.log('=== 아트 디렉션: 장소마다 물건이 다른가 ===');
+console.log('');
+
+const wallKinds  = new Set(Art.PLACES.map((p) => p.wallKind));
+const crateKinds = new Set(Art.PLACES.map((p) => p.crateKind));
+
+console.log('  벽 무늬 ' + [...wallKinds].join(' · '));
+console.log('  상자 무늬 ' + [...crateKinds].join(' · '));
+console.log('');
+
+check(Art.PLACES.every((p) => p.wallKind && p.crateKind),
+      '열 곳 전부 벽·상자 무늬가 붙어 있다');
+check(wallKinds.size >= 4 && crateKinds.size >= 4,
+      '무늬가 네 가지 이상씩이다 (벽 ' + wallKinds.size + ', 상자 ' + crateKinds.size + ')');
+
+// 색도 가깝고 무늬도 같으면 두 곳이 진짜 같은 곳이다
+let twin = null;
+for (let i = 0; i < Art.PLACES.length && !twin; ++i) {
+    for (let j = i + 1; j < Art.PLACES.length; ++j) {
+        const a = Art.PLACES[i], b = Art.PLACES[j];
+        const d = (colorDist(a.floor, b.floor) + colorDist(a.wallTop, b.wallTop)) / 2;
+        if (d < 20 && a.crateKind === b.crateKind && a.wallKind === b.wallKind) {
+            twin = a.name + ' / ' + b.name + ' (색거리 ' + d.toFixed(1) + ')';
+            break;
+        }
+    }
+}
+check(twin === null,
+      '색도 가깝고 무늬도 같은 두 곳이 없다' + (twin ? ' — ' + twin : ''));
+
 console.log('\n=== 애니메이터: 방향과 걷기가 진짜 다른 그림인가 ===\n');
 
 Art.setScale(45);

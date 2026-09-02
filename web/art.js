@@ -71,32 +71,38 @@ const Art = (() => {
     { name: '광장',   // 0 CROSSROADS — 돌바닥과 붉은 기와
       floor: '#c9bda8', floorAlt: '#c0b39e', joint: '#a2957f', fleck: '#b3a58e',
       wallTop: '#c96f5a', wallSide: '#7d3a2e', wallEdge: '#4f231b',
-      crate: '#c08b52', crateTop: '#dda76a', crateSide: '#7e5628' },
+      crate: '#c08b52', crateTop: '#dda76a', crateSide: '#7e5628',
+      crateKind: 'stone', wallKind: 'brick' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
       floor: '#e0dcd2', floorAlt: '#d7d2c7', joint: '#b8b2a4', fleck: '#c8c2b4',
       wallTop: '#f2eee4', wallSide: '#9a9280', wallEdge: '#6b6455',
-      crate: '#cbab5e', crateTop: '#e6c87c', crateSide: '#846a2f' },
+      crate: '#cbab5e', crateTop: '#e6c87c', crateSide: '#846a2f',
+      crateKind: 'stone', wallKind: 'column' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
       floor: '#9fa5ac', floorAlt: '#959ba2', joint: '#767c84', fleck: '#868c94',
       wallTop: '#8b939d', wallSide: '#3f464f', wallEdge: '#252a31',
-      crate: '#cf7a35', crateTop: '#ea9450', crateSide: '#82471a' },
+      crate: '#cf7a35', crateTop: '#ea9450', crateSide: '#82471a',
+      crateKind: 'barrel', wallKind: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
       floor: '#8fc267', floorAlt: '#84b85d', joint: '#6a9c48', fleck: '#79ad52',
       wallTop: '#d9c9a4', wallSide: '#8a6a45', wallEdge: '#57402a',
-      crate: '#b5793f', crateTop: '#d09252', crateSide: '#734a26' },
+      crate: '#b5793f', crateTop: '#d09252', crateSide: '#734a26',
+      crateKind: 'crate', wallKind: 'wood' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
       floor: '#b8a184', floorAlt: '#ae977b', joint: '#907a5f', fleck: '#a08a6e',
       wallTop: '#e8ddc4', wallSide: '#8e7f63', wallEdge: '#5b5040',
-      crate: '#9c7b52', crateTop: '#b8946a', crateSide: '#634d31' },
+      crate: '#9c7b52', crateTop: '#b8946a', crateSide: '#634d31',
+      crateKind: 'crate', wallKind: 'wood' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
       floor: '#e3cf9c', floorAlt: '#dac591', joint: '#bda772', fleck: '#cdb782',
       wallTop: '#e0b878', wallSide: '#a1743c', wallEdge: '#6b4a22',
-      crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f' },
+      crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f',
+      crateKind: 'sack', wallKind: 'rock' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
     // 둘 다 따뜻한 베이지 바닥에 붉은 지붕이라 나란히 놓아야 겨우 구분됐다.
@@ -106,22 +112,26 @@ const Art = (() => {
     { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
       floor: '#9a918a', floorAlt: '#918880', joint: '#756d67', fleck: '#847b75',
       wallTop: '#d8a340', wallSide: '#8f6320', wallEdge: '#583c12',
-      crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862' },
+      crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862',
+      crateKind: 'sack', wallKind: 'brick' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
       floor: '#efdfbc', floorAlt: '#e7d6b0', joint: '#c9b78f', fleck: '#d8c69f',
       wallTop: '#8fd4e0', wallSide: '#3d7f96', wallEdge: '#245667',
-      crate: '#e08b7a', crateTop: '#f2a795', crateSide: '#94503f' },
+      crate: '#e08b7a', crateTop: '#f2a795', crateSide: '#94503f',
+      crateKind: 'barrel', wallKind: 'rock' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
       floor: '#dfeaf3', floorAlt: '#d4e2ee', joint: '#adc4d8', fleck: '#c0d4e4',
       wallTop: '#b8e5fa', wallSide: '#5589a8', wallEdge: '#33607a',
-      crate: '#9fd2ea', crateTop: '#c8ecfc', crateSide: '#5c93b2' },
+      crate: '#9fd2ea', crateTop: '#c8ecfc', crateSide: '#5c93b2',
+      crateKind: 'ice', wallKind: 'rock' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
       floor: '#b08e63', floorAlt: '#a6845a', joint: '#8a6a45', fleck: '#997a52',
       wallTop: '#8d9aa4', wallSide: '#414c56', wallEdge: '#262e36',
-      crate: '#7f8f5e', crateTop: '#9aab76', crateSide: '#4e5a36' },
+      crate: '#7f8f5e', crateTop: '#9aab76', crateSide: '#4e5a36',
+      crateKind: 'crate', wallKind: 'metal' },
   ];
 
   // ── 판 전체의 공기 ───────────────────────────────────────────
@@ -264,6 +274,199 @@ const Art = (() => {
   // 통째로 한 장에 그려두면 사람이 늘 벽 앞이나 늘 벽 뒤에 있게 된다.
   //
   // g 는 이 줄만 담는 종이다. 위로 V.TOP, 아래로 V.BOT 만큼 여유가 있다
+  // ── 장소마다 다른 무늬 ───────────────────────────────────────
+  //
+  // 9/2 까지 열 장소가 **색만 달랐다.** 모양이 전부 같으니 멀리서 보면
+  // 같은 판에 페인트를 열 번 칠한 것으로 보인다.
+  // 크아가 빌리지와 해변이 다른 데처럼 느껴지는 건 색이 아니라 물건이 달라서다.
+  //
+  // 실루엣까지 바꾸면 판정이 헷갈린다. **칸을 채우는 면적은 그대로 두고
+  // 그 위의 무늬만 바꾼다.** 어디가 막혔는지는 여전히 한눈에 보여야 한다.
+  //
+  // 벽 다섯 : 벽돌 · 기둥 · 철판 · 널판 · 바위
+  // 상자 다섯 : 궤짝 · 드럼통 · 자루 · 돌덩이 · 얼음
+
+  // 벽 윗면에 무늬를 새긴다. wx,wy 는 윗면의 왼쪽 위 모서리
+  function wallPattern(g, kind, wx, wy, T, x, y) {
+    g.save();
+    g.beginPath();
+    g.rect(wx, wy, T, T);
+    g.clip();
+
+    if (kind === 'brick') {
+      // 어긋쌓기. 줄마다 반 칸씩 밀린다
+      const rows = 3, bh = T / rows;
+      g.strokeStyle = 'rgba(0,0,0,0.22)';
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let r = 1; r < rows; ++r) {
+        g.moveTo(wx, wy + r * bh); g.lineTo(wx + T, wy + r * bh);
+      }
+      for (let r = 0; r < rows; ++r) {
+        const off = (r % 2) ? 0 : T / 2;
+        g.moveTo(wx + off, wy + r * bh); g.lineTo(wx + off, wy + (r + 1) * bh);
+      }
+      g.stroke();
+    }
+    else if (kind === 'column') {
+      // 세로 홈. 대리석 기둥을 위에서 본 것
+      g.strokeStyle = 'rgba(0,0,0,0.16)';
+      g.lineWidth = Math.max(1, T * 0.05);
+      g.beginPath();
+      for (let i = 1; i < 4; ++i) {
+        g.moveTo(wx + T * i / 4, wy); g.lineTo(wx + T * i / 4, wy + T);
+      }
+      g.stroke();
+      g.strokeStyle = 'rgba(255,255,255,0.22)';
+      g.beginPath();
+      for (let i = 1; i < 4; ++i) {
+        g.moveTo(wx + T * i / 4 - 1, wy); g.lineTo(wx + T * i / 4 - 1, wy + T);
+      }
+      g.stroke();
+    }
+    else if (kind === 'metal') {
+      // 철판. 가장자리에 리벳 네 개와 가운데 이음선
+      g.strokeStyle = 'rgba(0,0,0,0.20)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(wx, wy + T / 2); g.lineTo(wx + T, wy + T / 2);
+      g.stroke();
+
+      const r = Math.max(1, T * 0.045), m = T * 0.18;
+      for (let i = 0; i < 4; ++i) {
+        const rx = wx + (i & 1 ? T - m : m);
+        const ry = wy + (i < 2 ? m : T - m);
+        g.fillStyle = 'rgba(255,255,255,0.30)';
+        g.beginPath(); g.arc(rx, ry - 0.5, r, 0, 7); g.fill();
+        g.fillStyle = 'rgba(0,0,0,0.28)';
+        g.beginPath(); g.arc(rx, ry + 0.5, r * 0.7, 0, 7); g.fill();
+      }
+    }
+    else if (kind === 'wood') {
+      // 널판 세 장. 나뭇결이 세로로 간다
+      g.strokeStyle = 'rgba(0,0,0,0.24)';
+      g.lineWidth = Math.max(1, T * 0.04);
+      g.beginPath();
+      g.moveTo(wx + T / 3, wy); g.lineTo(wx + T / 3, wy + T);
+      g.moveTo(wx + T * 2 / 3, wy); g.lineTo(wx + T * 2 / 3, wy + T);
+      g.stroke();
+
+      g.strokeStyle = 'rgba(255,255,255,0.14)';
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i < 3; ++i) {
+        const bx = wx + T * (i + 0.5) / 3 + (hash2(x, y * 7 + i) % 5 - 2) * 0.6;
+        g.moveTo(bx, wy + 2); g.lineTo(bx, wy + T - 2);
+      }
+      g.stroke();
+    }
+    else {
+      // 바위. 칸마다 다른 금이 간다. 씨앗은 좌표라 다시 그려도 같은 모양이 나온다
+      g.strokeStyle = 'rgba(0,0,0,0.22)';
+      g.lineWidth = Math.max(1, T * 0.035);
+      g.beginPath();
+      const h = (n) => (hash2(x * 3 + n, y * 5 + n) % 100) / 100;
+      g.moveTo(wx + T * h(1), wy);
+      g.lineTo(wx + T * (0.3 + h(2) * 0.4), wy + T * 0.5);
+      g.lineTo(wx + T * h(3), wy + T);
+      g.moveTo(wx + T * (0.3 + h(4) * 0.4), wy + T * 0.5);
+      g.lineTo(wx + T, wy + T * (0.2 + h(5) * 0.6));
+      g.stroke();
+    }
+
+    g.restore();
+  }
+
+  // 상자 무늬. bx,by 는 상자 윗면의 왼쪽 위. w 는 한 변
+  function cratePattern(g, kind, bx, by, w, cc, cs, x, y) {
+    g.save();
+    g.beginPath();
+    g.rect(bx, by, w, w);
+    g.clip();
+
+    const dark = css(darker(cc, 0.26), 0.6);
+
+    if (kind === 'barrel') {
+      // 드럼통. 가로 테 두 줄과 세로 이음선 하나
+      g.strokeStyle = css(darker(cs, 0.2), 0.75);
+      g.lineWidth = Math.max(1.5, w * 0.10);
+      g.beginPath();
+      g.moveTo(bx, by + w * 0.28); g.lineTo(bx + w, by + w * 0.28);
+      g.moveTo(bx, by + w * 0.72); g.lineTo(bx + w, by + w * 0.72);
+      g.stroke();
+
+      g.strokeStyle = dark;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(bx + w * 0.5, by); g.lineTo(bx + w * 0.5, by + w);
+      g.stroke();
+    }
+    else if (kind === 'sack') {
+      // 자루. 목을 묶은 주름이 위에서 퍼진다
+      g.strokeStyle = dark;
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i < 4; ++i) {
+        g.moveTo(bx + w * 0.5, by + w * 0.16);
+        g.lineTo(bx + w * (0.12 + i * 0.25), by + w * 0.95);
+      }
+      g.stroke();
+
+      g.fillStyle = css(darker(cs, 0.15), 0.8);
+      g.beginPath();
+      g.ellipse(bx + w * 0.5, by + w * 0.13, w * 0.20, w * 0.09, 0, 0, 7);
+      g.fill();
+    }
+    else if (kind === 'stone') {
+      // 돌덩이. 다듬은 면과 금 하나.
+      // 처음엔 선이 굵어서 금이 아니라 번개처럼 보였다. 확대해 보고 낮췄다
+      g.strokeStyle = css(darker(cc, 0.26), 0.3);
+      g.lineWidth = Math.max(1, w * 0.03);
+      const h = (n) => (hash2(x * 7 + n, y * 11 + n) % 100) / 100;
+      g.beginPath();
+      g.moveTo(bx + w * (0.15 + h(1) * 0.2), by);
+      g.lineTo(bx + w * (0.35 + h(2) * 0.3), by + w * 0.55);
+      g.lineTo(bx + w * (0.2 + h(3) * 0.3), by + w);
+      g.stroke();
+
+      g.fillStyle = 'rgba(255,255,255,0.14)';
+      g.beginPath();
+      g.moveTo(bx, by); g.lineTo(bx + w * 0.55, by); g.lineTo(bx, by + w * 0.55);
+      g.closePath(); g.fill();
+    }
+    else if (kind === 'ice') {
+      // 얼음. 안이 비쳐서 밝은 조각이 어른거린다
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      g.beginPath();
+      g.moveTo(bx + w * 0.15, by + w);
+      g.lineTo(bx + w * 0.55, by + w * 0.10);
+      g.lineTo(bx + w * 0.75, by + w * 0.10);
+      g.lineTo(bx + w * 0.35, by + w);
+      g.closePath(); g.fill();
+
+      g.strokeStyle = 'rgba(255,255,255,0.45)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(bx + w * 0.62, by + w * 0.12); g.lineTo(bx + w * 0.88, by + w * 0.42);
+      g.stroke();
+    }
+    else {
+      // 나무 궤짝. 널빤지 두 줄
+      g.strokeStyle = dark;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(bx + 1, by + w * 0.36); g.lineTo(bx + w - 1, by + w * 0.36);
+      g.moveTo(bx + 1, by + w * 0.68); g.lineTo(bx + w - 1, by + w * 0.68);
+      g.stroke();
+    }
+
+    g.restore();
+
+    // 어느 무늬든 왼쪽 위에 빛이 걸린다. 광원은 판 전체에 하나다
+    g.fillStyle = 'rgba(255,255,255,0.42)';
+    g.fillRect(bx + 2, by + 2, w * 0.34, 1.5);
+  }
+
   function buildRow(g, tiles, W, y) {
     const T = V.TS;
 
@@ -311,6 +514,9 @@ const Art = (() => {
         g.fillStyle = css(top);
         g.fillRect(px, Y - V.WH, T, T);
 
+        // 장소마다 다른 무늬. 벽돌인지 철판인지 바위인지가 여기서 갈린다
+        wallPattern(g, th.wallKind, px, Y - V.WH, T, x, y);
+
         // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘
         g.fillStyle = 'rgba(255,255,255,0.20)';
         g.fillRect(px, Y - V.WH, T, 2);
@@ -353,17 +559,9 @@ const Art = (() => {
         g.lineWidth = 1;
         g.stroke();
 
-        // 널빤지 결 두 줄
-        g.strokeStyle = css(darker(cc, 0.22), 0.55);
-        g.beginPath();
-        g.moveTo(px + m + 1, Y + m - V.CH + w * 0.36);
-        g.lineTo(px + m + w - 1, Y + m - V.CH + w * 0.36);
-        g.moveTo(px + m + 1, Y + m - V.CH + w * 0.68);
-        g.lineTo(px + m + w - 1, Y + m - V.CH + w * 0.68);
-        g.stroke();
-
-        g.fillStyle = 'rgba(255,255,255,0.42)';
-        g.fillRect(px + m + 2, Y + m - V.CH + 2, w * 0.34, 1.5);
+        // 장소마다 다른 물건이 쌓여 있다. 궤짝 · 드럼통 · 자루 · 돌덩이 · 얼음.
+        // 실루엣은 같은 네모로 두고 무늬만 바꾼다. 어디가 막혔는지가 먼저다
+        cratePattern(g, th.crateKind, px + m, Y + m - V.CH, w, cc, cs, x, y);
 
         // 밀 수 있는 상자만 쇠테와 못.
         // "이건 밀 수 있다" 를 글자 없이 알리는 유일한 방법이다
