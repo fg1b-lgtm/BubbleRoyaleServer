@@ -72,37 +72,43 @@ const Art = (() => {
       floor: '#c9bda8', floorAlt: '#c0b39e', joint: '#a2957f', fleck: '#b3a58e',
       wallTop: '#c96f5a', wallSide: '#7d3a2e', wallEdge: '#4f231b',
       crate: '#c08b52', crateTop: '#dda76a', crateSide: '#7e5628',
-      crateKind: 'stone', wallKind: 'brick' },
+      crateKind: 'stone', wallKind: 'brick',
+      step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
       floor: '#e0dcd2', floorAlt: '#d7d2c7', joint: '#b8b2a4', fleck: '#c8c2b4',
       wallTop: '#f2eee4', wallSide: '#9a9280', wallEdge: '#6b6455',
       crate: '#cbab5e', crateTop: '#e6c87c', crateSide: '#846a2f',
-      crateKind: 'stone', wallKind: 'column' },
+      crateKind: 'stone', wallKind: 'column',
+      step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
       floor: '#9fa5ac', floorAlt: '#959ba2', joint: '#767c84', fleck: '#868c94',
       wallTop: '#8b939d', wallSide: '#3f464f', wallEdge: '#252a31',
       crate: '#cf7a35', crateTop: '#ea9450', crateSide: '#82471a',
-      crateKind: 'barrel', wallKind: 'metal' },
+      crateKind: 'barrel', wallKind: 'metal',
+      step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
       floor: '#8fc267', floorAlt: '#84b85d', joint: '#6a9c48', fleck: '#79ad52',
       wallTop: '#d9c9a4', wallSide: '#8a6a45', wallEdge: '#57402a',
       crate: '#b5793f', crateTop: '#d09252', crateSide: '#734a26',
-      crateKind: 'crate', wallKind: 'wood' },
+      crateKind: 'crate', wallKind: 'wood',
+      step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
       floor: '#b8a184', floorAlt: '#ae977b', joint: '#907a5f', fleck: '#a08a6e',
       wallTop: '#e8ddc4', wallSide: '#8e7f63', wallEdge: '#5b5040',
       crate: '#9c7b52', crateTop: '#b8946a', crateSide: '#634d31',
-      crateKind: 'crate', wallKind: 'wood' },
+      crateKind: 'crate', wallKind: 'wood',
+      step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
       floor: '#e3cf9c', floorAlt: '#dac591', joint: '#bda772', fleck: '#cdb782',
       wallTop: '#e0b878', wallSide: '#a1743c', wallEdge: '#6b4a22',
       crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f',
-      crateKind: 'sack', wallKind: 'rock' },
+      crateKind: 'sack', wallKind: 'rock',
+      step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
     // 둘 다 따뜻한 베이지 바닥에 붉은 지붕이라 나란히 놓아야 겨우 구분됐다.
@@ -113,25 +119,29 @@ const Art = (() => {
       floor: '#9a918a', floorAlt: '#918880', joint: '#756d67', fleck: '#847b75',
       wallTop: '#d8a340', wallSide: '#8f6320', wallEdge: '#583c12',
       crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862',
-      crateKind: 'sack', wallKind: 'brick' },
+      crateKind: 'sack', wallKind: 'brick',
+      step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
       floor: '#efdfbc', floorAlt: '#e7d6b0', joint: '#c9b78f', fleck: '#d8c69f',
       wallTop: '#8fd4e0', wallSide: '#3d7f96', wallEdge: '#245667',
       crate: '#e08b7a', crateTop: '#f2a795', crateSide: '#94503f',
-      crateKind: 'barrel', wallKind: 'rock' },
+      crateKind: 'barrel', wallKind: 'rock',
+      step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
       floor: '#dfeaf3', floorAlt: '#d4e2ee', joint: '#adc4d8', fleck: '#c0d4e4',
       wallTop: '#b8e5fa', wallSide: '#5589a8', wallEdge: '#33607a',
       crate: '#9fd2ea', crateTop: '#c8ecfc', crateSide: '#5c93b2',
-      crateKind: 'ice', wallKind: 'rock' },
+      crateKind: 'ice', wallKind: 'rock',
+      step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
       floor: '#b08e63', floorAlt: '#a6845a', joint: '#8a6a45', fleck: '#997a52',
       wallTop: '#8d9aa4', wallSide: '#414c56', wallEdge: '#262e36',
       crate: '#7f8f5e', crateTop: '#9aab76', crateSide: '#4e5a36',
-      crateKind: 'crate', wallKind: 'metal' },
+      crateKind: 'crate', wallKind: 'metal',
+      step: 'wood' },
   ];
 
   // ── 판 전체의 공기 ───────────────────────────────────────────

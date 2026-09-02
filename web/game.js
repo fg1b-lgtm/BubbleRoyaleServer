@@ -628,9 +628,15 @@ function drawPlayer(id, p, alpha, now, T) {
   // 걸을 때 발밑에서 먼지가 인다. 물 위면 파문이 퍼진다
   if (p.moving && !dead && p.stepped !== p.lastStep) {
     p.lastStep = p.stepped;
-    if (inWater(p.jtx, p.jty)) FX.ripple(px, py + r * 0.9, T, now);
-    else                       FX.step(px, py + r * 0.9, T, now);
-    if (id === G.myId) Sound.step(panOf(px));
+    const wet = inWater(p.jtx, p.jty);
+    if (wet) FX.ripple(px, py + r * 0.9, T, now);
+    else     FX.step(px, py + r * 0.9, T, now);
+
+    // 밟는 것에 따라 소리가 다르다. 물에 잠긴 칸이면 재료보다 물이 먼저다.
+    // 화면이 이미 아는 것(어느 장소의 어느 칸인가)을 소리에 넘기기만 하면 된다
+    if (id === G.myId) {
+      Sound.step(panOf(px), wet ? 'water' : Art.placeAt(p.jtx, p.jty).step);
+    }
   }
 
   ctx.globalAlpha = dead ? 0.20
@@ -732,6 +738,28 @@ function inWater(tx, ty) {
 
 // 화면에서 난 자리를 좌우 어디로 들리게 할지
 function panOf(px) { return Math.max(-1, Math.min(1, (px / W) * 2 - 1)) * 0.8; }
+
+// 소리가 얼마나 멀리서 나나. 0 이면 화면 밖, 1 이면 바로 옆.
+//
+// 9/2 까지 좌우만 있고 멀고 가까움이 없었다. 옆 구역에서 터진 폭발이
+// **내 옆에서 터진 것과 똑같은 크기로** 들렸다. 그러면 소리가 상황을 못 알려준다.
+// AOI 가 가장자리 밖 세 칸까지 보내주므로 화면 밖 소리도 실제로 온다.
+//
+// 화면 한가운데를 나로 친다. 내가 죽어 관전 중이면 보고 있는 사람이 가운데다.
+// 멀수록 작아지고, 벽 너머라 높은 음이 먼저 죽는다. 그래서 잘라내는 대역도 같이 준다
+function farOf(cx, cy) {
+  const T = Art.V.TS;
+  const mx = view.x0 + (view.w * T) / 2;
+  const my = view.y0 + (view.h * T) / 2;
+
+  const d = Math.hypot(cx - mx, cy - my) / (view.w * T * 0.5);
+  const near = Math.max(0, 1 - d * 0.85);
+
+  return {
+    gain: 0.25 + near * 0.75,          // 아주 멀어도 완전히 안 사라진다
+    cut: 1200 + near * 12000,          // 멀면 둔탁하게. 벽을 넘어온 소리다
+  };
+}
 
 // ── HUD ──────────────────────────────────────────────────────
 //
@@ -1228,6 +1256,7 @@ Hooks.event = function (type, x, y, who, val) {
   const now = gameTime;
   const cx = x * T + T / 2, cy = y * T + T / 2;
   const pan = panOf(cx);
+  const far = farOf(cx, cy);
   const mine = (who === G.myId);
 
   switch (type) {
@@ -1241,7 +1270,7 @@ Hooks.event = function (type, x, y, who, val) {
       if (isCenter) {
         FX.burstWater(cx, cy, T, now, false);
         FX.shake(0.16);
-        Sound.boom(pan);
+        Sound.boom(pan, far);
       } else {
         FX.splash(cx, cy, T, now);
       }
@@ -1250,7 +1279,7 @@ Hooks.event = function (type, x, y, who, val) {
 
     case EVT.BUBBLE:
       FX.pickup(cx, cy, T, now, '#8fd8ff');
-      Sound.place(pan);
+      Sound.place(pan, far);
       break;
 
     case EVT.BLOCK:
@@ -1261,7 +1290,7 @@ Hooks.event = function (type, x, y, who, val) {
         const pl = Art.placeAt(x, y);
         FX.breakCrate(cx, cy, T, now, pl.crate, pl.crateSide);
       }
-      Sound.crack(pan);
+      Sound.crack(pan, far);
       break;
 
     // 상자를 밀었다. x,y 가 밀리기 전 자리, val 이 방향
@@ -1278,7 +1307,7 @@ Hooks.event = function (type, x, y, who, val) {
 
       // 밀린 방향으로 먼지가 인다. 밀었다는 게 보여야 다음에도 민다
       FX.push(cx, cy, PX[val], PY[val], T, now, Art.placeAt(x, y).crate);
-      Sound.push(pan);
+      Sound.push(pan, far);
       break;
     }
 
@@ -1288,7 +1317,7 @@ Hooks.event = function (type, x, y, who, val) {
         FX.kill(cx, cy, T, now, '#ffd166');
         FX.shake(0.12);
       }
-      Sound.drop(pan);
+      Sound.drop(pan, far);
       break;
 
     case EVT.ITEM:
@@ -1300,14 +1329,14 @@ Hooks.event = function (type, x, y, who, val) {
       if (mine) {
         // 뭘 먹었는지 HUD 의 그 칸이 튀어오른다. 먹은 순간에만 눈이 간다
         pickFlash[val === ITEM.ULTRA ? ITEM.POWER : val] = now;
-        (val === ITEM.ULTRA ? Sound.ultra(pan) : Sound.item(pan));
+        (val === ITEM.ULTRA ? Sound.ultra(pan, far) : Sound.item(pan, far));
       }
       break;
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
     case EVT.GRAZE:
       FX.graze(cx, cy, T, now, val);
-      Sound.graze(val, pan);
+      Sound.graze(val, pan, far);
       if (mine) {
         FX.punch(0.4 + Math.min(val, 4) * 0.2);
         FX.flashOut('rgba(140,225,255,0.5)', 140, now);
@@ -1317,18 +1346,18 @@ Hooks.event = function (type, x, y, who, val) {
     case EVT.CHAIN:
       FX.burstWater(cx, cy, T, now, true);
       FX.shake(0.10);
-      Sound.chain(val, pan);
+      Sound.chain(val, pan, far);
       break;
 
     case EVT.TRAP:
       FX.graze(cx, cy, T, now, 1);
-      Sound.trap(pan);
+      Sound.trap(pan, far);
       if (mine) FX.shake(0.3);
       break;
 
     case EVT.BREAK:
       FX.burstWater(cx, cy, T, now, false);
-      Sound.breaks(pan);
+      Sound.breaks(pan, far);
       break;
 
     // 마무리. 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
@@ -1345,7 +1374,7 @@ Hooks.event = function (type, x, y, who, val) {
       markDead(who);
       killFeed.unshift({ killer: val, victim: who, born: now });
       killFeed = killFeed.slice(0, 5);
-      Sound.pop(pan);
+      Sound.pop(pan, far);
 
       if (val === G.myId) {
         // 내가 잡았다. 여기만 아끼지 않는다
@@ -1363,7 +1392,7 @@ Hooks.event = function (type, x, y, who, val) {
     case EVT.DEATH:
       markDead(who);
       FX.kill(cx, cy, T, now, '#ff6b6b');
-      Sound.death(pan);
+      Sound.death(pan, far);
       if (mine) { FX.shake(0.6); FX.flashOut('rgba(180,30,30,0.6)', 300, now); }
       break;
 

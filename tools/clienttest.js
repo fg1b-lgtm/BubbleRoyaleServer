@@ -76,6 +76,13 @@ function makeElement() {
 // 층 하나짜리인지가 숫자로 나온다
 const audio = { nodes: 0, starts: 0, connects: 0, params: 0 };
 
+// 어떤 소리를 어떤 설정으로 냈나.
+//
+// '울린 횟수' 만 세면 발소리가 재료마다 다른지 알 수 없다. 같은 파일을 같은
+// 음높이로 열 번 내도 열 번은 열 번이다. **무엇을 어떻게 냈는지**를 봐야 한다
+const played = [];
+let curBuffer = null;
+
 function param() {
     ++audio.params;
     return {
@@ -99,27 +106,57 @@ function node(extra) {
 
 function FakeAudioContext() {
     this.sampleRate = 48000;
-    this.currentTime = 0;
+
+    // **시계가 흐른다.**
+    //
+    // 처음엔 0 으로 고정해뒀다. 그러면 '이 소리가 언제 끝나나' 를 시각으로 재는
+    // 코드에서 아무 소리도 안 끝나고, 동시 발음 상한에 걸려 소리가 통째로 멎는다.
+    // 실제 브라우저에서는 시간이 흐르므로 가짜도 흘러야 한다.
+    // 안 흐르는 가짜는 있지도 않은 문제를 만들어낸다
+    Object.defineProperty(this, 'currentTime', { get: () => now / 1000 });
     this.state = 'running';
     this.destination = node();
     this.resume = () => {};
     this.createGain = () => node({ gain: param() });
     this.createOscillator = () => node({ frequency: param(), detune: param(), type: 'sine' });
-    this.createBiquadFilter = () => node({ frequency: param(), Q: param(), type: 'lowpass' });
+    this.createBiquadFilter = () => {
+        const n = node({ frequency: param(), Q: param(), type: 'lowpass' });
+        if (played.length) played[played.length - 1].filters.push(n);
+        return n;
+    };
     this.createStereoPanner = () => node({ pan: param() });
     this.createConvolver = () => node({ buffer: null });
     this.createDynamicsCompressor = () => node({
         threshold: param(), knee: param(), ratio: param(),
         attack: param(), release: param(),
     });
-    this.createBufferSource = () => node({ buffer: null, loop: false, playbackRate: param() });
+    // 녹음을 트는 자리. 여기가 '소리 하나' 다.
+    // 무엇을(buffer) 어떤 음높이로(rate) 냈는지 적어둔다
+    this.createBufferSource = () => {
+        const rec = { buf: null, rate: 1, filters: [], gain: 1 };
+        played.push(rec);
+
+        const pr = param();
+        Object.defineProperty(pr, 'value', {
+            get() { return rec.rate; },
+            set(v) { rec.rate = v; },
+        });
+
+        const n = node({ loop: false, playbackRate: pr });
+        Object.defineProperty(n, 'buffer', {
+            get() { return rec.buf; },
+            set(v) { rec.buf = v; },
+        });
+        return n;
+    };
     this.createBuffer = (ch, n) => ({
         length: n,
         getChannelData: () => new Float32Array(n),
     });
     // 녹음물을 푸는 것. 진짜로 풀 필요는 없고 버퍼 하나를 돌려주면 된다
-    this.decodeAudioData = () => Promise.resolve({
+    this.decodeAudioData = (ab) => Promise.resolve({
         length: 4800, duration: 0.1, sampleRate: 48000,
+        name: (ab && ab.__name) || '?',
         getChannelData: () => new Float32Array(4800),
     });
 }
@@ -155,7 +192,14 @@ sandbox.window = {
 const fetched = [];
 sandbox.fetch = (url) => {
     fetched.push(url);
-    return Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(64)) });
+
+    // **어느 파일인지를 버퍼에 달아 보낸다.**
+    // 이게 없으면 '소리를 냈다' 까지만 알고 '무슨 소리를 냈나' 는 모른다.
+    // 발소리가 재료마다 다른지 보려면 어느 녹음을 골랐는지가 필요하다
+    const name = url.replace(/^.*\//, '').replace(/\.ogg$/, '');
+    const ab = new ArrayBuffer(64);
+    ab.__name = name;
+    return Promise.resolve({ arrayBuffer: () => Promise.resolve(ab) });
 };
 sandbox.setImmediate = setImmediate;
 sandbox.Promise = Promise;
@@ -452,7 +496,9 @@ let pushOk = false, pushFrom = null;
 
   // 소리 하나가 층 하나면 웹게임 소리가 된다.
   // 이벤트 열다섯 개에 노드가 수십 개 만들어졌다면 층으로 만들어졌다는 뜻이다
-  check(audio.starts >= 20, '소리를 층으로 쌓아서 냈다 (울린 것 ' + audio.starts + ' 번)');
+  // 동시 발음 상한이 생기고 나서 이 수가 줄었다. 상한이 하는 일이 그것이다.
+  // 층으로 쌓았는지는 이 아래 이벤트별 겹 수에서 더 정확히 본다
+  check(audio.starts >= 12, '소리를 층으로 쌓아서 냈다 (울린 것 ' + audio.starts + ' 번)');
 
   // ── 판을 매 프레임 다시 그리고 있지는 않나 ───────────────────
   //
@@ -587,6 +633,10 @@ let pushOk = false, pushFrom = null;
   feed(snapshot(80, 2, false, 4, 2));
   now += 16; api.frame(now);
 
+  // 폭발음에는 너무 자주 나면 거르는 장치가 있다(60ms).
+  // 바로 앞에서 이벤트를 몰아 먹였으므로 시간을 넉넉히 흘린다
+  now += 400; api.frame(now);
+
   const beforeCenter = audio.starts;
   feed(event(9, 10, 12, 0, 0));        // 물풍선이 있던 자리 = 중심
   now += 16; api.frame(now);
@@ -600,28 +650,105 @@ let pushOk = false, pushFrom = null;
   console.log('    폭발 중심 ' + centerVoices + ' 겹 / 뻗은 팔 ' + armVoices + ' 겹');
   check(centerVoices > 0, '폭발은 가운데에서 소리가 난다');
   check(armVoices === 0, '뻗어나간 칸은 조용하다 (칸마다 울리면 한 번에 스무 겹이 된다)');
+  // ── 사운드: 밟는 것에 따라 다른가 ──────────────────────────
+  //
+  // 장소를 열 곳 그려놓고 어디를 밟아도 같은 소리가 나면 그 열 곳은 그림일 뿐이다.
+  // **무엇을 어떤 음높이로 어떻게 깎아 냈는지**를 비교한다.
+  // '소리가 났다' 만 세면 재료가 하나여도 통과한다
+  console.log();
+  console.log('  --- 사운드: 재료별 발소리 ---');
+
+  const MATS = ['stone', 'marble', 'grass', 'sand', 'wood', 'metal', 'ice', 'water'];
+  const fingerprints = new Map();
+
+  for (const mat of MATS) {
+      played.length = 0;
+      // 발소리에는 너무 자주 나면 거르는 장치가 있다. 시간을 넉넉히 흘린다
+      now += 500;
+      api.Sound.step(0, mat);
+
+      const rec = played[played.length - 1];
+      if (!rec) { fingerprints.set(mat, '안 남'); continue; }
+
+      const f = rec.filters[0];
+      fingerprints.set(mat, [
+          (rec.buf && rec.buf.name) || '?',
+          f ? f.type : '없음',
+          f ? Math.round(f.frequency.value) : 0,
+      ].join('/'));
+  }
+
+  for (const [mat, fp] of fingerprints) {
+      console.log('    ' + mat.padEnd(7) + fp);
+  }
+
+  const uniqMat = new Set([...fingerprints.values()]);
+  check(!fingerprints.has('안 남') && uniqMat.size >= 6,
+        '재료마다 다른 발소리가 난다 (' + uniqMat.size + ' / ' + MATS.length + ' 가지)');
+
+  // 물은 특별하다. 눈은 앞을 보고 있으니 **소리만으로 물에 들어간 걸 알아야 한다**
+  check(fingerprints.get('water') !== fingerprints.get('stone'),
+        '물을 밟는 소리가 땅을 밟는 소리와 다르다');
+
+  // ── 사운드: 겹칠 때 뭉개지지 않나 ─────────────────────────
+  //
+  // 스물넷이 한 구역에서 싸우면 같은 순간에 소리가 스무 겹씩 쌓인다.
+  // 그러면 하나하나가 안 들리고 지직거리는 덩어리가 된다.
+  // 귀로는 몇 겹인지 못 세니까 숫자로 센다
+  api.Sound.resetMix();
+  for (let i = 0; i < 40; ++i) {
+      now += 4;
+      feed(event(4, 10 + (i % 7), 12, 0, 0));   // 상자가 우수수 부서진다
+      api.frame(now);
+  }
+  const mix = api.Sound.mixStats();
+  console.log();
+  console.log('  --- 사운드: 겹침 ---');
+  console.log('    상자 40번을 몰아쳤을 때  최대 ' + mix.peak + ' 겹, 버린 것 '
+              + mix.dropped + ' 개');
+
+  check(mix.peak > 0, '여러 소리가 겹쳐서 난다');
+  check(mix.peak <= 12,
+        '한꺼번에 쏟아져도 열두 겹을 안 넘는다 (' + mix.peak + ' 겹)');
+  check(mix.dropped > 0, '상한을 넘은 소리는 버린다 (억지로 다 내면 다 같이 안 들린다)');
+
   // 같은 파일을 두 사건이 나눠 쓰면 귀에는 같은 사건이다.
   // 색이 겹치면 같은 장소로 보이는 것과 같은 문제다
-  const src = fs.readFileSync(path.join(webDir, 'audio.js'), 'utf8');
-  const table = src.slice(src.indexOf('const CLIPS'), src.indexOf('const DIR'));
-  const used = new Map();
-  const dup = [];
-  for (const m of table.matchAll(/^\s*(\w+):\s*\[([^\]]*)\]/gm)) {
-      for (const f of m[2].split(',')) {
-          const name = f.trim().replace(/^'|'$/g, '');
-          if (!name) continue;
-          if (used.has(name) && used.get(name) !== m[1]) {
-              dup.push(name + ' (' + used.get(name) + ' = ' + m[1] + ')');
+  // 같은 녹음을 나눠 쓰는 재료끼리 음높이가 겹치지 않나.
+  //
+  // 파일이 마흔여섯 개뿐이라 나눠 쓰는 것 자체는 피할 수 없다.
+  // **음높이가 충분히 떨어져 있으면 다른 물건으로 들린다.**
+  //
+  // 실제로 낸 소리를 보고 판단했더니 클립을 무작위로 고르는 탓에
+  // 돌릴 때마다 다른 답이 나왔다. 그런 시험은 시험이 아니다.
+  // 정해둔 표를 본다. 결과가 늘 같다
+  console.log();
+  console.log('  --- 사운드: 같은 녹음을 쓰는 재료들 ---');
+
+  const tab = api.Sound.stepTable();
+  const byClip = new Map();
+  for (const name of Object.keys(tab)) {
+      const m = tab[name];
+      if (!byClip.has(m.clip)) byClip.set(m.clip, []);
+      byClip.get(m.clip).push([name, m.rate[0], m.rate[1]]);
+  }
+
+  const overlap = [];
+  for (const [clip, list] of byClip) {
+      if (list.length < 2) continue;
+      console.log('    ' + clip + ': '
+                  + list.map(v => v[0] + ' ' + v[1] + '~' + v[2]).join(', '));
+      for (let a = 0; a < list.length; ++a) {
+          for (let b = a + 1; b < list.length; ++b) {
+              const lo = Math.max(list[a][1], list[b][1]);
+              const hi = Math.min(list[a][2], list[b][2]);
+              if (lo <= hi) overlap.push(list[a][0] + ' / ' + list[b][0]);
           }
-          used.set(name, m[1]);
       }
   }
-  console.log('    소리 파일 ' + used.size + ' 개를 ' + new Set([...used.values()]).size
-              + ' 가지 소리에 나눠 썼다');
-  check(dup.length === 0,
-        '두 사건이 같은 소리 파일을 나눠 쓰지 않는다'
-        + (dup.length ? ' — 겹친 것: ' + dup.join(', ') : ''));
-
+  check(overlap.length === 0,
+        '같은 녹음을 쓰는 재료끼리 음높이가 안 겹친다'
+        + (overlap.length ? ' — ' + overlap.join(', ') : ''));
   console.log();
   console.log('===== 결과: ' + pass + ' PASS / ' + fail + ' FAIL =====');
   process.exit(fail ? 1 : 0);
