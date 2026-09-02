@@ -90,18 +90,42 @@ struct GameMap
         seed = s;
         spawn_count = 0;
 
-        // 1) 조각 10종에서 9개를 뽑는다.
+        // 1) **테마를 아홉 개 뽑고, 테마마다 판을 하나씩 고른다.**
+        //
+        //    테마는 그림(색과 물건)이고 판은 생김새(길과 막힌 데)다.
+        //    테마가 겹치면 판에 마을이 둘이라 어디가 어딘지 모르게 된다 —
+        //    사람이 길을 외우는 단위가 테마다. 그래서 테마는 안 겹치게 뽑고,
+        //    같은 테마 안에서 어느 판이 나올지는 매번 다르다.
         //
         //    섞어놓고 앞에서 아홉 개를 가져간다 (피셔-예이츠).
         //    "랜덤으로 하나씩 뽑고 겹치면 다시" 로 하면 뽑을수록 느려지고,
         //    운이 나쁘면 안 끝난다. 섞는 쪽은 몇 번 도는지가 정해져 있다.
-        int pick[SECTOR_TEMPLATE_COUNT];
-        for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
-            pick[i] = i;
+        int theme[SECTOR_THEME_COUNT];
+        for (int i = 0; i < SECTOR_THEME_COUNT; ++i) {
+            theme[i] = i;
         }
-        for (int i = SECTOR_TEMPLATE_COUNT - 1; i > 0; --i) {
+        for (int i = SECTOR_THEME_COUNT - 1; i > 0; --i) {
             int j = rnd.Next(i + 1);
-            int t = pick[i]; pick[i] = pick[j]; pick[j] = t;
+            int t = theme[i]; theme[i] = theme[j]; theme[j] = t;
+        }
+
+        //    테마마다 판이 몇 개인지는 표를 훑어서 센다. 개수를 손으로 적어두면
+        //    판을 하나 더 그린 날 그 판이 영영 안 나온다
+        int pick[SECTOR_SLOTS];
+        for (int slot = 0; slot < SECTOR_SLOTS; ++slot) {
+            int want = theme[slot];
+
+            int n = 0;
+            for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
+                if (SECTOR_TEMPLATES[i].theme == want) ++n;
+            }
+
+            int k = (n > 0) ? rnd.Next(n) : 0;
+            pick[slot] = 0;
+            for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
+                if (SECTOR_TEMPLATES[i].theme != want) continue;
+                if (k-- == 0) { pick[slot] = i; break; }
+            }
         }
 
         // 2) 아홉 자리에 하나씩 찍는다. 자리마다 뒤집기가 따로 걸린다.

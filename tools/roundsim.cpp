@@ -620,7 +620,7 @@ int main(int argc, char** argv)
         printf("  상한을 다 채운 사람이 한 판도 없었다\n");
     }
 
-    printf("\n--- 조각 열 개가 서로 다르게 플레이되나 ---\n");
+    printf("\n--- 판 서른 개가 서로 다르게 플레이되나 ---\n");
 
     long long tick_sum = 0, death_sum = 0;
     for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {

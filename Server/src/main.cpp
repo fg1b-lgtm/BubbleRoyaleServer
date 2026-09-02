@@ -121,7 +121,13 @@ static void SendWelcome(Session* s, int slot)
 
     // 아홉 자리에 어떤 조각이 깔렸는지. 화면이 구역마다 다르게 그리는 데 쓴다
     for (int i = 0; i < SECTOR_SLOTS; ++i) {
-        w.sector_kind[i] = g_game.map.sector_template[i];
+        // 화면에는 **테마 번호**를 보낸다. 판 번호가 아니다.
+        //
+        // 화면이 아는 건 색과 물건이고, 그건 테마가 정한다. 길이 어떻게 났는지는
+        // 어차피 맵 줄로 따로 가므로 화면이 판 번호를 알 이유가 없다.
+        // 판 번호를 보내면 판을 하나 더 그릴 때마다 화면도 같이 고쳐야 한다
+        w.sector_kind[i] =
+            (uint8_t)SECTOR_TEMPLATES[g_game.map.sector_template[i]].theme;
     }
 
     memcpy(buf + HEADER_SIZE, &w, sizeof(w));

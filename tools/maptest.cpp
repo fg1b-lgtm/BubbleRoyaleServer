@@ -265,6 +265,9 @@ struct Report
     int struct_biggest;       // 뼈대가 하나로 이어지나
 
     int dig_max;              // 스폰에서 나가는 데 부숴야 하는 블록 겹 수
+    int dig_slot;
+    int dig_x, dig_y;
+    const char* dig_name;
     int dig_stuck;            // 아예 못 나가는 스폰
 
     // 제일 가까운 두 스폰 사이의 거리 (칸, 가로세로 중 큰 쪽).
@@ -339,7 +342,14 @@ static void Measure(const GameMap& m, int range, Report& r)
         // 뼈대의 절반쯤에 닿으면 "밖으로 나왔다" 고 본다
         int dig = DigDepth(m, sx, sy, FREEDOM_TILES);
         if (dig < 0)          ++r.dig_stuck;
-        else if (dig > r.dig_max) r.dig_max = dig;
+        else if (dig > r.dig_max) {
+            r.dig_max = dig;
+            // 어느 조각의 어느 스폰인지 남긴다.
+            // 숫자만 보고 어느 판이 문제인지 찾느라 두 번 헛짚었다
+            r.dig_slot = (sy / SECTOR_H) * 3 + (sx / SECTOR_W);
+            r.dig_name = m.SectorName(r.dig_slot);
+            r.dig_x = sx; r.dig_y = sy;
+        }
 
         // 반경 3 안의 블록 수. SPEC 2.2 가 조각 간에 비슷하게 하라고 한 값이다
         int n = 0;
@@ -410,6 +420,8 @@ int main(int argc, char** argv)
     unsigned int gap_seed = 0;
     long long pocket_total = 0;
     long long struct_open = 0, struct_dead = 0, struct_big = 0;
+    int dig_deep = 0, dig_deep_x = 0, dig_deep_y = 0;
+    const char* dig_deep_name = nullptr;
     int dig_worst = 0, dig_stuck_total = 0;
 
     for (int i = 0; i < TRIES; ++i) {
@@ -433,6 +445,13 @@ int main(int argc, char** argv)
         struct_open += r.struct_open;
         struct_dead += r.struct_dead_ends;
         struct_big  += r.struct_biggest;
+
+        // 제일 깊이 갇힌 자리를 하나 들고 있는다. 어느 조각인지 알아야 고칠 수 있다
+        if (r.dig_max > dig_deep) {
+            dig_deep = r.dig_max;
+            dig_deep_name = r.dig_name;
+            dig_deep_x = r.dig_x; dig_deep_y = r.dig_y;
+        }
 
         if (r.dig_max > dig_worst) dig_worst = r.dig_max;
         dig_stuck_total += r.dig_stuck;
@@ -461,6 +480,10 @@ int main(int argc, char** argv)
     printf("  막다른 길 %lld 개 / 빈칸 %lld 개\n", dead / TRIES, open / TRIES);
     printf("  큰 덩어리 밖 %lld 개  ← 이건 정상이다. 파밍 구간이 여기서 나온다\n",
            pocket_total / TRIES);
+    if (dig_deep_name) {
+        printf("  제일 깊이 갇힌 자리: %s 조각의 (%d,%d)\n",
+               dig_deep_name, dig_deep_x, dig_deep_y);
+    }
     printf("  스폰에서 돌아다닐 수 있을 때까지: 최대 %d 겹 (%d.%d초)\n",
            dig_worst, dig_worst * BUBBLE_FUSE_TICKS / TICK_RATE,
            (dig_worst * BUBBLE_FUSE_TICKS * 10 / TICK_RATE) % 10);
