@@ -8,7 +8,8 @@
 //   2) node web/bridge.js
 //   3) node tools/wstest.js
 const HEADER_SIZE = 4;
-const PKT = { MOVE: 2, PLACE: 3, EVENT: 4, WELCOME: 5, MAPROW: 6, SNAPSHOT: 7, RESTART: 8 };
+const PKT = { MOVE: 2, PLACE: 3, EVENT: 4, WELCOME: 5, MAPROW: 6, SNAPSHOT: 7,
+              RESTART: 8, DASH: 9 };
 
 let pass = 0, fail = 0;
 const check = (ok, what) => {
@@ -51,6 +52,14 @@ ws.onopen = () => {
     setTimeout(() => send(move(0, 0)), 6000);
 
     // 물풍선 퓨즈가 2.5초다. 터지는 걸 보고 나서 다시 시작을 누른다
+    // 대쉬를 스무 번 도배한다. 안 먹었으니 하나도 안 나가야 하고,
+    // 그러고도 스냅샷이 계속 와야 한다
+    setTimeout(() => {
+        for (let i = 0; i < 20; ++i) send(dash(i % 2 ? 1 : 0, i % 2 ? 0 : 1));
+        dashSentAt = snapshots;
+    }, 6400);
+    setTimeout(() => { dashSnaps = snapshots - dashSentAt; }, 7200);
+
     setTimeout(() => { restarted = true; send(restart()); }, 7600);
 
     setTimeout(report, 9500);
@@ -108,14 +117,14 @@ ws.onmessage = (e) => {
         if (np > maxPlayers) maxPlayers = np;
         if (nb > maxBubbles) maxBubbles = nb;
 
-        if (v.byteLength !== HEAD + np * 11 + nb * 4) {
+        if (v.byteLength !== HEAD + np * PS + nb * 4) {
             ++sizeMismatch;
         }
 
         // 내 캐릭터의 flags 에서 보는 쪽과 걷는지를 꺼낸다.
         // 화면이 앞뒤옆을 나눠 그리려면 이 두 개가 실제로 와야 한다
         for (let i = 0; i < np; ++i) {
-            const o = HEAD + i * 11;
+            const o = HEAD + i * PS;
             if (v.getUint8(o) !== welcome.myId) continue;
 
             const f = v.getUint8(o + 7);
@@ -131,12 +140,34 @@ ws.onmessage = (e) => {
     }
 };
 
+// PlayerState 한 사람이 몇 바이트인가. Protocol.h 의 struct 와 같아야 한다.
+// 9/2 에 대쉬 한 바이트가 붙어 11 -> 12 가 됐다.
+// 두 군데에 적어놨더니 서버를 고친 날 시험이 조용히 틀렸다 — 한 곳에만 적는다
+const PS = 12;
+
+let dashSentAt = 0, dashSnaps = 0;
+
 function send(buf) { if (ws.readyState === 1) ws.send(buf); }
 
 function move(dx, dy) {
     const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
     b.setUint16(0, HEADER_SIZE + 2, true);
     b.setUint16(2, PKT.MOVE, true);
+    b.setInt8(4, dx);
+    b.setInt8(5, dy);
+    return b.buffer;
+}
+
+// 대쉬. **아직 안 먹었을 때 보내는 것**을 일부러 시험한다.
+//
+// 아무 일도 안 일어나는 게 맞는데, 여기서 확인하려는 건 '아무 일도 안 일어나는 것'
+// 자체가 아니라 **연결이 안 끊기는 것**이다. 몸통 크기를 잘못 세면 서버가
+// 이상한 패킷으로 보고 끊어버린다. 그러면 대쉬를 누른 사람이 튕긴다.
+// 클라를 고친 사람이 이걸 도배해도 서버가 버텨야 한다
+function dash(dx, dy) {
+    const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
+    b.setUint16(0, HEADER_SIZE + 2, true);
+    b.setUint16(2, PKT.DASH, true);
     b.setInt8(4, dx);
     b.setInt8(5, dy);
     return b.buffer;
@@ -223,6 +254,9 @@ function report() {
     check(facesSeen.has(2), '오른쪽으로 갈 때 오른쪽을 본다');
     check(facesSeen.has(0), '아래로 갈 때 아래를 본다');
     check(sawMoving && sawStanding, '걷는 상태와 서 있는 상태가 둘 다 온다');
+
+    check(dashSnaps > 15,
+          '대쉬를 스무 번 보내도 안 끊긴다 (' + dashSnaps + '장 더 왔다)');
 
     check(eventKinds.has(8), 'BUBBLE 이벤트가 왔다 (놓은 게 화면에 나간다)');
     check(eventKinds.has(9), 'BLAST 이벤트가 왔다');

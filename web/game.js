@@ -1444,8 +1444,11 @@ function drawHUD(now) {
 //
 // 판 한가운데를 피해 아래쪽에 둔다. 가운데는 판을 보는 자리다.
 // 그리고 **하고 나면 그 줄만 지운다.** 움직일 줄 아는 사람에게 이동 안내는 방해다
+// 대쉬를 처음 먹은 순간. 한 번만 뜬다
+let dashSeen = 0;
+let dashHadIt = false;
+
 function drawFirstHints(now) {
-  if (hasMoved && hasPlaced) return;
   if (G.phase !== PHASE.PLAYING) return;
 
   const me = G.players.get(G.myId);
@@ -1453,6 +1456,38 @@ function drawFirstHints(now) {
 
   const y = BY + BH - 74;
   const pulse = 0.72 + 0.28 * Math.sin(now / 420);
+
+  // **먹은 순간에 알려준다.**
+  //
+  // 대쉬는 아이템 중에 유일하게 저절로 안 알려지는 것이다. 물풍선이 늘면
+  // 하나 더 놓아보다 알게 되고 빨라지면 걸어보다 알게 되는데,
+  // 대쉬는 **누를 줄 모르면 먹은 줄도 모른 채 판이 끝난다.**
+  //
+  // 판에 겹쳐 3초만 띄우고 사라진다. 계속 띄우면 그건 안내가 아니라 잔소리다
+  if (me.has_dash && !dashHadIt) { dashHadIt = true; dashSeen = now; }
+  if (!me.has_dash) dashHadIt = false;
+
+  const dt = now - dashSeen;
+  if (dashHadIt && dt < 3000) {
+    const fade = Math.min(1, dt / 200) * Math.min(1, (3000 - dt) / 500);
+    const cy = BY + BH * 0.30;
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = 'rgba(10,16,24,0.82)';
+    pxBox(Math.round((W / 2 - 128) / Art.V.P) * Art.V.P,
+          Math.round((cy - 34) / Art.V.P) * Art.V.P, 256, 68, Art.V.P);
+
+    Art.drawItem(ctx, W / 2 - 92, cy, 26, ITEM.DASH, now);
+    keyCap('D', W / 2 - 30, cy - 22, 1);
+    keyCap('D', W / 2 - 2,  cy - 22, 1);
+    label('같은 쪽으로 두 번', W / 2 + 46, cy - 6, 12,
+          'rgba(255,255,255,0.92)', 'center');
+    label('대쉬', W / 2 + 46, cy + 16, 13, '#5ad2f0', 'center');
+    ctx.restore();
+  }
+
+  if (hasMoved && hasPlaced) return;
 
   if (!hasMoved) {
     keyCap('W', W / 2 - 60, y - 26, pulse);

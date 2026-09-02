@@ -351,6 +351,14 @@ inline bool Occupied(const Player& p)
     return p.s != nullptr || p.is_bot;
 }
 
+// 앉는 사람 전부에게 대쉬를 주나. 명령줄 인자 dash 로만 켠다.
+//
+// 대쉬는 판에 넷뿐이라, 켜지 않으면 먹을 때까지 확인할 방법이 없다.
+// 시험 도구가 사람이 겪는 길(연타 -> 패킷 -> 서버 -> 화면)을 밟아보려면 필요하다.
+//
+// 소유 스레드 : 시작할 때 한 번 쓰고 그 뒤로는 읽기만 한다
+inline bool g_give_dash = false;
+
 // 대쉬를 시작한다. 안 되는 경우가 여럿이라 여기 한 곳에서 다 본다.
 //
 // 클라이언트는 '연타했다' 만 보낸다. 되는지 안 되는지는 전부 여기서 정한다.
@@ -466,7 +474,7 @@ inline int AddPlayer(Session* s, bool bot = false)
     p.bubble_lv    = 0;
     p.power_lv     = 0;
     p.speed_lv     = 0;
-    p.has_dash     = false;
+    p.has_dash     = g_give_dash;   // 시험용 스위치. 평소엔 꺼져 있다
     p.dash_ticks   = 0;
     p.dash_cd      = 0;
     p.dash_dx      = 0;

@@ -806,6 +806,14 @@ int main(int argc, char** argv)
         if (strcmp(argv[i], "fast") == 0) {
             flood_scale = 10;
         }
+        // 앉는 사람 전부에게 대쉬를 준다. **시험용이다.**
+        //
+        // 대쉬는 판에 넷뿐이라 그냥 돌리면 먹을 때까지 확인을 못 한다.
+        // playshot 이 연타 -> 패킷 -> 서버 -> 화면 길을 밟아보려면 이게 필요하다.
+        // 켜는 사람이 직접 붙여야 하는 인자라 실수로 켜질 일은 없다
+        else if (strcmp(argv[i], "dash") == 0) {
+            g_give_dash = true;
+        }
         else if (strcmp(argv[i], "aoi") == 0 && i + 1 < argc) {
             g_aoi_on = (atoi(argv[++i]) != 0);
         }
