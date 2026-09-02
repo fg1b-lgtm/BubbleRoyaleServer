@@ -228,6 +228,28 @@ async function peek() {
     st = await peek();
     console.log('  ' + JSON.stringify(st));
 
+    // ── 한 판의 흐름을 따라간다 ─────────────────────────────
+    //
+    // 연출 하나하나가 좋아도 **판 전체가 지루하면 안 한다.**
+    // 사람이 실제로 겪는 순서대로 찍어둔다 —
+    // 접속 · 시작 · 중반 · 압박 · 끝 · 그다음.
+    // 특히 '그다음' 이 중요하다. 한 판 더 하게 만드는 자리가 거기다
+    {
+      const beats = [
+        ['b1-중반',   6000],
+        ['b2-압박',  10000],
+        ['b3-후반',  12000],
+        ['b4-끝',    12000],
+        ['b5-그다음', 8000],
+      ];
+      for (const [name, wait] of beats) {
+        await sleep(wait);
+        await shot(name);
+        const st = await peek();
+        console.log('    ' + name + '  ' + JSON.stringify(st));
+      }
+    }
+
     // ── 키를 누르고 화면이 움직이기까지 ─────────────────────
     //
     // 이 게임에서 제일 중요한 숫자인데 한 번도 안 재봤다.

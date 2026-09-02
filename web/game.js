@@ -84,9 +84,25 @@ function statOf(id) {
   return st;
 }
 
+// 이번 판에 누가 있었나. **AOI 때문에 G.players 로는 알 수 없다** —
+// 거기엔 내 구역 사람만 들어 있다. 서버가 스냅샷에 실어주는 생존 표(전역)로 잡는다.
+//
+// 이걸 안 잡아서 결과표의 등수가 음수로 찍혔다. 스물넷 중 내가 본 사람만 세고
+// 그 수로 등수를 계산했기 때문이다
+let roster = new Set();
+
 function resetStats() {
   roundStats = new Map();
   placeNext = 0;
+  roster = new Set();
+}
+
+// 판이 도는 동안 살아 있는 것으로 보인 사람은 전부 참가자다.
+// 중간에 죽어 표에서 빠져도 한 번 넣었으면 남는다
+function noteRoster() {
+  for (let i = 0; i < 24; ++i) {
+    if (G.aliveMask[i >> 3] & (1 << (i & 7))) roster.add(i);
+  }
 }
 
 // 죽은 순서대로 뒤에서부터 등수를 준다.
@@ -99,19 +115,35 @@ function markDead(id) {
 }
 
 // 판이 끝났다. 살아남은 사람을 앞에 놓고 등수를 매긴다
+// 등수는 **표를 그릴 때마다 다시 센다.**
+//
+// 전에는 판이 끝나는 순간 한 번만 매겼다. 그랬더니 결과표에 음수가 찍혔다.
+// 서버는 스냅샷을 보내고 그다음에 이벤트를 보내는데, 마지막 순간에 죽은 사람의
+// 죽음 소식이 **'판이 끝났다' 스냅샷보다 늦게 도착한다.**
+// 등수를 이미 매긴 뒤에 새 사망자가 들어오니 그 사람만 음수로 남았다.
+//
+// 한 번 매기고 끝내는 대신 그릴 때마다 세면 늦게 온 소식도 자리를 찾는다.
+// 다섯 초 동안 스물넷을 정렬하는 것은 공짜다
 function finishStats() {
-  const total = G.players.size;
-  for (const [id, p] of G.players) {
-    const st = statOf(id);
-    if (st.diedTick < 0) st.place = 1;            // 끝까지 살아 있었다
-    else                 st.place = total + 1 + st.place;   // place 가 음수다
-  }
+  for (const id of roundStats.keys()) roster.add(id);
 }
 
 // 결과표에 올릴 줄. 등수 순으로 정렬해서 돌려준다
 function statRows() {
+  // 늦게 온 죽음까지 넣고 나서 센다
+  for (const id of roundStats.keys()) roster.add(id);
+
+  // 죽은 순서대로 뒤에서부터. 끝까지 산 사람이 1등이다
+  const dead = [...roster].filter((id) => statOf(id).diedTick >= 0);
+  dead.sort((a, b) => statOf(a).diedTick - statOf(b).diedTick);
+
+  const total = roster.size;
+  for (const id of roster) statOf(id).place = 1;
+  dead.forEach((id, i) => { statOf(id).place = total - i; });
+
   const rows = [];
-  for (const [id, p] of G.players) {
+  for (const id of roster) {
+    const p = G.players.get(id) || {};
     const st = statOf(id);
     rows.push({
       id,
@@ -1194,7 +1226,7 @@ function drawHUD(now) {
   }
 
   // ── 침수 예고 띠 ───────────────────────────────────────────
-  if (banner && banner.until > now) {
+  if (banner && banner.until > now && G.phase !== PHASE.OVER) {
     const t = 1 - (banner.until - now) / banner.life;
     const inn = Art.easeOut(Math.min(1, (now - (banner.until - banner.life)) / 200));
     const h = 34;
@@ -1295,21 +1327,44 @@ function drawHUD(now) {
 // 등수를 제일 크게 쓴다. 배틀로얄에서 사람이 제일 먼저 보는 숫자다.
 // 내 줄은 색을 따로 준다. 스물넷이 늘어서면 내 줄을 못 찾는다
 function drawResults(now) {
-  scrim(0.62);
+  // 판을 더 누른다. 결과를 읽는 자리인데 뒤에서 판이 돌면 시선이 갈린다
+  scrim(0.82);
 
   const t = Math.min(1, G.phaseTicks / (G.C.tickRate * 0.45));
   const k = Art.overshoot(t);
 
-  // 위쪽: 이겼는지 졌는지
+  const rows = statRows();
+  const myRow = rows.find((r) => r.id === G.myId);
+
+  // 위쪽: **내가 몇 등 했나.**
+  //
+  // 전에는 '이겼다 / P4 승리' 만 띄웠다. 스물넷 중 스물셋에게는
+  // 남이 이겼다는 소식일 뿐이고, 내 판이 어땠는지는 아무 데도 없었다.
+  // 배틀로얄에서 사람이 제일 먼저 보는 숫자는 승자가 아니라 **자기 등수**다.
+  //
+  // 그리고 bigNum 은 이제 도트 숫자만 그린다. 한글을 넘기면 아무것도 안 그려진다 —
+  // 그래서 9/2 오후에 이 자리가 통째로 비어 있었다. 숫자는 bigNum, 글자는 label 이다
   ctx.save();
   ctx.translate(W / 2, H * 0.20);
   ctx.scale(0.7 + k * 0.3, 0.7 + k * 0.3);
-  if (G.winner === 0xFF)        bigNum('무승부', 0, 0, 40, '#ffd166', 'center');
-  else if (G.winner === G.myId) bigNum('이겼다', 0, 0, 48, '#7ee787', 'center');
-  else                          bigNum('P' + G.winner + ' 승리', 0, 0, 36, '#8ab4ff', 'center');
-  ctx.restore();
 
-  const rows = statRows();
+  if (myRow && myRow.place === 1) {
+    label('이겼다', 0, -6, 30, '#7ee787', 'center', 3);
+  }
+  else if (myRow) {
+    // 등수를 크게, '등' 을 작게. 숫자가 주인공이다
+    const w = Art.dotText(ctx, String(myRow.place), -14, -30, 34,
+                          myRow.place <= 3 ? '#ffd166' : '#e8eef7', 'center');
+    label('등', -14 + w / 2 + 12, -6, 16, 'rgba(255,255,255,0.7)', 'left');
+    label(rows.length + '명 중', 0, 20, 12, 'rgba(255,255,255,0.45)', 'center');
+  }
+  else if (G.winner === 0xFF) {
+    label('무승부', 0, 0, 26, '#ffd166', 'center', 3);
+  }
+  else {
+    label('P' + G.winner + ' 승리', 0, 0, 24, '#8ab4ff', 'center', 2);
+  }
+  ctx.restore();
   const show = Math.min(rows.length, 8);
   const rowH = 28;
   const pw = Math.min(420, W - 40);
@@ -1337,12 +1392,16 @@ function drawResults(now) {
     ctx.translate((1 - Art.easeOut(appear)) * 24, 0);
 
     if (mine) {
-      ctx.fillStyle = 'rgba(255,255,255,0.10)';
-      Art.rr(ctx, px + 8, y, pw - 16, rowH - 3, 4); ctx.fill();
+      // 둥근 모서리 대신 각진 띠 + 왼쪽에 세로 표식.
+      // 스물넷이 늘어서면 옅은 배경색만으로는 내 줄을 못 찾는다
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(px + 8, y, pw - 16, rowH - 3);
+      ctx.fillStyle = '#ffd166';
+      ctx.fillRect(px + 8, y, 3, rowH - 3);
     }
 
     const medal = r.place === 1 ? '#ffd166' : r.place === 2 ? '#d0d7e2' : r.place === 3 ? '#d08c5a' : 'rgba(255,255,255,0.45)';
-    label(String(r.place), px + 20, y + 17, r.place <= 3 ? 15 : 13, medal, 'left');
+    Art.dotText(ctx, String(r.place), px + 20, y + 5, r.place <= 3 ? 15 : 12, medal, 'left');
 
     Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(r.id), animalOf(r.id));
     label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 72, y + 16, 12,
@@ -1358,8 +1417,22 @@ function drawResults(now) {
     ctx.restore();
   }
 
+  // 내가 여덟 줄 안에 없으면 맨 아래에 따로 붙인다.
+  // **내 줄이 없는 결과표는 남의 결과표다**
+  if (myRow && rows.indexOf(myRow) >= show) {
+    const y = py + 26 + show * rowH + 4;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(px + 8, y, pw - 16, rowH - 3);
+
+    Art.dotText(ctx, String(myRow.place), px + 20, y + 5, 12, '#e8eef7', 'left');
+    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(myRow.id), animalOf(myRow.id));
+    label('P' + myRow.id + ' (나)', px + 72, y + 16, 12, '#fff');
+    label(String(myRow.kills), px + 210, y + 16, 13,
+          myRow.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
+  }
+
   const left = Math.max(0, Math.ceil((G.C.tickRate * 5 - G.phaseTicks) / G.C.tickRate));
-  label('다음 판까지 ' + left, W / 2, py + 26 + show * rowH + 34, 13,
+  label('다음 판까지 ' + left + '초', W / 2, py + 26 + show * rowH + 44, 13,
         'rgba(255,255,255,0.55)', 'center');
 }
 
@@ -1444,6 +1517,8 @@ Hooks.snapshot = function (prevPhase) {
       if (Math.abs(b.tx - me.jtx) + Math.abs(b.ty - me.jty) <= 2) { danger = true; break; }
     }
   }
+
+  noteRoster();
 
   Sound.setMood(G.phase, G.aliveCount / 24, danger || (G.ring.on && G.aliveCount <= 3));
 

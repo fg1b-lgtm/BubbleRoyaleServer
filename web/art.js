@@ -72,14 +72,14 @@ const Art = (() => {
       floor: '#d2bfb2', floorAlt: '#cdb9ab', joint: '#c2a998', fleck: '#c9b2a3',
       wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
       crate: '#d6945a', crateTop: '#ddb897', crateSide: '#b96f2e',
-      crateKind: 'stone', wallKind: 'brick',
+      crateKind: 'crate', wallKind: 'brick',
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
       floor: '#c7c2b1', floorAlt: '#c1bdaa', joint: '#b3ae97', fleck: '#bcb7a2',
       wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
       crate: '#c69c29', crateTop: '#d8bd73', crateSide: '#9e7d20',
-      crateKind: 'stone', wallKind: 'column',
+      crateKind: 'barrel', wallKind: 'column',
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
@@ -107,7 +107,7 @@ const Art = (() => {
       floor: '#dcc072', floorAlt: '#d8ba65', joint: '#cfa940', fleck: '#d5b356',
       wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
       crate: '#be9b86', crateTop: '#d0bbaf', crateSide: '#a7775b',
-      crateKind: 'sack', wallKind: 'rock',
+      crateKind: 'stone', wallKind: 'rock',
       step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
@@ -209,7 +209,13 @@ const Art = (() => {
     V.TS  = ts;
     V.P   = Math.max(2, Math.round(ts / 16));
     V.WH  = Math.round(ts * 0.46);   // 벽 높이
-    V.CH  = Math.round(ts * 0.30);   // 상자 높이
+    // 상자 높이.
+    //
+    // 0.30 이었는데, 윗면(타일에서 여백 뺀 것)에 이 높이를 더하면
+    // **타일보다 커져서 위아래 상자가 서로 겹쳤다.** 세로로 붙어 한 기둥으로 보이고,
+    // 그러면 몇 칸인지 셀 수가 없다. 폭발 사거리를 세야 하는 게임에서 치명적이다.
+    // 확대해서 찍어보기 전에는 몰랐다
+    V.CH  = Math.round(ts * 0.20);
     V.TOP = V.WH + 2;                // 줄 그림이 위로 삐져나오는 여유
     V.BOT = Math.round(ts * 0.45);   // 아래로 삐져나오는 여유 (그림자)
   }
@@ -556,11 +562,16 @@ const Art = (() => {
         // 장소마다 다른 무늬. 벽돌인지 철판인지 바위인지가 여기서 갈린다
         wallPattern(g, th.wallKind, px, Y - V.WH, T, x, y);
 
-        // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘
-        g.fillStyle = 'rgba(255,255,255,0.20)';
+        // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘.
+        //
+        // 빛을 0.20 으로 얹었더니 **벽 윗줄이 바닥보다 밝아졌다.**
+        // 벽은 판에서 제일 어두워야 하는데 한 줄이 제일 밝으면 그 줄이 눈을 끈다.
+        // 법칙 1(바닥 > 상자 > 벽)을 한 줄이 깨는 셈이다. 절반으로 낮추고
+        // 대신 그늘을 키운다 — 어두워지는 쪽으로는 위계가 안 깨진다
+        g.fillStyle = 'rgba(255,255,255,0.10)';
         g.fillRect(px, Y - V.WH, T, V.P);
         g.fillRect(px, Y - V.WH, V.P, T);
-        g.fillStyle = 'rgba(0,0,0,0.14)';
+        g.fillStyle = 'rgba(0,0,0,0.26)';
         g.fillRect(px, Y - V.WH + T - V.P, T, V.P);
         g.fillRect(px + T - V.P, Y - V.WH, V.P, T);
 
@@ -575,12 +586,19 @@ const Art = (() => {
       else if (t === 2 || t === 4) {
         // 상자. 벽보다 낮고 모서리가 둥글다.
         // 부술 수 있는 것과 없는 것이 **모양으로** 갈려야 한다. 색만으로는 부족하다
-        const m = Math.max(1, T * 0.09);
+        // 여백을 키웠다. 윗면 + 높이가 타일 안에 들어와야 칸이 끊겨 보인다.
+        //   여백 2m + 윗면 w = T,  그리고 w + CH < T 여야 한다
+        const m = Math.max(1, Math.round(T * 0.15));
         const w = T - m * 2;
 
-        // 그림자. 타원 대신 모서리 깎은 납작한 네모다
+        // 그림자. 타원 대신 모서리 깎은 납작한 네모다.
+        //
+        // 자리를 타일 밑에 두었더니 상자 높이를 줄인 뒤로 **상자와 떨어져서**
+        // 회색 막대가 따로 떠 있는 것처럼 보였다. 그림자는 물건에 붙어 있어야
+        // 그 물건의 그림자로 읽힌다. 상자 바닥에 맞춰 붙인다
+        const botY = Y + m - V.CH + w * 0.5 + (w * 0.5 + V.CH);
         g.fillStyle = 'rgba(0,0,0,0.24)';
-        pbox(g, px + m + V.P, Y + T - V.CH * 0.5, w, V.P * 2);
+        pbox(g, px + m + V.P, botY - V.P, w, V.P * 2);
 
         // 옆면
         g.fillStyle = css(cs);

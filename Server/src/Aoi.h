@@ -226,6 +226,16 @@ inline void RouteEvent(uint8_t type, int x, int y, int who, const char* data, in
         case EVT_FLOOD:
         case EVT_RING:
         case EVT_POP:
+
+        // 누가 죽었다는 것도 전원이 알아야 한다.
+        //
+        // 9/2 까지 이걸 그 구역에만 보냈다. 그래서 **다른 구역에서 죽은 사람을
+        // 화면이 아예 몰랐고**, 판이 끝나고 뜨는 결과표에 등수가 음수로 찍혔다.
+        // 스물넷 중 내가 본 사람만 세고 있었으니 당연하다.
+        //
+        // 죽음은 '그때뿐인 연출' 이 아니라 **판이 어떻게 돌아가는지** 그 자체다.
+        // 판당 스물네 개고 초당 하나꼴이라 비용도 없다
+        case EVT_DEATH:
             SendToAll(data, len);
             return;
 
