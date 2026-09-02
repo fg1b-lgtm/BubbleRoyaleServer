@@ -98,9 +98,14 @@ const Art = (() => {
       wallTop: '#e0b878', wallSide: '#a1743c', wallEdge: '#6b4a22',
       crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f' },
 
+    // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
+    // 둘 다 따뜻한 베이지 바닥에 붉은 지붕이라 나란히 놓아야 겨우 구분됐다.
+    // 열 곳을 그려놓고 실질 아홉 곳이었던 셈이다.
+    // 바닥을 식은 회색 벽돌로 내리고 차양을 사프란으로 올려서 떼어놨다.
+    // 상자의 청록은 그대로 둔다. 그게 이 장소의 표식이다
     { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
-      floor: '#c2a893', floorAlt: '#b89e89', joint: '#9a8171', fleck: '#ab9280',
-      wallTop: '#b8695c', wallSide: '#6f3630', wallEdge: '#44201c',
+      floor: '#9a918a', floorAlt: '#918880', joint: '#756d67', fleck: '#847b75',
+      wallTop: '#d8a340', wallSide: '#8f6320', wallEdge: '#583c12',
       crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호

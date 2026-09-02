@@ -172,6 +172,7 @@ build.bat ..\tools\probe.cpp
 | `node tools/wstest.js` | 예 + 다리 | 브라우저 없이 웹 경로 전체를 확인한다 |
 | `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지 |
 | `node tools/viewertest.js` | 예(`bots 0`) + 다리 | 자리가 다 찼을 때 스물다섯 번째로 붙은 사람. 안 끊고 관전시키나 |
+| `node tools/arttest.js` | 아니오 | 아트를 숫자로. 장소 열 곳의 색거리, 방향·걷기가 다른 그림인가, 이펙트가 쌓이지 않나 |
 
 앞의 셋은 소켓을 안 쓴다. **게임 규칙만 꺼내서 두들기므로 서버를 켤 필요가 없다.**
 
@@ -189,6 +190,7 @@ probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
 clienttest  26 PASS / 0 FAIL
 viewertest   6 PASS / 0 FAIL
+arttest      8 PASS / 0 FAIL
 roundsim    60판 전부 결판, 평균 2분 58초
 봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
 
