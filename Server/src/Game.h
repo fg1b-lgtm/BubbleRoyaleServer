@@ -171,12 +171,18 @@ inline int SectorIndex(int tx, int ty)
 // flood_scale 은 침수 일정을 몇 배로 당길 것인가.
 // 1 이면 SPEC 그대로 6분짜리다. 손맛을 보려고 매번 6분을 기다릴 수는 없어서
 // 서버를 fast 로 띄우면 10 이 들어온다. 규칙은 그대로고 시각만 나눈다
+// 이번 판에 상자를 민 횟수. 소유 스레드 : tick
+//
+// 기능이 돌아간다는 시험과 기능이 판에 나온다는 건 다른 얘기다.
+// 밀기 시험은 통과하는데 봇 판에서는 한 번도 안 밀리고 있었다. 그래서 센다
+inline long long g_push_count = 0;
 inline void InitGame(unsigned int seed, int flood_scale = 1)
 {
     if (flood_scale < 1) {
         flood_scale = 1;
     }
 
+    g_push_count = 0;   // 판마다 다시 센다
     g_game.map.Generate(seed);
     g_game.drop_rnd.Seed(seed ^ 0x5bf03635u);
 
@@ -544,6 +550,7 @@ inline void SetInput(Session* s, int dx, int dy)
 // 한 축만 누르고 있을 때만 민다. 대각선이면 어느 쪽을 미는지가 애매하다.
 // 판정 칸 기준이라 몸이 조금 어긋나 있어도 밀린다.
 // 밀기까지 칸에 맞추라고 하면 그건 짜증이지 난이도가 아니다
+
 inline void TryPushBox(GameMap& map, Player& p)
 {
     if (!p.alive || p.trap_ticks > 0) {
@@ -588,6 +595,8 @@ inline void TryPushBox(GameMap& map, Player& p)
     map.tile[by][bx] = TILE_EMPTY;
     map.tile[ny][nx] = TILE_BOX;
     p.push_cool = PUSH_COOLDOWN_TICKS;
+
+    ++g_push_count;
 
     int dir = (dx > 0) ? 0 : (dx < 0) ? 1 : (dy > 0) ? 2 : 3;
     PushEvent(EVT_PUSH, bx, by, 0xFF, dir);

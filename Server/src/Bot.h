@@ -85,6 +85,26 @@ inline bool Passable(int x, int y)
     return g_game.map.tile[y][x] == TILE_EMPTY;
 }
 
+// (x,y) 에서 d 방향으로 한 걸음 갈 때, 그 자리의 상자를 밀어낼 수 있나.
+// 조건은 Game.h 의 TryPushBox 와 같아야 한다. 어긋나면 봇이 안 밀리는 상자를 향해 선다
+inline bool CanPushInto(int x, int y, int d)
+{
+    int bx = x + DX[d],  by = y + DY[d];    // 상자가 있는 칸
+    int nx = bx + DX[d], ny = by + DY[d];   // 상자가 갈 칸
+
+    if (bx < 0 || by < 0 || bx >= MAP_W || by >= MAP_H) return false;
+    if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) return false;
+    if (g_game.map.tile[by][bx] != TILE_BOX)   return false;
+    if (g_game.map.tile[ny][nx] != TILE_EMPTY) return false;
+
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        const Player& o = g_game.players[i];
+        if (!Occupied(o) || !o.alive) continue;
+        if (o.judge_tx == nx && o.judge_ty == ny) return false;
+    }
+    return true;
+}
+
 // 목표에 닿는 첫 걸음 방향을 찾는다. 못 찾으면 false
 enum class Goal { Safe, Item, Center, Block, Enemy, Prey };
 
@@ -110,7 +130,7 @@ inline void BuildEnemyMap()
 }
 
 inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int* out_dy,
-                     int me = -1, int* found_dist = nullptr)
+                     int me = -1, int* found_dist = nullptr, bool allow_push = false)
 {
     static int  dist[MAP_H][MAP_W];
     static int  fromd[MAP_H][MAP_W];
@@ -176,7 +196,17 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
 
         for (int d = 0; d < 4; ++d) {
             int nx = x + DX[d], ny = y + DY[d];
-            if (!Passable(nx, ny) || dist[ny][nx] >= 0) continue;
+            // 전에는 Passable 이 범위까지 봐줘서 dist 를 안전하게 읽었다.
+            // 이제 막힌 칸도 들여다보므로 범위를 먼저 본다
+            if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
+            if (dist[ny][nx] >= 0) continue;
+            if (!Passable(nx, ny)) {
+                // 막힌 칸이라도 밀 수 있는 상자면 지나갈 수 있다.
+                // **이 스위치는 평소에 꺼져 있다.** 켜면 BFS 가 밀기를 한 걸음으로 세는데,
+                // 실제로는 한 번 밀 때마다 PUSH_COOLDOWN_TICKS 를 쉰다.
+                // 그래서 보통 길로 못 갈 때만 켜서 다시 부른다
+                if (!allow_push || !CanPushInto(x, y, d)) continue;
+            }
             dist[ny][nx] = dist[y][x] + 1;
             fromd[ny][nx] = d;
             qx[tail] = nx; qy[tail] = ny; ++tail;
@@ -336,8 +366,16 @@ inline void ThinkBot(int slot)
         }
     }
 
-    // 4) 아이템
+    // 4) 아이템. 보통 길로 못 가면 상자를 밀어서라도 간다.
+    //
+    //    밀기를 여기 붙인 이유. 사람이 상자를 미는 건 그게 길을 막고 있을 때다.
+    //    아이템은 봇이 굳이 가려는 유일한 목표라 '막혔다' 가 성립하는 자리다.
+    //    도망칠 때는 안 켠다. 미는 데 쉬는 시간이 붙어서 그동안 맞는다
     if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy)) {
+        p.dir_x = dx; p.dir_y = dy;
+        return;
+    }
+    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, true)) {
         p.dir_x = dx; p.dir_y = dy;
         return;
     }

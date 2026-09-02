@@ -347,6 +347,7 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
   check(fetched.every(u => u.endsWith('.ogg')), '받는 것이 전부 소리 파일이다');
 
   let crashed = null;
+let pushOk = false, pushFrom = null;
   try {
       for (let t = 0; t < 4; ++t) {
           now = 1000 + t * 16;
@@ -358,6 +359,16 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
       for (let type = 1; type <= 16; ++type) {
           feed(event(type, 11, 12, 0, 2));
       }
+
+      // 상자 밀기는 안 터지는 것만으로 부족하다. **판이 실제로 바뀌어야 한다.**
+      // 서버는 밀리기 전 자리와 방향만 보낸다. 화면이 그걸로 두 칸을 고쳐야
+      // 다음 프레임에 상자가 옮겨 그려진다.
+      // 안 고치면 상자가 원래 자리에 남고, 그리로 들어간 사람이 상자에 겹친다
+      pushFrom = [14, 12];
+      api.G.tiles[12][14] = 4;   // TILE_BOX
+      api.G.tiles[12][15] = 0;   // 갈 자리는 비어 있다
+      feed(event(16, 14, 12, 0, 0));   // 0 = 오른쪽으로 밀었다
+      pushOk = (api.G.tiles[12][14] === 0) && (api.G.tiles[12][15] === 4);
       now += 16; api.frame(now);
 
       // 최종 구역 물 + 단계별 화면
@@ -393,6 +404,8 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
       console.log(crashed.stack);
   } else {
       check(true, '패킷을 먹이고 여러 프레임을 그려도 안 터진다');
+
+      check(pushOk, '상자를 밀었다는 이벤트로 판의 두 칸이 바뀐다 (밀기 전 ' + pushFrom + ')');
   }
 
   // ── 무엇을 그렸나 ────────────────────────────────────────────

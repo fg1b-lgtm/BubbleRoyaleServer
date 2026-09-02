@@ -37,6 +37,7 @@ struct RoundResult
     int  item_sum;
     int  winner_items;   // 승자가 들고 끝낸 아이템 수. 스노볼 지표다
     int  blocks_broken;
+    int  boxes_pushed;   // 상자를 민 횟수. 0 이면 그 기능은 판에 없는 것이다
 };
 
 static int OpenTilesNotFlooded()
@@ -138,6 +139,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
         for (int x = 0; x < MAP_W; ++x)
             if (g_game.map.tile[y][x] == TILE_BLOCK) ++left;
     r.blocks_broken = start_blocks - left;
+    r.boxes_pushed  = (int)g_push_count;
 }
 
 int main(int argc, char** argv)
@@ -150,6 +152,7 @@ int main(int argc, char** argv)
     printf("=== 봇 %d명, %d판 ===\n\n", PLAYER_MAX, rounds);
 
     long long ticks = 0, bubble = 0, water = 0, first = 0, items = 0, broken = 0;
+    long long pushed = 0;
     long long self_kill = 0, win_items = 0;
     long long alive_at[8] = {}, tiles_at[8] = {};
     int unfinished = 0;
@@ -166,6 +169,7 @@ int main(int argc, char** argv)
         items  += r.item_sum;
         win_items += r.winner_items;
         broken += r.blocks_broken;
+        pushed += r.boxes_pushed;
         if (r.first_kill_tick > 0) first += r.first_kill_tick;
         if (r.alive_end > 1) ++unfinished;
         if (r.ticks > longest)  longest = r.ticks;
@@ -204,8 +208,8 @@ int main(int argc, char** argv)
     }
 
     printf("\n--- 아이템 ---\n");
-    printf("  부순 블록 %lld 개, 살아남은 사람의 아이템 %lld.%lld 개\n",
-           broken / rounds,
+    printf("  부순 블록 %lld 개, 상자 민 횟수 %lld 번, 살아남은 사람의 아이템 %lld.%lld 개\n",
+           broken / rounds, pushed / rounds,
            win_items / rounds, (win_items * 10 / rounds) % 10);
     // 상한을 손으로 적어두면 상수를 바꾼 날 이 줄만 거짓말이 된다. 상수에서 뽑는다
     printf("  (상한은 물풍선 %d + 물줄기 %d + 롤러 %d = %d. 울트라를 먹으면 물줄기만 %d)\n",
