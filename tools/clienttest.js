@@ -236,7 +236,7 @@ check(true, '다섯 파일이 처음부터 끝까지 돌았다');
 // 스크립트 맨 위의 const 는 전역 **객체**에 안 붙는다. 전역 렉시컬 환경에 들어간다.
 // 브라우저에서는 스크립트끼리 그 환경을 같이 쓰므로 서로 잘 보이는데,
 // 밖에서 sandbox.G 로 꺼내려 하면 없다. 같은 realm 에서 식을 하나 굴려서 가져온다
-const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS })', sandbox);
+const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, Predict: Predict, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS })', sandbox);
 
 // ── 진짜와 같은 모양의 패킷을 만들어 먹인다 ──────────────────
 const HEADER_SIZE = 4;
@@ -253,8 +253,8 @@ function pkt(id, bodyLen, fillBody) {
 const feed = (v) => api.onPacket(v);
 
 // WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
-// (23 + 조각 9 + 시작값·상한 5 = 37 바이트)
-feed(pkt(5, 37, (v, o) => {
+// (23 + 조각 9 + 시작값·상한 5 + 이동 규칙 4 = 41 바이트)
+feed(pkt(5, 41, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -281,6 +281,12 @@ feed(pkt(5, 37, (v, o) => {
     v.setUint8(o + 34, 5);   // cap_bubble
     v.setUint8(o + 35, 5);   // cap_range
     v.setUint8(o + 36, 7);   // cap_speed
+
+    // 이동 규칙. 화면이 내 캐릭터를 미리 움직이는 데 쓴다
+    v.setUint8(o + 37, 18);  // move_base
+    v.setUint8(o + 38, 4);   // move_step
+    v.setUint8(o + 39, 6);   // trap_speed
+    v.setUint8(o + 40, 50);  // lane_snap
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
@@ -290,6 +296,12 @@ check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
 check(api.G.C.baseRange === 1 && api.G.C.capSpeed === 7,
       '아이템 시작값과 상한도 서버가 준 것을 쓴다 (사거리 ' + api.G.C.baseRange
       + ', 롤러 상한 ' + api.G.C.capSpeed + ')');
+
+// 예측이 서버와 **같은 계산**을 하려면 규칙에 쓰는 수를 다 받아야 한다.
+// 화면이 자기 값을 갖고 있으면 상수를 바꾼 날 예측과 서버가 갈린다
+check(api.G.C.moveBase === 18 && api.G.C.laneSnap === 50,
+      '이동 규칙도 서버가 준 것을 쓴다 (기본 속도 ' + api.G.C.moveBase
+      + ', 레인 스냅 ' + api.G.C.laneSnap + '%)');
 check(api.Art.V.TS >= 14, '화면 크기에 맞춰 타일 크기를 골랐다 (' + api.Art.V.TS + 'px)');
 
 // 9/1 부터 화면이 판 전체가 아니라 **내 구역 + 가장자리 세 칸**이다.

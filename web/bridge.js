@@ -24,6 +24,29 @@ const crypto = require('crypto');
 const fs     = require('fs');
 const path   = require('path');
 
+// 일부러 늦게 보낸다. 지연이 있는 네트워크를 흉내 내는 스위치.
+//
+//   node web/bridge.js delay 80        한쪽으로 80ms. 왕복 160ms
+//   node web/bridge.js delay 80 jitter 30   흔들림까지
+//
+// 왜 필요한가. 이 게임은 같은 컴퓨터에서만 돌려봤다. 그래서 **손맛을 지연 0 을
+// 전제로 맞추고 있다.** 인터넷 너머로 붙는 순간 조작이 늘어지는데,
+// 그걸 재보지 않으면 늘어지는지도 모른다.
+// 여기서 늦추면 서버도 클라이언트도 안 고치고 그 상황을 만들 수 있다
+let DELAY_MS = 0, JITTER_MS = 0;
+for (let i = 2; i < process.argv.length; ++i) {
+    if (process.argv[i] === 'delay')  DELAY_MS  = parseInt(process.argv[++i], 10) || 0;
+    if (process.argv[i] === 'jitter') JITTER_MS = parseInt(process.argv[++i], 10) || 0;
+}
+
+// 늦춰 보낸다. 지연이 0 이면 그냥 바로 보낸다 —
+// setTimeout 을 거치면 그것만으로 한 프레임이 밀린다
+function later(fn) {
+    if (DELAY_MS <= 0 && JITTER_MS <= 0) { fn(); return; }
+    const ms = DELAY_MS + (JITTER_MS ? Math.random() * JITTER_MS : 0);
+    setTimeout(fn, ms);
+}
+
 const WEB_PORT    = 8080;
 const GAME_HOST   = '127.0.0.1';
 const GAME_PORT   = 9000;
@@ -131,7 +154,11 @@ function attach(ws) {
                 break;   // 아직 덜 왔다
             }
 
-            wsSend(ws, acc.subarray(0, size));
+            // 지연 스위치가 켜져 있으면 늦게 보낸다.
+            // subarray 는 원본을 가리키므로 복사해서 넘긴다 — 늦게 보내는 사이에
+            // acc 가 잘려나가면 엉뚱한 바이트가 나간다
+            const packet = Buffer.from(acc.subarray(0, size));
+            later(() => wsSend(ws, packet));
             acc = acc.subarray(size);
         }
     });
@@ -151,7 +178,9 @@ function attach(ws) {
             if (frame.opcode === 0x8) { close(); return; }   // 닫자고 한다
             if (frame.opcode === 0x9) { continue; }          // ping. 무시한다
             if (frame.payload.length > 0 && alive) {
-                game.write(frame.payload);
+                // 올라가는 쪽도 똑같이 늦춘다. 지연은 한 방향이 아니다
+                const up = Buffer.from(frame.payload);
+                later(() => { try { game.write(up); } catch (e) {} });
             }
         }
     });
@@ -230,4 +259,9 @@ function wsSend(sock, data) {
 server.listen(WEB_PORT, () => {
     console.log('[bridge] http://127.0.0.1:' + WEB_PORT + ' 를 열어라');
     console.log('[bridge] 게임 서버는 ' + GAME_HOST + ':' + GAME_PORT + ' 에 있어야 한다');
+    if (DELAY_MS || JITTER_MS) {
+        console.log('[bridge] 일부러 늦춘다: 한쪽 ' + DELAY_MS + 'ms'
+                    + (JITTER_MS ? ' + 흔들림 ' + JITTER_MS + 'ms' : '')
+                    + '  (왕복 ' + (DELAY_MS * 2) + 'ms)');
+    }
 });

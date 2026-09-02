@@ -85,6 +85,12 @@ function onWelcome(v) {
   G.C.capBubble  = u8();
   G.C.capRange   = u8();
   G.C.capSpeed   = u8();
+
+  // 이동 규칙. 화면이 내 캐릭터를 미리 움직이는 데 쓴다 (predict.js)
+  G.C.moveBase  = u8();
+  G.C.moveStep  = u8();
+  G.C.trapSpeed = u8();
+  G.C.laneSnap  = u8();
   G.myId = G.C.myId;
   G.snapInterval = 1000 / G.C.tickRate;
 

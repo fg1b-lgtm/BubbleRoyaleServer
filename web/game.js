@@ -356,11 +356,39 @@ function frame(ts) {
   // 맞은 게 아니라 맞혔다는 걸 몸으로 알리는 장치다
   if (!FX.frozen(ts)) gameTime += dt;
 
+  // 내 캐릭터를 미리 움직인다.
+  //
+  // 서버는 30Hz 로 도는데 화면은 60Hz 로 그린다. 그래서 프레임마다가 아니라
+  // **서버 틱 간격만큼 쌓였을 때** 한 걸음씩 옮긴다. 안 그러면 두 배로 빨라진다
+  predictAcc += dt;
+  const tickMs = 1000 / G.C.tickRate;
+  let guard = 4;                      // 탭이 뒤로 갔다 오면 dt 가 크다. 몰아서 안 뛴다
+  while (predictAcc >= tickMs && guard-- > 0) {
+    predictAcc -= tickMs;
+    stepPrediction();
+  }
+  if (predictAcc > tickMs) predictAcc = 0;
+
   rebuild();
   rebuildFoam();
   updateCamera(dt);
   drawWorld(gameTime, dt);
   drawHUD(gameTime);
+}
+
+// 서버가 어차피 내릴 답을 미리 한 걸음 그린다.
+//
+// 서버 권위는 그대로다. 맞고 죽는 것은 전부 서버가 정한다.
+// 여기서는 **자리만** 미리 옮긴다. 서버 답이 오면 predict.reconcile 이 맞춘다
+let predictAcc = 0;
+
+function stepPrediction() {
+  const me = G.players.get(G.myId);
+  if (!me || !(me.flags & PF.ALIVE)) { Predict.stop(); return; }
+  if (G.phase !== PHASE.PLAYING) { Predict.stop(); return; }
+
+  const [dx, dy] = inputDir();
+  Predict.tick(G.tiles, dx, dy, me.speed_lv | 0, !!(me.flags & PF.TRAPPED));
 }
 
 function drawWorld(now, dt) {
@@ -604,8 +632,21 @@ function drawWorld(now, dt) {
 }
 
 function drawPlayer(id, p, alpha, now, T) {
-  const px = (p.x0 + (p.x1 - p.x0) * alpha) / G.C.tileUnits * T;
-  const py = (p.y0 + (p.y1 - p.y0) * alpha) / G.C.tileUnits * T;
+  // 남은 스냅샷 두 장 사이를 보간한다. 그게 부드러움의 전부다.
+  //
+  // **내 캐릭터만 다르다.** 서버를 기다리지 않고 미리 옮겨둔 자리를 쓴다.
+  // 그래야 키를 누른 프레임에 화면이 움직인다
+  let px, py;
+  const mineLive = (id === G.myId) && Predict.isLive() && (p.flags & PF.ALIVE);
+
+  if (mineLive) {
+    const v = Predict.view();
+    px = v.x / G.C.tileUnits * T;
+    py = v.y / G.C.tileUnits * T;
+  } else {
+    px = (p.x0 + (p.x1 - p.x0) * alpha) / G.C.tileUnits * T;
+    py = (p.y0 + (p.y1 - p.y0) * alpha) / G.C.tileUnits * T;
+  }
   const dead = !(p.flags & PF.ALIVE);
   const r = T * G.C.bodyNum / G.C.bodyDen / 2;
 
@@ -1183,6 +1224,9 @@ function scrim(a) {
 
 // ── 서버가 알려주는 것들 ─────────────────────────────────────
 Hooks.welcome = function () {
+  // 이동 규칙을 서버가 준 값으로 세운다. 화면이 자기 값을 갖고 있으면
+  // 상수를 바꾼 날 예측과 서버가 갈린다
+  Predict.setup(G.C);
   // 아홉 자리에 각각 다른 장소를 깐다. 공기(하늘·물·색보정)는 판 하나에 하나
   Art.setPlaces(G.C.sectorKind, G.C.seed, G.C.sectorW, G.C.sectorH);
   resize();
@@ -1207,6 +1251,17 @@ Hooks.conn = function () {
 
 Hooks.snapshot = function (prevPhase) {
   snapAtGame = gameTime;
+
+  // 서버 답이 왔다. 미리 옮겨둔 자리와 맞춰본다.
+  // 어긋난 만큼은 그림에서만 몇 프레임에 걸쳐 녹인다 — 바로 옮기면 튄다
+  {
+    const me = G.players.get(G.myId);
+    if (me && (me.flags & PF.ALIVE) && G.phase === PHASE.PLAYING) {
+      Predict.reconcile(me.x1, me.y1);
+    } else {
+      Predict.stop();
+    }
+  }
 
   // 물에 잠기기 시작한 틱을 적어둔다. 남은 시간을 여기서 뺀다
   for (const p of G.players.values()) {
