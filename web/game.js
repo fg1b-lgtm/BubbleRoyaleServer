@@ -65,6 +65,34 @@ let danger = false;
 let bubbleTiles = new Set();
 let killPop = -9999;    // 내가 잡은 순간. HUD 킬 수가 튀어오른다
 let alivePop = -9999;   // 누가 죽은 순간. 남은 사람 수가 튀어오른다
+let grazeCell = null;   // 방금 걸치기로 산 자리. 그 칸을 잠깐 보여준다
+
+// 이 세션에서 지금까지의 기록.
+//
+// 판이 끝나면 5초 뒤에 다음 판이 저절로 시작된다. 그 5초가 **이탈 지점**이다 —
+// 결과표를 보고 '아 끝났네' 하고 창을 닫는다.
+//
+// 지난 판이 아무 데도 안 남으면 매 판이 첫 판이다. 그러면 나아지는 게 없고,
+// 나아지는 게 없으면 다음 판을 할 이유도 없다.
+// 서버에 뭘 저장하지 않는다 — 이 탭이 열려 있는 동안만 기억하면 충분하다
+const session = { rounds: 0, best: 99, wins: 0, kills: 0, grazes: 0 };
+
+function noteSession(myRow) {
+  ++session.rounds;
+  if (!myRow) return;
+  if (myRow.place < session.best) session.best = myRow.place;
+  if (myRow.place === 1) ++session.wins;
+  session.kills += myRow.kills;
+}
+
+// 아직 한 번도 안 움직였다. 조작 안내를 띄우는 조건이다.
+//
+// 위 띠에 'WASD 이동 / Space 물풍선' 이 작게 있는데 **아무도 안 읽는다.**
+// 링크를 받은 사람이 판에 던져져서 뭘 눌러야 하는지 모르면 그걸로 끝이다.
+// 판 위에 크게 띄우고, **한 발짝이라도 움직이면 바로 지운다** —
+// 아는 사람에게 설명이 남아 있으면 그것도 방해다
+let hasMoved = false;
+let hasPlaced = false;
 const pickFlash = {};   // 아이템 종류별로 마지막에 먹은 시각
 
 // ── 한 판의 기록 ─────────────────────────────────────────────
@@ -422,6 +450,7 @@ function frame(ts) {
   updateCamera(dt);
   drawWorld(gameTime, dt);
   drawHUD(gameTime);
+  drawFirstHints(gameTime);
 }
 
 // 서버가 어차피 내릴 답을 미리 한 걸음 그린다.
@@ -626,6 +655,9 @@ function drawWorld(now, dt) {
     }
   }
 
+  // 걸치기로 산 칸. 파티클보다 위에 그려야 고리에 안 묻힌다
+  drawGrazeCell(now, T);
+
   FX.draw(ctx, now);
 
   // ── 안개 ───────────────────────────────────────────────────
@@ -722,6 +754,36 @@ function drawWorld(now, dt) {
 
   FX.drawFlash(ctx, now, W, H);
   FX.done(ctx);
+}
+
+// 걸치기로 산 칸을 잠깐 보여준다.
+//
+// 판 좌표계 안에서 그린다. 0.6초 동안 테두리가 조여들며 사라진다 —
+// 남아 있으면 다음 판단을 방해하고, 너무 짧으면 못 본다
+function drawGrazeCell(now, T) {
+  if (!grazeCell) return;
+
+  const t = (now - grazeCell.at) / 600;
+  if (t >= 1) { grazeCell = null; return; }
+
+  const k = 1 - t;
+  const grow = (1 - k) * T * 0.35;
+  const px = grazeCell.x * T - grow, py = grazeCell.y * T - grow;
+  const sz = T + grow * 2;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(160,235,255,' + (0.85 * k) + ')';
+  ctx.lineWidth = Math.max(2, T * 0.07 * k);
+  ctx.strokeRect(px, py, sz, sz);
+
+  // 연속으로 성공했으면 테두리가 겹으로 늘어난다. 숫자를 안 쓰고 겹으로 센다
+  const layers = Math.min(grazeCell.n || 1, 4);
+  for (let i = 1; i < layers; ++i) {
+    const o = i * T * 0.16 * (1 + (1 - k));
+    ctx.strokeStyle = 'rgba(160,235,255,' + (0.4 * k / i) + ')';
+    ctx.strokeRect(px - o, py - o, sz + o * 2, sz + o * 2);
+  }
+  ctx.restore();
 }
 
 // 갇힌 지 얼마나 됐나. 1 이면 방금, 0 이면 곧 풀린다.
@@ -1319,6 +1381,55 @@ function drawHUD(now) {
   }
 }
 
+// ── 첫 조작 안내 ─────────────────────────────────────────────
+//
+// 처음 온 사람에게 딱 두 가지만 알린다. 움직이는 법과 놓는 법.
+// 규칙 설명은 안 한다 — 물풍선을 한 번 놓아보면 나머지는 저절로 안다.
+//
+// 판 한가운데를 피해 아래쪽에 둔다. 가운데는 판을 보는 자리다.
+// 그리고 **하고 나면 그 줄만 지운다.** 움직일 줄 아는 사람에게 이동 안내는 방해다
+function drawFirstHints(now) {
+  if (hasMoved && hasPlaced) return;
+  if (G.phase !== PHASE.PLAYING) return;
+
+  const me = G.players.get(G.myId);
+  if (!me || !(me.flags & PF.ALIVE)) return;
+
+  const y = BY + BH - 74;
+  const pulse = 0.72 + 0.28 * Math.sin(now / 420);
+
+  if (!hasMoved) {
+    keyCap('W', W / 2 - 60, y - 26, pulse);
+    keyCap('A', W / 2 - 86, y, pulse);
+    keyCap('S', W / 2 - 60, y, pulse);
+    keyCap('D', W / 2 - 34, y, pulse);
+    label('움직인다', W / 2 - 60, y + 40, 12, 'rgba(255,255,255,' + pulse + ')', 'center');
+  }
+
+  if (!hasPlaced) {
+    const bx = hasMoved ? W / 2 - 40 : W / 2 + 30;
+    keyCap('SPACE', bx, y, pulse, 70);
+    label('물풍선', bx + 35, y + 40, 12, 'rgba(255,255,255,' + pulse + ')', 'center');
+  }
+}
+
+// 키 모양. 판때기와 같은 재료다 — 각지고 단색이고 1픽셀 테두리
+function keyCap(text, x, y, alpha, w) {
+  const P = Art.V.P;
+  const bw = w || 22, bh = 22;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  ctx.fillStyle = '#0d1219';
+  pxBox(Math.round(x / P) * P, Math.round(y / P) * P, bw, bh, P);
+  ctx.fillStyle = '#3d4a5e';
+  ctx.fillRect(Math.round(x / P) * P + P, Math.round(y / P) * P, bw - P * 2, P);
+
+  label(text, x + bw / 2, y + 15, text.length > 1 ? 10 : 12, '#dfe8f5', 'center', 1);
+  ctx.restore();
+}
+
 // ── 결과 화면 ────────────────────────────────────────────────
 //
 // 한 판이 끝났을 때 "이겼다" 세 글자만 띄우면 그 판의 이야기가 통째로 사라진다.
@@ -1431,8 +1542,22 @@ function drawResults(now) {
           myRow.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
   }
 
+  // 이번 세션의 기록. **두 판째부터만** 보여준다 —
+  // 첫 판에 '1판 · 최고 3등' 을 띄우면 방금 본 것을 되풀이하는 것뿐이다.
+  // 두 판째부터는 '아까보다 나은가' 라는 질문이 생긴다. 그게 다음 판을 하게 만든다
+  const sy2 = py + 26 + show * rowH + 40;
+  if (session.rounds >= 2) {
+    const bits = [session.rounds + '판째'];
+    if (session.best <= 24) bits.push('최고 ' + session.best + '등');
+    if (session.wins > 0)   bits.push(session.wins + '승');
+    if (session.kills > 0)  bits.push(session.kills + '처치');
+
+    label(bits.join('   ·   '), W / 2, sy2, 12, 'rgba(255,214,102,0.75)', 'center', 1);
+  }
+
   const left = Math.max(0, Math.ceil((G.C.tickRate * 5 - G.phaseTicks) / G.C.tickRate));
-  label('다음 판까지 ' + left + '초', W / 2, py + 26 + show * rowH + 44, 13,
+  label('다음 판까지 ' + left + '초', W / 2,
+        sy2 + (session.rounds >= 2 ? 22 : 4), 13,
         'rgba(255,255,255,0.55)', 'center');
 }
 
@@ -1531,6 +1656,7 @@ Hooks.snapshot = function (prevPhase) {
     if (G.phase === PHASE.PLAYING) { Sound.start(); FX.flashOut('#ffffff', 220, gameTime); }
     if (G.phase === PHASE.OVER) {
       finishStats();
+      noteSession(statRows().find((r) => r.id === G.myId));
       (G.winner === G.myId ? Sound.win() : Sound.lose());
     }
     lastBeep = -1;
@@ -1669,12 +1795,25 @@ Hooks.event = function (type, x, y, who, val) {
     }
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
+    // 걸치기. **이 게임의 정체다.**
+    //
+    // 몸이 타일보다 작아서(0.8) 두 칸에 걸쳐 설 수 있고, 판정은 몸 중심이 있는
+    // 칸으로만 한다. 그래서 반 칸 차이로 물줄기를 피한다.
+    //
+    // 문제는 **처음 하는 사람이 그게 일어난 줄도 모른다**는 것이었다.
+    // 뭔가 파랗게 반짝했는데 왜인지 모르면 그건 연출이지 배움이 아니다.
+    //
+    // 글자로 설명하지 않는다. 그 순간에만 **내가 서 있던 판정 칸**을 보여준다.
+    // 평소에는 안 그린다 — 스물넷이 늘 네모를 달고 다니면 판이 지저분해진다.
+    // '네 몸은 여기 걸쳐 있었고 판정은 이 칸이었다' 가 그림 하나로 전해진다
     case EVT.GRAZE:
       FX.graze(cx, cy, T, now, val);
       Sound.graze(val, pan, far);
       if (mine) {
+        grazeCell = { x: x, y: y, at: now, n: val };
         FX.punch(0.4 + Math.min(val, 4) * 0.2);
         FX.flashOut('rgba(140,225,255,0.5)', 140, now);
+        FX.stop(40, performance.now());   // 아주 짧게. 몸으로 알리되 끊기면 안 된다
       }
       break;
 
@@ -1805,6 +1944,7 @@ function pushInput() {
   if (dx !== sentX || dy !== sentY) {
     sentX = dx; sentY = dy;
     sendMove(dx, dy);
+    if (dx !== 0 || dy !== 0) hasMoved = true;   // 한 발짝이라도 뗐으면 안내를 지운다
   }
 }
 
@@ -1830,7 +1970,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'r') { sendRestart(); return; }
-  if (e.key === ' ') { sendPlace(); return; }
+  if (e.key === ' ') { hasPlaced = true; sendPlace(); return; }
 
   if (!held.has(k)) { held.add(k); pushInput(); }
 });

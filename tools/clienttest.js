@@ -533,6 +533,46 @@ let pushOk = false, pushFrom = null;
   console.log('  판이 안 변할 때 프레임당 fillRect: ' + perFrame.toFixed(1) + ' 번');
   check(perFrame < 400, '판이 안 변하면 다시 안 그린다 (미리 그려둔 종이를 붙이기만 한다)');
 
+  // ── 걸치기가 보이나 ────────────────────────────────────────
+  //
+  // **이 게임의 정체다.** 몸이 타일보다 작아서 두 칸에 걸쳐 설 수 있고,
+  // 판정은 몸 중심 칸으로만 한다. 반 칸 차이로 사는 게 이 게임의 전부다.
+  //
+  // 그런데 처음 하는 사람은 그게 일어난 줄도 모른다. 그래서 그 순간에만
+  // 판정 칸을 보여준다. 회귀가 나면 게임의 정체가 안 보이게 되므로 시험으로 박는다.
+  //
+  // 남이 걸친 것은 안 보여준다. 내 것만 — 남의 판정 칸까지 뜨면 판이 지저분해진다
+  console.log();
+  console.log('  --- 걸치기 ---');
+
+  {
+    api.FX.reset();
+    feed(snapshot(300, 2, false, 4, 0, true));
+    now += 16; api.frame(now);
+
+    // 남이 걸쳤다 (who = 3, 나는 0)
+    const beforeOther = calls.strokeRect || 0;
+    feed(event(1, 9, 9, 3, 1));
+    now += 16; api.frame(now);
+    const otherRects = (calls.strokeRect || 0) - beforeOther;
+
+    // 내가 걸쳤다
+    const beforeMine = calls.strokeRect || 0;
+    feed(event(1, 9, 9, 0, 3));
+    now += 16; api.frame(now);
+    const mineRects = (calls.strokeRect || 0) - beforeMine;
+
+    console.log('    남이 걸쳤을 때 네모 ' + otherRects + ' 개,'
+                + '  내가 걸쳤을 때 ' + mineRects + ' 개');
+
+    check(mineRects > otherRects,
+          '내가 걸치면 판정 칸이 보인다 (남이 걸친 것은 안 보여준다)');
+
+    // 연속으로 성공하면 테두리가 겹으로 늘어난다. 숫자를 안 쓰고 겹으로 센다
+    check(mineRects >= 3,
+          '연속 걸치기가 겹 수로 보인다 (' + mineRects + ' 겹)');
+  }
+
   // ── 연출이 시간을 쓰는가 ────────────────────────────────────
   //
   // 게임 필은 **예고 → 임팩트 → 여운** 세 박자다.
