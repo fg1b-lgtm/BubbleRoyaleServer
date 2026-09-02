@@ -59,6 +59,36 @@ C++ / IOCP 기반 실시간 멀티플레이 게임 서버.
 
 **환경:** Windows 11 / Visual Studio 2022 (v143) / C++17 / x64 / WinSock2
 
+처음 받았으면 이거 하나면 된다.
+
+```bat
+run.bat
+```
+
+필요하면 빌드하고, 서버와 다리를 띄우고, 브라우저를 연다.
+콘솔 창 두 개가 뜨고 그게 서버 로그다. 아무 키나 누르면 둘 다 내려간다.
+빈자리는 봇이 채우므로 **혼자서도 판이 돈다.**
+
+인자는 그대로 서버에 넘어간다.
+
+| | |
+|---|---|
+| `run.bat fast` | 6분짜리 침수 일정이 36초로 줄어든다. 손맛 볼 때 |
+| `run.bat seed 42` | 매번 같은 판. 이상한 걸 봤을 때 그 판을 다시 부른다 |
+| `run.bat bots 8` | 빈자리를 봇 8명까지 채운다 (`bots 0` 이면 안 채운다) |
+| `run.bat aoi 0` | AOI 를 끈다. 켜고 끈 값을 비교할 때 |
+
+**같은 씨앗이면 같은 판이라는 것을 지문으로 확인한다.**
+씨앗만 찍으면 씨앗을 넣었다는 것까지만 증명된다.
+
+```
+[Server] map 45x39 generated (seed 777, 27 spawns, fingerprint 18178FBC)
+[Server] map 45x39 generated (seed 777, 27 spawns, fingerprint 18178FBC)
+[Server] map 45x39 generated (seed 778, 27 spawns, fingerprint F315DC7E)
+```
+
+### 손으로 띄우기
+
 ```
 BubbleRoyale.sln 을 열고 Debug|x64 로 빌드
 ```

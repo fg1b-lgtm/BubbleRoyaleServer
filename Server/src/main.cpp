@@ -21,6 +21,9 @@
 // 로그 접두어
 //   [Server]   서버 전체 얘기
 //   [Session]  주소가 붙는 모든 것
+#include <cstring>    // strcmp — 명령줄 인자를 이름으로 고른다
+#include <cstdlib>    // atoi / strtoul
+
 #include "Network.h"
 #include "GameConstants.h"
 #include "Aoi.h"
@@ -759,23 +762,47 @@ int main(int argc, char** argv)
     unsigned int map_seed   = 1234;
     int          flood_scale = 1;
 
+    // 첫 글자만 보고 고르던 것을 이름 전체로 바꿨다.
+    // 전에는 "banana 3" 이 bots 3 으로 먹혔고, seed 를 넣으니 fast 와 첫 글자가 갈렸다.
+    // 못 알아들은 인자는 조용히 넘기지 않고 말한다. 오타 때문에 다른 판을 재현하면 안 된다
     for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] == 'f') {
+        if (strcmp(argv[i], "fast") == 0) {
             flood_scale = 10;
         }
-        else if (argv[i][0] == 'a' && i + 1 < argc) {
+        else if (strcmp(argv[i], "aoi") == 0 && i + 1 < argc) {
             g_aoi_on = (atoi(argv[++i]) != 0);
         }
-        else if (argv[i][0] == 'b' && i + 1 < argc) {
+        else if (strcmp(argv[i], "bots") == 0 && i + 1 < argc) {
             g_bot_target = atoi(argv[++i]);
             if (g_bot_target < 0)          g_bot_target = 0;
             if (g_bot_target > PLAYER_MAX) g_bot_target = PLAYER_MAX;
         }
+        else if (strcmp(argv[i], "seed") == 0 && i + 1 < argc) {
+            map_seed = (unsigned int)strtoul(argv[++i], nullptr, 10);
+        }
+        else {
+            printf("[Server] 모르는 인자 '%s'. 쓸 수 있는 것: "
+                   "fast | seed N | bots N | aoi 0|1\n", argv[i]);
+            return 1;
+        }
     }
 
     InitGame(map_seed, flood_scale);
-    printf("[Server] map %dx%d generated (seed %u, %d spawns)\n",
-           MAP_W, MAP_H, map_seed, g_game.map.spawn_count);
+
+    // 판의 지문. 같은 씨앗이면 같은 판이라는 것을 눈으로 확인할 수 있어야 한다.
+    //
+    // 씨앗만 찍으면 "씨앗을 넣었다" 까지만 증명된다. 그 씨앗이 정말 같은 판을 만드는지는
+    // 화면을 두 번 보고 사람이 비교해야 한다. 그건 증명이 아니다.
+    // 타일을 전부 훑어 한 수로 접어두면 두 줄만 비교하면 된다. FNV-1a 32비트
+    unsigned int fp = 2166136261u;
+    for (int y = 0; y < MAP_H; ++y) {
+        for (int x = 0; x < MAP_W; ++x) {
+            fp = (fp ^ g_game.map.tile[y][x]) * 16777619u;
+        }
+    }
+
+    printf("[Server] map %dx%d generated (seed %u, %d spawns, fingerprint %08X)\n",
+           MAP_W, MAP_H, map_seed, g_game.map.spawn_count, fp);
     printf("[Server] flood x%d, first warning at %d s\n",
            flood_scale, g_game.flood_warn[0] / TICK_RATE);
     printf("[Server] round starts with %d players, %d s countdown\n",
