@@ -361,18 +361,60 @@ const Sound = (() => {
   //   3층 높은 음     마지막 구역, 물이 차오를 때
   //
   // **남은 사람 수를 화면에서 안 읽어도 귀로 알게 하는 것**이 목적이다.
-  const BPM = 104;
+  // **곡을 실제로 쓴다.**
+  //
+  // 9/2 까지는 곡이 없었다. 펜타토닉 다섯 음을 아무 순서로 치면 안 어긋나니까
+  // 리듬만 짜고 음은 굴렸다. 그래서 어긋나지는 않는데 **기억에 남지도 않았다.**
+  // 흥얼거릴 수 없는 것은 곡이 아니라 배경 소음이다.
+  //
+  // 크아 음악을 다시 들어보면 공통점이 뚜렷하다 —
+  // 네모파 멜로디가 앞에 나와 있고, 베이스가 또박또박 걷고, 박이 빠르다.
+  // 옛날 칩튠이 채널 셋으로 곡을 만들던 방식 그대로다.
+  // 여기도 채널 셋으로 간다. 멜로디 · 베이스 · 드럼.
+  //
+  // 장조로 쓴다. 단조로 하면 긴장은 느는데 판이 3분이라 지친다.
+  // 긴장은 층을 붙여서 만든다 — 층은 남은 사람 수가 정한다
+  const BPM = 132;
   const BEAT = 60 / BPM;
 
-  // 다섯 음만 쓴다 (마이너 펜타토닉). 아무 순서로 쳐도 안 어긋나서 리듬만 짜면 된다
-  const SCALE = [0, 3, 5, 7, 10];
-  const ROOT  = 55;
+  const ROOT = 55;                       // A1
   const hz = (semi) => ROOT * Math.pow(2, semi / 12);
+
+  // 16분음표 32칸이 한 마디 묶음이고, 그런 묶음이 넷이라 한 바퀴가 8초쯤이다.
+  // -1 은 쉼표, 그 외는 반음 번호다. 손으로 찍었다
+  const MELODY = [
+    // 가. 올라갔다 내려온다. 제일 먼저 귀에 붙는 자리다
+    28, -1, 28, 31, 33, -1, 31, -1, 28, -1, 26, -1, 24, -1, -1, -1,
+    26, -1, 26, 28, 31, -1, 28, -1, 26, -1, 24, -1, 21, -1, -1, -1,
+    // 나. 같은 모양을 한 음 위에서 되풀이한다. 되풀이가 있어야 외워진다
+    31, -1, 31, 33, 36, -1, 33, -1, 31, -1, 28, -1, 26, -1, -1, -1,
+    28, -1, 26, 28, 24, -1, 26, -1, 28, -1, 31, -1, 33, -1, -1, -1,
+  ];
+
+  // 베이스는 한 마디에 두 번, 근음과 5도만. 걷는 느낌이 여기서 나온다
+  const BASS = [
+    9, -1, -1, -1, 16, -1, -1, -1, 9, -1, -1, -1, 16, -1, -1, -1,
+    7, -1, -1, -1, 14, -1, -1, -1, 7, -1, -1, -1, 14, -1, -1, -1,
+    12, -1, -1, -1, 19, -1, -1, -1, 12, -1, -1, -1, 19, -1, -1, -1,
+    5, -1, -1, -1, 12, -1, -1, -1, 9, -1, -1, -1, 16, -1, -1, -1,
+  ];
+
+  // 층. 사람이 줄수록 위 층이 하나씩 붙는다.
+  //
+  //   0층 베이스 + 킥       판이 도는 내내
+  //   1층 하이햇            사람이 줄기 시작하면
+  //   2층 멜로디            절반 아래로 줄면
+  //   3층 옥타브 위 화음    마지막 구역, 물이 차오를 때
+  //
+  // **남은 사람 수를 화면에서 안 읽어도 귀로 알게 하는 것**이 목적이다.
+  // 멜로디를 2층에 둔 이유가 그것이다 — 곡이 '시작되는' 순간이 판의 중반이 된다
 
   let musicOn = false, musicTarget = 0;
   let intensity = 0;
   let step = 0, nextTime = 0, clock = null;
 
+  // 음 하나. 칩튠은 소리를 길게 끌지 않는다 — 짧게 끊어야 또렷하고,
+  // 그래야 다음 음과 안 뭉갠다
   function bar(t, gain, dur, wave, f, send) {
     if (muted) return;
     const osc = ac.createOscillator();
@@ -381,51 +423,61 @@ const Sound = (() => {
 
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(g);
     g.connect(musicBus);
     if (send) {
-      const s = ac.createGain();
-      s.gain.value = send;
-      g.connect(s); s.connect(verbSend);
+      const sg = ac.createGain();
+      sg.gain.value = send;
+      g.connect(sg); sg.connect(verbSend);
     }
     osc.start(t);
     osc.stop(t + dur + 0.02);
   }
 
-  function playStep(i, t) {
-    if (!musicOn) return;
-    const q = i % 16;
+  // 짧은 잡음. 드럼에 쓴다. 이건 파일을 쓸 이유가 없다
+  function noise(t, gain, dur, cut, type) {
+    if (muted) return;
+    const n = ac.sampleRate * dur | 0;
+    const b = ac.createBuffer(1, n, ac.sampleRate);
+    const d = b.getChannelData(0);
+    for (let k = 0; k < n; ++k) d[k] = (Math.random() * 2 - 1) * (1 - k / n);
 
-    if (q % 4 === 0) bar(t, 0.26, 0.30, 'sine', hz(SCALE[0]) / 2, 0);
-
-    if (intensity >= 1 && q % 2 === 1) {
-      // 리듬은 짧은 잡음을 스틱처럼 쓴다. 이건 파일을 쓸 이유가 없다
-      const n = ac.sampleRate * 0.05 | 0;
-      const b = ac.createBuffer(1, n, ac.sampleRate);
-      const d = b.getChannelData(0);
-      for (let k = 0; k < n; ++k) d[k] = (Math.random() * 2 - 1) * (1 - k / n);
-
-      const src = ac.createBufferSource(); src.buffer = b;
-      const f = ac.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 6000;
-      const g = ac.createGain(); g.gain.value = 0.05;
-      src.connect(f); f.connect(g); g.connect(musicBus);
-      src.start(t);
-    }
-
-    if (intensity >= 2) {
-      const n = SCALE[(i * 3) % SCALE.length] + 12 * (1 + ((i >> 2) & 1));
-      bar(t, 0.065, 0.16, 'triangle', hz(n), 0.25);
-    }
-
-    if (intensity >= 3 && q % 8 === 0) {
-      const n = SCALE[(i >> 3) % SCALE.length] + 24;
-      bar(t, 0.05, 1.2, 'sawtooth', hz(n), 0.5);
-    }
+    const src = ac.createBufferSource(); src.buffer = b;
+    const f = ac.createBiquadFilter();
+    f.type = type || 'highpass'; f.frequency.value = cut;
+    const g = ac.createGain(); g.gain.value = gain;
+    src.connect(f); f.connect(g); g.connect(musicBus);
+    src.start(t);
   }
 
+  function playStep(i, t) {
+    if (!musicOn) return;
+    const q = i % 64;
+
+    // 0층 — 베이스와 킥. 판이 도는 내내 이것만은 있다
+    const bn = BASS[q];
+    if (bn >= 0) bar(t, 0.22, 0.16, 'triangle', hz(bn), 0);
+    if (q % 8 === 0) noise(t, 0.16, 0.06, 220, 'lowpass');
+
+    // 1층 — 하이햇. 박을 반으로 쪼개서 급해진 느낌을 만든다
+    if (intensity >= 1 && q % 2 === 1) noise(t, 0.035, 0.03, 7000);
+    if (intensity >= 1 && q % 8 === 4) noise(t, 0.10, 0.09, 1800);
+
+    // 2층 — 멜로디. 여기서부터 곡이 시작된 것처럼 들린다
+    if (intensity >= 2) {
+      const mn = MELODY[q];
+      if (mn >= 0) bar(t, 0.085, 0.13, 'square', hz(mn + 24), 0.12);
+    }
+
+    // 3층 — 옥타브 위로 한 겹 더. 마지막 구역에서만 붙는다
+    if (intensity >= 3) {
+      const mn = MELODY[q];
+      if (mn >= 0) bar(t, 0.045, 0.10, 'square', hz(mn + 36), 0.30);
+    }
+  }
   // 박자를 setInterval 로 치지 않는다. 그건 몇십 ms 씩 흔들린다.
   // 오디오 시계에 앞으로 0.25초 안에 칠 것을 미리 예약한다.
   // 프레임이 밀려도 소리는 제자리에 떨어진다
@@ -434,7 +486,7 @@ const Sound = (() => {
     while (nextTime < ac.currentTime + 0.25) {
       playStep(step, nextTime);
       nextTime += BEAT / 4;
-      step = (step + 1) % 64;
+      step = (step + 1) % 64;   // 한 바퀴 64칸 = 여덟 마디
     }
   }
 
@@ -442,6 +494,47 @@ const Sound = (() => {
     if (clock) return;
     nextTime = ac.currentTime + 0.1;
     clock = setInterval(schedule, 40);
+  }
+
+  // 음높이가 뚝 떨어지는 짧은 소리.
+  //
+  // **녹음물만으로는 크아 소리가 안 난다.** 옛날 아케이드 게임 소리는 대부분
+  // 이 모양이다 — 한 음을 내면서 음높이를 빠르게 떨어뜨리거나 올린다.
+  // 물이 터지는 실체감은 녹음물이 주고, '이 게임 소리' 라는 인상은 이게 준다.
+  // 둘을 겹치는 게 요점이지 하나를 고르는 게 아니다
+  function sweep(o) {
+    if (muted || !ready) return;
+    const t = ac.currentTime + (o.delay || 0);
+
+    const osc = ac.createOscillator();
+    osc.type = o.wave || 'square';
+    osc.frequency.setValueAtTime(o.from, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, o.to), t + o.dur);
+
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(o.gain * (o.far ? o.far.gain : 1), t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
+
+    // 멀면 높은 데가 먼저 죽는다. 녹음물 쪽과 같은 규칙을 쓴다
+    let node = g;
+    if (o.far) {
+      const ff = ac.createBiquadFilter();
+      ff.type = 'lowpass';
+      ff.frequency.value = o.far.cut;
+      node.connect(ff);
+      node = ff;
+    }
+
+    const pn = panner(o.pan);
+
+    osc.connect(g); node.connect(pn); pn.connect(sfxBus);
+    if (o.send) {
+      const sg = ac.createGain(); sg.gain.value = o.send;
+      pn.connect(sg); sg.connect(verbSend);
+    }
+    osc.start(t);
+    osc.stop(t + o.dur + 0.02);
   }
 
   // ── 밖에서 쓰는 것 ───────────────────────────────────────────
@@ -504,9 +597,15 @@ const Sound = (() => {
     boom(pan, far) {
       if (!gate('boom', 60)) return;
       const k = rnd(0.86, 1.06);
-      play('boomBody',  { pan, far, gain: 0.95, rate: k * 0.9, send: 0.30 });
-      play('boomCrack', { pan, far, gain: 0.42, rate: k * 1.15, send: 0.22, delay: 0.008,
+      play('boomBody',  { pan, far, gain: 0.90, rate: k * 0.9, send: 0.30 });
+      play('boomCrack', { pan, far, gain: 0.38, rate: k * 1.15, send: 0.22, delay: 0.008,
                           cut: 5200, filter: 'lowpass' });
+
+      // 위에서 아래로 뚝 떨어지는 한 음을 얹는다. 물풍선이 '펑' 하고
+      // 주저앉는 소리를 이 한 줄이 만든다. 녹음물은 실체감을 주고 이건 성격을 준다
+      sweep({ pan, far, from: 460 * k, to: 90, dur: 0.16, gain: 0.30, wave: 'square' });
+      sweep({ pan, far, from: 900 * k, to: 240, dur: 0.09, gain: 0.14,
+              wave: 'triangle', delay: 0.01, send: 0.2 });
       duck(0.42, 0.28);
     },
 
@@ -514,13 +613,23 @@ const Sound = (() => {
     // 연속으로 성공하면 음이 올라간다. 숫자를 안 봐도 귀로 늘어난 걸 안다
     graze(n, pan, far) {
       const up = Math.min(n || 1, 5);
-      play('graze', { pan, far, gain: 0.85, rate: 1 + (up - 1) * 0.14, send: 0.45 });
-      play('graze', { pan, far, gain: 0.30, rate: 2 + (up - 1) * 0.28, send: 0.55, delay: 0.02 });
+      play('graze', { pan, far, gain: 0.80, rate: 1 + (up - 1) * 0.14, send: 0.45 });
+      play('graze', { pan, far, gain: 0.28, rate: 2 + (up - 1) * 0.28, send: 0.55, delay: 0.02 });
+
+      // 위로 올라가는 짧은 음. 연속으로 걸치면 한 음씩 더 올라간다.
+      // 올라가는 소리는 옛날부터 '잘했다' 는 뜻으로 쓰였다 — 배울 게 없는 신호다
+      const base = 620 * Math.pow(2, (up - 1) / 12);
+      sweep({ pan, far, from: base, to: base * 1.6, dur: 0.10, gain: 0.22,
+              wave: 'square', send: 0.35 });
     },
 
     // 연쇄. 한 번 터질 때마다 음이 올라간다. 몇 단인지가 귀로 들린다
     chain(n, pan, far) {
-      play('chain', { pan, far, gain: 0.45, rate: 1 + Math.min(n || 1, 8) * 0.08, send: 0.3 });
+      const k = Math.min(n || 1, 8);
+      play('chain', { pan, far, gain: 0.42, rate: 1 + k * 0.08, send: 0.3 });
+      // 연쇄가 이어질수록 한 음씩 올라간다. 몇 단인지가 귀로 들린다
+      sweep({ pan, far, from: 300 * Math.pow(2, k / 12), to: 700 * Math.pow(2, k / 12),
+              dur: 0.07, gain: 0.16, wave: 'square' });
     },
 
     trap(pan, far) {
