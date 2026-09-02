@@ -237,14 +237,21 @@ console.log('');
 console.log('=== 아트 디렉션: 장소마다 물건이 다른가 ===');
 console.log('');
 
-const wallKinds  = new Set(Art.PLACES.map((p) => p.wallKind));
-const crateKinds = new Set(Art.PLACES.map((p) => p.crateKind));
+// 9/2 부터 장소마다 무늬가 여럿이다. 한 조각 안에서 같은 그림이 줄줄이 붙으면
+// 물건이 아니라 벽지로 보여서, 칸 자리로 두세 종류를 섞는다.
+// 그래서 여기서 보는 것도 '장소의 무늬' 가 아니라 **장소의 무늬 조합**이다
+const wkOf = (p) => (p.wallKinds  || [p.wallKind]);
+const ckOf = (p) => (p.crateKinds || [p.crateKind]);
+const sig  = (p) => wkOf(p).join('+') + '/' + ckOf(p).join('+');
+
+const wallKinds  = new Set([].concat(...Art.PLACES.map(wkOf)));
+const crateKinds = new Set([].concat(...Art.PLACES.map(ckOf)));
 
 console.log('  벽 무늬 ' + [...wallKinds].join(' · '));
 console.log('  상자 무늬 ' + [...crateKinds].join(' · '));
 console.log('');
 
-check(Art.PLACES.every((p) => p.wallKind && p.crateKind),
+check(Art.PLACES.every((p) => wkOf(p).length && ckOf(p).length),
       '열 곳 전부 벽·상자 무늬가 붙어 있다');
 check(wallKinds.size >= 4 && crateKinds.size >= 4,
       '무늬가 네 가지 이상씩이다 (벽 ' + wallKinds.size + ', 상자 ' + crateKinds.size + ')');
@@ -255,7 +262,7 @@ for (let i = 0; i < Art.PLACES.length && !twin; ++i) {
     for (let j = i + 1; j < Art.PLACES.length; ++j) {
         const a = Art.PLACES[i], b = Art.PLACES[j];
         const d = (colorDist(a.floor, b.floor) + colorDist(a.wallTop, b.wallTop)) / 2;
-        if (d < 20 && a.crateKind === b.crateKind && a.wallKind === b.wallKind) {
+        if (d < 20 && sig(a) === sig(b)) {
             twin = a.name + ' / ' + b.name + ' (색거리 ' + d.toFixed(1) + ')';
             break;
         }

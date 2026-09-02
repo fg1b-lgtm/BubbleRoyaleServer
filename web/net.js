@@ -7,16 +7,18 @@
 // 여기는 화면을 모른다. 받은 것을 G 에 넣고 Hooks 를 부르기만 한다.
 // 그래서 tools/clienttest.js 가 화면 없이도 이 파일을 그대로 돌릴 수 있다.
 
-const PKT  = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7, RESTART:8 };
+const PKT  = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7,
+               RESTART:8, DASH:9 };
 const EVT  = { GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
-               FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15, PUSH:16 };
+               FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15, PUSH:16,
+               DASH:17 };
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3, BOX:4 };
-const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4 };
+const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4, DASH:5 };
 const SECT = { OPEN:0, WARNING:1, FLOODED:2 };
 const PHASE= { WAITING:0, COUNTDOWN:1, PLAYING:2, OVER:3 };
 
 // PlayerState.flags. Common/Protocol.h 와 자리가 같아야 한다
-const PF = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8, MOVING:16,
+const PF = { ALIVE:1, TRAPPED:2, INVULN:4, DROWNING:8, MOVING:16, DASHING:128,
              FACE_SHIFT:5, FACE_MASK:3 << 5 };
 const FACE = { DOWN:0, LEFT:1, RIGHT:2, UP:3 };
 
@@ -167,6 +169,11 @@ function onSnapshot(v) {
     p.power_lv  = v.getUint8(o + 9);
     p.speed_lv  = v.getUint8(o + 10);
 
+    // 대쉬. 255 면 안 먹은 것, 아니면 남은 쿨타임 틱
+    const dash  = v.getUint8(o + 11);
+    p.has_dash  = (dash !== 255);
+    p.dash_cd   = p.has_dash ? dash : 0;
+
     // 보는 쪽과 걷는지는 서버가 flags 에 얹어 보낸다.
     // 위치 두 개를 빼서 알아낼 수도 있지만, 서 있으면 위치가 안 변해서
     // 마지막으로 보던 쪽을 잃어버린다
@@ -181,7 +188,7 @@ function onSnapshot(v) {
 
     G.players.set(id, p);
     seen.add(id);
-    o += 11;
+    o += 12;
   }
   // 안 온 사람은 **지우지 않고 안 보이는 것으로 표시만 한다.**
   //
@@ -225,6 +232,17 @@ function sendMove(dx, dy) {
   const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
   b.setUint16(0, HEADER_SIZE + 2, true);
   b.setUint16(2, PKT.MOVE, true);
+  b.setInt8(4, dx);
+  b.setInt8(5, dy);
+  send(b.buffer);
+}
+
+// 어느 쪽으로 대쉬할지만 보낸다. 되는지 안 되는지는 서버가 정한다 —
+// 쿨타임도 갖고 있나도 여기서 안 본다. 여기서 막으면 클라를 고친 사람은 안 막힌다
+function sendDash(dx, dy) {
+  const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
+  b.setUint16(0, HEADER_SIZE + 2, true);
+  b.setUint16(2, PKT.DASH, true);
   b.setInt8(4, dx);
   b.setInt8(5, dy);
   send(b.buffer);

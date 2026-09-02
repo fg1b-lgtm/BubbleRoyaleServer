@@ -343,6 +343,9 @@ for (let y = 0; y < MAP_H; ++y) {
     }));
 }
 
+// PlayerState 한 사람이 몇 바이트인가. Protocol.h 의 struct 와 같아야 한다
+const PS = 12;
+
 // SNAPSHOT. 사람 넷을 서로 다른 방향과 상태로 넣는다.
 //   p0 오른쪽을 보며 걷는 중   p1 위를 보며 서 있음
 //   p2 갇힘                     p3 물에 잠김 + 무적
@@ -351,7 +354,10 @@ function snapshot(tick, phase, ringOn, want, wantB, dry) {
     // '아무도 없는 판' 을 만들 수 없다. 연출을 재려면 조용한 판이 필요하다
     const np = (want === undefined ? 4 : want);
     const nb = (wantB === undefined ? 2 : wantB);
-    return pkt(7, 28 + np * 11 + nb * 4, (v, o) => {
+    // 9/2 에 PlayerState 가 11 -> 12 바이트가 됐다 (대쉬 한 바이트).
+    // 여기 숫자를 손으로 들고 있으면 서버를 고친 날 시험만 조용히 틀린다.
+    // Protocol.h 에서 읽어오지 못하는 자리라, 최소한 한 곳에만 적는다
+    return pkt(7, 28 + np * PS + nb * 4, (v, o) => {
         v.setUint32(o, tick, true);
         // dry 면 아홉 구역이 전부 멀쩡하다.
         // 침수 예고 구역이 있으면 거기 비가 내리는데, 그게 확률이라
@@ -381,7 +387,7 @@ function snapshot(tick, phase, ringOn, want, wantB, dry) {
             1 | 8 | 4,           // 물에 잠김 + 무적 + 아래
         ];
         for (let i = 0; i < np; ++i) {
-            const p = o + 28 + i * 11;
+            const p = o + 28 + i * PS;
             v.setUint8(p, i);
             v.setUint16(p + 1, ((7 + i * 3) % 40) * 256 + tick * 40, true);
             v.setUint16(p + 3, ((9 + i) % 34) * 256, true);
@@ -391,9 +397,13 @@ function snapshot(tick, phase, ringOn, want, wantB, dry) {
             v.setUint8(p + 8, i);
             v.setUint8(p + 9, i);
             v.setUint8(p + 10, i);
+
+            // 대쉬. 하나 걸러 하나만 갖고 있게 해서 HUD 칸이 늘었다 줄었다 하는 것도 본다.
+            // 255 가 '안 먹음' 이다
+            v.setUint8(p + 11, (i % 2) ? 255 : (i * 20));
         }
         for (let i = 0; i < nb; ++i) {
-            const b = o + 28 + np * 11 + i * 4;
+            const b = o + 28 + np * PS + i * 4;
             v.setUint8(b, (10 + i * 4) % 40);
             v.setUint8(b + 1, 12 + (i % 3));
             v.setUint8(b + 2, i === 0 ? 70 : 5);   // 하나는 갓 놓은 것, 하나는 터지기 직전

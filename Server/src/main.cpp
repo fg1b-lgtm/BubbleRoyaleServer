@@ -231,6 +231,10 @@ static int BuildSnapshot(char* buf, int watch)
         ps.power_lv  = (uint8_t)p.power_lv;
         ps.speed_lv  = (uint8_t)p.speed_lv;
 
+        // 대쉬 한 바이트. 안 먹었으면 255, 먹었으면 남은 쿨타임
+        ps.dash = p.has_dash ? (uint8_t)(p.dash_cd > 254 ? 254 : p.dash_cd) : 255;
+        if (p.dash_ticks > 0) ps.flags |= PF_DASHING;
+
         memcpy(buf + pos, &ps, sizeof(ps));
         pos += (int)sizeof(ps);
         ++sh.player_count;
@@ -439,6 +443,20 @@ static void HandleJob(const Job* j){
                     }
                     const MoveBody* mb = (const MoveBody*)(j->data + HEADER_SIZE);
                     SetInput(s, mb->dx, mb->dy);
+                    break;
+                }
+
+                case PKT_DASH: {
+                    if (h->size != DASH_PACKET_SIZE) {
+                        printf("[Session] %s:%d bad dash size %u\n", s->ip, s->port, h->size);
+                        CloseSession(s);
+                        break;
+                    }
+                    const DashBody* db = (const DashBody*)(j->data + HEADER_SIZE);
+                    int slot = FindPlayer(s);
+                    if (slot >= 0) {
+                        StartDash(slot, db->dx, db->dy);
+                    }
                     break;
                 }
 

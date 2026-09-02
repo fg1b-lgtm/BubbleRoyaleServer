@@ -72,42 +72,42 @@ const Art = (() => {
       floor: '#d2bfb2', floorAlt: '#cdb9ab', joint: '#c2a998', fleck: '#c9b2a3',
       wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
       crate: '#d6945a', crateTop: '#ddb897', crateSide: '#b96f2e',
-      crateKind: 'crate', wallKind: 'brick',
+      mark: 'well', crateKinds: ['crate', 'stone'], wallKinds: ['brick', 'brick', 'rock'],
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
       floor: '#c7c2b1', floorAlt: '#c1bdaa', joint: '#b3ae97', fleck: '#bcb7a2',
       wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
       crate: '#c69c29', crateTop: '#d8bd73', crateSide: '#9e7d20',
-      crateKind: 'barrel', wallKind: 'column',
+      mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['column', 'column', 'brick'],
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
       floor: '#c3c2c1', floorAlt: '#bebcbb', joint: '#afadac', fleck: '#b8b6b5',
       wallTop: '#868079', wallSide: '#615d57', wallEdge: '#484541',
       crate: '#ec893d', crateTop: '#eab48a', crateSide: '#cc6414',
-      crateKind: 'barrel', wallKind: 'metal',
+      mark: 'car', crateKinds: ['barrel', 'crate'], wallKinds: ['metal', 'metal', 'brick'],
       step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
       floor: '#9ad08c', floorAlt: '#90cc81', joint: '#75bf63', fleck: '#85c775',
       wallTop: '#429236', wallSide: '#306a27', wallEdge: '#244f1d',
       crate: '#d4945d', crateTop: '#dcb899', crateSide: '#b87031',
-      crateKind: 'crate', wallKind: 'wood',
+      mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
       floor: '#b3c99f', floorAlt: '#acc496', joint: '#99b77e', fleck: '#a4bf8d',
       wallTop: '#638c48', wallSide: '#486534', wallEdge: '#354b27',
       crate: '#d79174', crateTop: '#deb7a5', crateSide: '#c7663d',
-      crateKind: 'sack', wallKind: 'wood',
+      mark: 'tree', crateKinds: ['sack', 'crate'], wallKinds: ['wood', 'wood', 'rock'],
       step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
       floor: '#dcc072', floorAlt: '#d8ba65', joint: '#cfa940', fleck: '#d5b356',
       wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
       crate: '#be9b86', crateTop: '#d0bbaf', crateSide: '#a7775b',
-      crateKind: 'stone', wallKind: 'rock',
+      mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
       step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
@@ -119,28 +119,28 @@ const Art = (() => {
       floor: '#deb9c0', floorAlt: '#dbb2ba', joint: '#d3a0aa', fleck: '#d8abb4',
       wallTop: '#c46185', wallSide: '#9d3a5e', wallEdge: '#752b46',
       crate: '#cd9930', crateTop: '#d8bb82', crateSide: '#a47a26',
-      crateKind: 'sack', wallKind: 'brick',
+      mark: 'well', crateKinds: ['sack', 'crate'], wallKinds: ['brick', 'brick', 'wood'],
       step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
       floor: '#cbc395', floorAlt: '#c6be8a', joint: '#b8af70', fleck: '#c0b880',
       wallTop: '#89843d', wallSide: '#635f2c', wallEdge: '#494721',
       crate: '#e68599', crateTop: '#e9b0bb', crateSide: '#db516c',
-      crateKind: 'barrel', wallKind: 'rock',
+      mark: 'palm', crateKinds: ['barrel', 'stone'], wallKinds: ['rock', 'rock', 'wood'],
       step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
       floor: '#d2bbd2', floorAlt: '#ceb5ce', joint: '#c2a4c2', fleck: '#c9aec9',
       wallTop: '#a76da9', wallSide: '#7e4b80', wallEdge: '#5e385f',
       crate: '#b992db', crateTop: '#cdb6e2', crateSide: '#9f6acd',
-      crateKind: 'ice', wallKind: 'rock',
+      mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'column'],
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
       floor: '#c5bde5', floorAlt: '#c0b7e3', joint: '#b1a6dd', fleck: '#bab0e0',
       wallTop: '#8873d0', wallSide: '#6347c2', wallEdge: '#4a3297',
       crate: '#ce9758', crateTop: '#d9ba96', crateSide: '#af7533',
-      crateKind: 'crate', wallKind: 'metal',
+      mark: 'car', crateKinds: ['crate', 'barrel'], wallKinds: ['metal', 'metal', 'wood'],
       step: 'wood' },
   ];
 
@@ -288,12 +288,18 @@ const Art = (() => {
         g.fillRect(x * T, y * T, T, V.P);
         g.fillRect(x * T, y * T, V.P, T);
 
-        if (h > 0.80) {
-          // 티끌 한 점. 격자에 맞춰서 찍는다
-          g.fillStyle = css(fleck, 0.7);
-          const s = (h > 0.95 ? 2 : 1) * V.P;
-          pr(g, x * T + V.P * 2 + ((h * 97) | 0) % (T - V.P * 4),
-                y * T + V.P * 2 + ((h * 131) | 0) % (T - V.P * 4), s, s);
+        // 바닥 무늬 한 장. 열에 여섯은 빈 장이 뽑혀서 아무것도 안 그린다
+        const mix4 = FLOOR_MIX[th.step] || FLOOR_MIX.stone;
+        const fk = mix4[tileHash(x, y) % mix4.length];
+        if (fk !== 'plain') {
+          const dp = Math.max(1, Math.round(T / 16));
+          const fc = bakeTile('f:' + fk + ':' + th.name + ':' + dp,
+                              FLOOR_DOTS[fk],
+                              { '.': null,
+                                'j': css(joint, 0.55),
+                                'f': css(fleck, 0.85),
+                                'd': css(darker(base, 0.16), 0.60) }, dp);
+          blitTile(g, fc, x * T, y * T, dp);
         }
       }
     }
@@ -374,12 +380,384 @@ const Art = (() => {
     };
   }
 
+  // 물건 하나를 통째로 한 번만 굽는다. 32x32 라 칸마다 찍으면 한 물건에
+  // 1024 번이고 판에 수십 개가 뜬다. 구워두고 네 번 오려 붙인다
+  function bakeLandmark(th, P) {
+    const key = 'L:' + th.mark + ':' + th.name + ':' + P;
+    let cv = tileCache.get(key);
+    if (cv) return cv;
+
+    const rows = LANDMARK[th.mark];
+    cv = document.createElement('canvas');
+    cv.width = 32 * P; cv.height = 32 * P;
+    const c = cv.getContext('2d');
+
+    // 잎과 줄기와 유리는 **장소 색을 안 따른다.**
+    // 야자수가 장소마다 다른 색이면 그건 야자수가 아니라 색칠한 벽이다.
+    // 장소 색은 몸통(a·b·c)과 강조(r)에만 들어간다
+    const top = rgb(th.wallTop);
+    const pal = {
+      '.': null,
+      'o': 'rgba(10,12,18,0.95)',
+      'a': css(lighter(top, 0.42)),
+      'b': css(top),
+      'c': css(darker(top, 0.40)),
+      'r': css(rgb(th.wallSide)),
+      'g': '#3f8f45', 'G': '#63bd5c',
+      'n': '#7a5330', 'N': '#a2743f',
+      'w': '#8fd0f0', 'y': '#ffd85e', 't': '#2b2f38',
+    };
+
+    for (let y = 0; y < 32; ++y) {
+      const row = rows[y];
+      for (let x = 0; x < 32; ++x) {
+        const col = pal[row[x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x * P, y * P, P, P);
+      }
+    }
+
+    tileCache.set(key, cv);
+    return cv;
+  }
+
   function blitTile(g, cv, px, py, P) {
     const smooth = g.imageSmoothingEnabled;
     g.imageSmoothingEnabled = false;
     g.drawImage(cv, Math.round(px / P) * P, Math.round(py / P) * P);
     g.imageSmoothingEnabled = smooth;
   }
+  // ── 바닥 무늬 ───────────────────────────────────────────────
+  //
+  // 바닥은 화면에서 제일 넓은데 제일 비어 있었다. 색 두 개를 번갈아 깔고
+  // 티끌을 한 점 찍는 게 전부라, 확대해 보면 **인쇄물 같았다.**
+  //
+  // 픽셀 게임에서 바닥이 살아 있는 건 무늬가 화려해서가 아니라
+  // **가끔 다른 게 나오기 때문**이다. 열에 여섯은 그냥 비우고 나머지에만 넣는다.
+  // 다 넣으면 그건 무늬가 아니라 또 다른 벽지다.
+  //
+  // 자리로 정한다. 판이 도는 동안 바뀌면 바닥이 끓어 보인다
+  //
+  //   j 이음선색   f 티끌   d 어두운 점   . 비워둠
+  const FLOOR_DOTS = {
+    'plain': [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+    'crack': [
+      '................',
+      '................',
+      '.....d..........',
+      '......d.........',
+      '.......dd.......',
+      '.........d......',
+      '..........d.....',
+      '................',
+      '................',
+      '................',
+      '..d.............',
+      '...dd...........',
+      '.....d..........',
+      '................',
+      '................',
+      '................',
+    ],
+    'pebble': [
+      '................',
+      '................',
+      '...ff...........',
+      '...ff...........',
+      '................',
+      '..........ff....',
+      '..........ff....',
+      '................',
+      '................',
+      '.....ff.........',
+      '.....ff.........',
+      '................',
+      '................',
+      '.............f..',
+      '................',
+      '................',
+    ],
+    'grate': [
+      '................',
+      '..dddddddddd....',
+      '..d........d....',
+      '..d.jjjjjj.d....',
+      '..d........d....',
+      '..d.jjjjjj.d....',
+      '..d........d....',
+      '..d.jjjjjj.d....',
+      '..d........d....',
+      '..dddddddddd....',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+    'tuft': [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.......f........',
+      '......fdf.......',
+      '.....f.d.f......',
+      '......fdf.......',
+      '.......d........',
+      '................',
+      '...f............',
+      '..fdf...........',
+      '...d............',
+      '................',
+      '................',
+    ],
+    'tile4': [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.......j........',
+      '.jjjjjjjjjjjjjj.',
+      '.......j........',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+  };
+
+  // 장소마다 바닥에 뭐가 떨어져 있나. 돌바닥엔 금이, 잔디엔 풀이, 모래엔 자갈이 있다
+  const FLOOR_MIX = {
+    stone:  ['plain', 'plain', 'crack', 'tile4'],
+    marble: ['plain', 'plain', 'tile4', 'tile4'],
+    grass:  ['plain', 'plain', 'tuft',  'tuft'],
+    sand:   ['plain', 'plain', 'pebble', 'plain'],
+    wood:   ['plain', 'plain', 'tile4', 'crack'],
+    metal:  ['plain', 'plain', 'grate', 'plain'],
+    ice:    ['plain', 'plain', 'crack', 'crack'],
+    water:  ['plain', 'plain', 'pebble', 'plain'],
+  };
+  // 칸 자리로 정해지는 값. 씨앗도 시간도 안 쓴다 —
+  // 같은 칸은 언제 다시 봐도 같은 그림이어야 한다.
+  // FNV 를 줄인 것이고, 여기서 필요한 건 흩어짐뿐이라 이걸로 충분하다
+  function tileHash(x, y) {
+    let h = (x * 73856093) ^ (y * 19349663);
+    h = (h ^ (h >>> 13)) >>> 0;
+    return h;
+  }
+
+  // ── 안 부서지는 벽 넷이 붙으면 물건이 된다 ─────────────────
+  //
+  // 안 부서지는 벽은 판에서 제일 많은 물건인데 제일 심심했다. 어디를 봐도
+  // 같은 네모라서 **판을 봐도 어디인지 기억이 안 났다.**
+  //
+  // 넷이 짝수 자리에 딱 붙어 있으면 그 2x2 를 한 물건으로 그린다.
+  // 사막이면 야자수, 부두면 자동차, 마을이면 큰 나무. 크기가 두 배라
+  // 눈이 먼저 거기로 가고, 그게 그 조각의 이름표가 된다.
+  //
+  // 32x32 다. 타일이 16 점이니 정확히 넷을 덮는다.
+  // 벽을 먼저 그리고 그 위에 덮으므로 '.' 은 벽이 비쳐 보이는 자리다 —
+  // 그래서 물건이 무엇이든 **막힌 것으로는 계속 읽힌다.**
+  //
+  //   o 테두리   a 밝은 면   b 바탕   c 그늘   r 장소 강조색
+  //   g 잎   G 밝은 잎   n 나무줄기   N 밝은 줄기   w 물·유리   y 빛나는 것   t 타이어
+  const LANDMARK = {
+    'palm': [
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '..............ooo...............',
+      '.............ogggo....ooo.......',
+      '......ooo....oGggo...ogggo......',
+      '.....ogggo...oGggo..ogGggo......',
+      '.....oGgggo..oGgggo.oGgggo......',
+      '.....ogGgggo.ogGggoogGggo..ooo..',
+      '......ogGGggoooGggooGgggooogggo.',
+      '..oooo.oggGgggoGggoGgggoogGGggo.',
+      '.oggggoooggGgggGGGgGggggGGggggo.',
+      '.oGGGgggggggGgGGGGGgggGGgggggo..',
+      '.ogggGGGGggggGGGGGGGGGgggggooooo',
+      '..oogggggGGGGGGGGGGGgggggggggggg',
+      '....oooogggggGGGGGGGGGGGGGGGGGgg',
+      '........oooggyGGGGGygggggggggggg',
+      '...........ooooGGGgggggggooooooo',
+      '...............oynnoooooo.......',
+      '..............oNnnno............',
+      '...............onnno............',
+      '...............oNnno............',
+      '..............onnnno............',
+      '..............oNnnno............',
+      '..............onnno.............',
+      '..............onNno.............',
+      '..............onnno.............',
+      '..............oNnno.............',
+    ],
+    'car': [
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '........oooooooooooooooo........',
+      '.......orrrrrrrrrrrrrrrro.......',
+      '.......orrrrrrrrrrrrrrrro.......',
+      '.......orrwwwwwwrwwwwwwro.......',
+      '.......orrwwwwwwrwwwwwwro.......',
+      '.......orrwwwwwwrwwwwwwro.......',
+      '.......orrwwwwwwrwwwwwwro.......',
+      '.......orrwwwwwwrwwwwwwro.......',
+      '...ooooorrwwwwwwrwwwwwwrooooo...',
+      '..oaaaaaaaaaaaaaaaaaaaaaaaaaao..',
+      '..orrrrrrrrrrrrrrrrrrrrrrrrrro..',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrryyo.',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrryyo.',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrryyo.',
+      '..orrrrrtttrrrrrrrrrrrtttrrrro..',
+      '..occcctttttccccccccctttttccco..',
+      '..occctttatttccccccctttatttcco..',
+      '...ooottaaattooooooottaaattoo...',
+      '.....otttattto.....otttattto....',
+      '......ottttto.......ottttto.....',
+      '.......ottto.........ottto......',
+      '........ooo...........ooo.......',
+    ],
+    'tree': [
+      '................................',
+      '................................',
+      '................................',
+      '...............ooo..............',
+      '............ooogggooo...........',
+      '..........ooGGGggggggo..........',
+      '.........oGGGGGGGgggggo.........',
+      '........oGGGGGGGGGgggggo........',
+      '........oGGGGGGGGGggGGGgo.......',
+      '.......oGGGGGGGGGGGGGGGGgo......',
+      '.......oGGGGGGGGGGGGGGGGGo......',
+      '......ooGGGGGGGGGGGGGGGGGGo.....',
+      '.....ogggGGGGGGGGGGGGGGGGGgo....',
+      '....oggggGGGGGGGGGGGGGGGGGggo...',
+      '...oggggggGGGGGGGgGGGGGGGggggo..',
+      '...oggggggggGGGggggGGGGGgggggo..',
+      '..ogggggggggggggggggGGGgggggggo.',
+      '..ogggggggggggggggggggggggggggo.',
+      '..ogggggggggggggggggggggggggggo.',
+      '...ogggggggggggggggggggggggggo..',
+      '...ogggggggggggggggggggggggggo..',
+      '....ogggggggggggggggggggggggo...',
+      '.....ogggggggoNgggnogggggggo....',
+      '......oogggoooNNnnnooogggoo.....',
+      '........ooo..oNNnnno..ooo.......',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+      '.............oNNnnno............',
+    ],
+    'well': [
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................oo..............',
+      '...............orro.............',
+      '..............onnnro............',
+      '..............onnnro............',
+      '.............ornnnrro...........',
+      '............orannnrrro..........',
+      '............orannnorro..........',
+      '...........orarnnnorrro.........',
+      '..........oraronnnoorrro........',
+      '..........oraoonnnooorro........',
+      '.........orarnnnnnnnnrrro.......',
+      '.......ooorrnnnnnnnnnnrroo......',
+      '......oaaannnnnnnnnnnnnaaao.....',
+      '......oaaaaaawwwwwwwaaaaaao.....',
+      '......obccbbcwwwwwwwccbbcco.....',
+      '......obccbbcwwwwwwwccbbcco.....',
+      '......obccbbcwwwwwwwccbbcco.....',
+      '......obccbbccbbccbbccbbcco.....',
+      '......obccbbccbbccbbccbbcco.....',
+      '......obccbbccbbccbbccbbcco.....',
+      '......occccccccccccccccccco.....',
+      '......occccccccccccccccccco.....',
+      '.......ooooooooooooooooooo......',
+      '................................',
+    ],
+    'rock': [
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '...............oooo.............',
+      '..............oaaaboo...........',
+      '.............oaaaaabbo..........',
+      '............oaaaaaaabbo.........',
+      '...........obaaaaaaabbbo........',
+      '..........oobaaaaaaabbbo........',
+      '.......ooobbbbaaaaabbbbbo.......',
+      '......obaaabbbbaaabbbbbbo.......',
+      '.....obaaaaabbbbbbbbbbbbo.......',
+      '....obaaaaaaabbbbbbbbbbboo......',
+      '...obaaaaaaaaabbbbbaaabbbboo....',
+      '...obaaaaaaaaabbbbaaaaabbbbbo...',
+      '...obaaaaaaaaabbbaaaaaaabbbbo...',
+      '..obbbaaaaaaabbbbaaaaaaabbbbbo..',
+      '..obbbbaaaaabbbbbaaaaaaabbbbbo..',
+      '..obbbbbaaabbcccbbaaaaabbbbbbbo.',
+      '...obbbbbbbcccccccbaaabbbbbbbbo.',
+      '...obbbbbbcccccccccbbbbbcccbbbo.',
+      '...obbbbbbcccccccccbbbbcccccbo..',
+      '....obbbbcccccccccccbbccccccco..',
+      '.....obbbcccccccccccbbccccccco..',
+      '......obbcccccccccccbbccccccco..',
+      '.......ooocccccccccbbbbccccco...',
+      '.........occcccccccoobbbccco....',
+    ],
+  };
   // ── 벽과 상자를 도트로 찍는다 ───────────────────────────────
   //
   // 9/2 까지 비율로 그렸다. `T * 0.34` 같은 식으로 사각형을 얹는 방식이라,
@@ -823,18 +1201,49 @@ const Art = (() => {
         // 16x16 을 한 번 구워서 붙이면 어느 배율에서든 도트가 도트로 남는다
         {
           const dp = Math.max(1, Math.round(T / 16));
-          const rows = WALL_DOTS[th.wallKind] || WALL_DOTS.rock;
+          // **한 조각 안에서도 무늬를 섞는다.**
+          //
+          // 종류를 장소마다 하나로 뒀더니, 확대해 보면 같은 그림이 줄줄이 붙어서
+          // 물건이 아니라 **벽지**로 보였다. 판이 지루하지 않은 건 색이 화려해서가
+          // 아니라 같은 게 두 번 연속 안 나오기 때문이다.
+          //
+          // 자리로 정한다. 무작위면 매 프레임 바뀌고 시간이면 깜빡인다.
+          // 같은 칸은 언제 봐도 같은 무늬여야 판이 기억되는 장소가 된다
+          const kinds = th.wallKinds || [th.wallKind || 'rock'];
+          const wk = kinds[tileHash(x, y) % kinds.length];
+          const rows = WALL_DOTS[wk] || WALL_DOTS.rock;
           // 무늬 대비를 세게 준다.
           //
           // 처음엔 밝은 면을 원래 색에서 조금만 올렸더니 무늬가 거의 안 보였다.
           // 낮은 해상도에서는 **한 점이 곧 정보**라, 옆 점과 명도가 비슷하면
           // 그 점은 없는 것과 같다. 픽셀 아트가 색을 적게 쓰면서도 또렷한 이유가
           // 색마다 명도를 확실히 벌려놓기 때문이다
-          const cv = bakeTile('w:' + th.wallKind + ':' + th.name + ':' + dp, rows,
+          const cv = bakeTile('w:' + wk + ':' + th.name + ':' + dp, rows,
                               rolePal(th.wallTop,
                                       css(lighter(rgb(th.wallTop), 0.40)),
                                       css(darker(rgb(th.wallTop), 0.42))), dp);
           blitTile(g, cv, px, Y - V.WH, dp);
+
+          // 넷이 붙었으면 그 위에 물건을 덮는다.
+          //
+          // 짝수 자리에서만 묶는다. 아무 데서나 묶으면 벽 하나가 여러 묶음에
+          // 동시에 속해서 어느 쪽으로 그릴지가 안 정해진다. 짝수 격자면 하나뿐이다.
+          //
+          // 칸마다 자기 몫(16x16)만 오려 붙인다. 줄 단위로 그리는 구조라
+          // 두 줄짜리 그림을 한 번에 그리면 앞뒤 순서가 무너진다
+          const qx = x & ~1, qy = y & ~1;
+          if (th.mark && LANDMARK[th.mark]
+              && isWall(qx, qy) && isWall(qx + 1, qy)
+              && isWall(qx, qy + 1) && isWall(qx + 1, qy + 1)) {
+            const lc = bakeLandmark(th, dp);
+            const sx = (x - qx) * 16 * dp, sy = (y - qy) * 16 * dp;
+            const smooth = g.imageSmoothingEnabled;
+            g.imageSmoothingEnabled = false;
+            g.drawImage(lc, sx, sy, 16 * dp, 16 * dp,
+                        Math.round(px / dp) * dp,
+                        Math.round((Y - V.WH) / dp) * dp, T, T);
+            g.imageSmoothingEnabled = smooth;
+          }
 
           // 윗변 림. 물건이 바닥에서 떠 보이게 하는 한 줄이다.
           // 위쪽에 벽이 이어져 있으면 안 긋는다 — 덩어리 한가운데에 줄이 생기면
@@ -879,8 +1288,10 @@ const Art = (() => {
         g.fillStyle = 'rgba(0,0,0,0.30)';
         pr(g, px + T * 0.14, Y + T * 0.80, T * 0.74, T * 0.10);
 
-        const rows = CRATE_DOTS[th.crateKind] || CRATE_DOTS.crate;
-        const cv = bakeTile('c:' + th.crateKind + ':' + th.name + ':' + dp, rows,
+        const kinds = th.crateKinds || [th.crateKind || 'crate'];
+        const ck = kinds[tileHash(x, y) % kinds.length];
+        const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
+        const cv = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
                             rolePal(th.crate, th.crateTop, th.crateSide), dp);
         blitTile(g, cv, px, Y - V.CH, dp);
 
@@ -1331,82 +1742,261 @@ const Art = (() => {
   const spriteCache = new Map();
   const SPRITE_FRAMES = 8;
 
-  function bakeChar(key, r, hex, o) {
+  // ── 사람을 도트로 찍는다 ────────────────────────────────────
+  //
+  // 9/2 까지 타원을 겹쳐 그렸다. 머리 타원, 몸 타원, 발 타원.
+  // 그래서 아무리 만져도 둥글둥글했다 — **곡선을 그리면 곡선이 나온다.**
+  //
+  // 픽셀 게임의 캐릭터가 또렷한 건 색이 예뻐서가 아니라 **점 수가 적어서**다.
+  // 16x20 이면 눈이 한 점, 팔이 한 줄, 발이 두 점이다. 그 안에서 뭘 살릴지
+  // 고르고 나면 나머지는 저절로 각이 진다. 크아 캐릭터도, 옛날 액션 게임들도
+  // 대개 이 언저리다 — 넓게 잡아야 사람 하나에 16~24 점.
+  //
+  // 머리가 11줄, 몸이 7줄, 발이 2줄이다. 머리를 크게 잡는 건 취향이 아니라
+  // 작은 화면에서 **누구인지 읽히는 곳이 얼굴뿐**이기 때문이다.
+  //
+  //   o 테두리   H 모자 밝은 면   h 모자   s 살결   e 눈   m 입
+  //   b 몸(팀색)   d 몸 그늘   f 신발   . 비워둠
+  //
+  // 팀색은 모자와 몸 두 군데에 들어간다. 한 군데면 24명 중에 누가 누군지
+  // 안 보이고, 온몸이면 실루엣이 뭉개진다
+  const CHAR_BODY = {
+    'down': [
+      '.....oooooo.....',
+      '...ooHHHHHHoo...',
+      '..oHHHHHHHHHHo..',
+      '..oHHHHHHHHHHo..',
+      '.oHHHHHHHHHHHHo.',
+      '.osssssssssssso.',
+      '.ossessssssesso.',
+      '.ossessssssesso.',
+      '.osssssssssssso.',
+      '..ossssmmsssso..',
+      '...oossssssoo...',
+      '.....oooooo.....',
+      '...oobbbbbboo...',
+      '..obbbbbbbbbbo..',
+      '.sobbbddddbbbos.',
+      '.sobbbddddbbbos.',
+      '.sobbbbbbbbbbos.',
+      '..obbbbbbbbbbo..',
+    ],
+    'side': [
+      '.....oooooo.....',
+      '...ooHHHHHHoo...',
+      '..oHHHHHHHHHHo..',
+      '..oHHHHHHHHHHo..',
+      '.oHHHHHHHHHHHHo.',
+      '.osssssssssssso.',
+      '.ossssssseesso..',
+      '.ossssssseesso..',
+      '.ossssssssssso..',
+      '..osssssmmsso...',
+      '...oossssssoo...',
+      '.....oooooo.....',
+      '...oobbbbbboo...',
+      '..obbbbbbbbbbo..',
+      '..obbbbbdddbos..',
+      '..obbbbbdddbos..',
+      '..obbbbbbbbbbo..',
+      '..obbbbbbbbbbo..',
+    ],
+    'up': [
+      '.....oooooo.....',
+      '...ooHHHHHHoo...',
+      '..oHHHHHHHHHHo..',
+      '..oHHHHHHHHHHo..',
+      '.oHHHHHHHHHHHHo.',
+      '.oHHHHHHHHHHHHo.',
+      '.oHHHHHHHHHHHHo.',
+      '.oHHHhhhhhhHHHo.',
+      '.oHhhhhhhhhhhHo.',
+      '..ohhhhhhhhhho..',
+      '...oohhhhhhoo...',
+      '.....oooooo.....',
+      '...oobbbbbboo...',
+      '..obbbbbbbbbbo..',
+      '.sobbbddddbbbos.',
+      '.sobbbddddbbbos.',
+      '.sobbbbbbbbbbos.',
+      '..obbbbbbbbbbo..',
+    ],
+  };
+
+  // 다리만 갈아 끼운다. 걸을 때 몸통까지 다시 그릴 이유가 없고,
+  // 발 두 점이 번갈아 뜨는 것만으로 걷는 것으로 읽힌다
+  const CHAR_LEGS = {
+    'idle': [
+      '...ooffooffoo...',
+      '....offo.offo...',
+    ],
+    'a': [
+      '...ooffooffoo...',
+      '....offo.oo.....',
+    ],
+    'b': [
+      '...ooffooffoo...',
+      '.....oo.offo....',
+    ],
+  };
+  // 머리 위 장식 여덟 가지.
+  //
+  // 색만으로는 24명을 못 가른다. 여덟 색을 세 번 돌려 쓰는 데다,
+  // 화면이 작아지면 옆 사람과 색이 섞여 보인다.
+  // **실루엣이 다르면 색이 안 보여도 구분된다** — 픽셀 게임이 캐릭터마다
+  // 머리 모양을 바꾸는 이유가 그것이다. 몸을 바꾸면 실루엣이 무너지니 머리만 바꾼다.
+  //
+  // 위 세 줄에만 덮어 그린다. 얼굴은 건드리지 않는다
+  const CHAR_HATS = [
+    [
+      '................',
+      '................',
+      '................',
+    ],
+    [
+      '..oo........oo..',
+      '..oHo......oHo..',
+      '..oHHo....oHHo..',
+    ],
+    [
+      '.......oo.......',
+      '.......ok.......',
+      '......okko......',
+    ],
+    [
+      '................',
+      '................',
+      '.oooooooooooooo.',
+    ],
+    [
+      '.....o....o.....',
+      '.....k....k.....',
+      '................',
+    ],
+    [
+      '.......oo.......',
+      '......oHHo......',
+      '......oHHo......',
+    ],
+    [
+      '....o..oo..o....',
+      '....ok.oo.ko....',
+      '...okk.oo.kko...',
+    ],
+    [
+      '...o......o.....',
+      '...ok.....ok....',
+      '...okk....okk...',
+    ],
+  ];
+  // 자세 하나를 종이에 굽는다. 도트를 그대로 찍으므로 확대해도 도트로 남는다
+  function bakeChar(key, hex, o) {
     let sp = spriteCache.get(key);
     if (sp) return sp;
 
-    const P = V.P;
-    const halfW = r * 1.15, up = r * 1.55, down = r * 1.20;
+    // 옆을 볼 때는 오른쪽 것을 뒤집어 쓴다. 왼쪽 지도를 따로 그리면
+    // 두 장이 미묘하게 달라져서 방향을 바꿀 때 흔들린다
+    const face = o.face | 0;                       // 0 아래 1 오른 2 위 3 왼
+    const key3 = (face === 2) ? 'up' : (face === 0 ? 'down' : 'side');
+    const flip = (face === 3);
 
-    const sw = Math.max(4, Math.round(halfW * 2 / P));
-    const sh = Math.max(4, Math.round((up + down) / P));
+    const legs = o.moving ? ((o.frame & 2) ? 'b' : 'a') : 'idle';
+    const rows = CHAR_BODY[key3].concat(CHAR_LEGS[legs]);
 
+    const W = 16, TOP = 3, H = rows.length + TOP;   // 장식이 올라갈 자리 세 줄
     const cv = document.createElement('canvas');
-    cv.width = sw; cv.height = sh;
+    cv.width = W; cv.height = H;
     const c = cv.getContext('2d');
 
-    c.save();
-    c.translate(sw / 2, up / P);
-    c.scale(1 / P, 1 / P);
-    paintChar(c, 0, 0, r, hex, o);
-    c.restore();
+    const base = rgb(hex);
+    const skin = o.dead ? [150, 158, 172] : [246, 222, 196];
+    const pal = {
+      '.': null,
+      'o': 'rgba(12,14,20,0.95)',
+      'H': css(lighter(base, 0.34)),
+      'h': css(base),
+      'b': css(base),
+      'd': css(darker(base, 0.34)),
+      's': css(skin),
+      'e': 'rgba(20,22,30,0.95)',
+      'm': css(darker(skin, 0.30)),
+      'f': 'rgba(38,30,26,0.95)',
+      'k': css(lighter(base, 0.60)),   // 장식 강조색
+    };
 
-    // 반투명한 가장자리를 잘라낸다. 이게 없으면 확대했을 때
-    // 테두리가 뿌옇게 번져서 다시 매끈해진다
-    try {
-      const img = c.getImageData(0, 0, sw, sh);
-      const d = img.data;
-      for (let i = 3; i < d.length; i += 4) {
-        d[i] = d[i] < 110 ? 0 : 255;
+    // 물에 갇히면 온몸이 파랗게 뜬다. 색을 바꾸는 게 아니라 **눈금을 옮긴다** —
+    // 팀색은 그대로 두고 밝기만 올려야 누구인지 계속 읽힌다
+    if (o.danger) {
+      pal['H'] = css(lighter(base, 0.62));
+      pal['h'] = css(lighter(base, 0.48));
+      pal['b'] = css(lighter(base, 0.48));
+      pal['d'] = css(base);
+    }
+
+    for (let y = 0; y < rows.length; ++y) {
+      const row = rows[y];
+      for (let x = 0; x < W; ++x) {
+        const col = pal[row[flip ? (W - 1 - x) : x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x, y + TOP, 1, 1);
       }
-      c.putImageData(img, 0, 0);
-    } catch (e) { /* 시험용 가짜 캔버스에는 픽셀이 없다 */ }
+    }
 
-    sp = { cv: cv, sw: sw, sh: sh, up: up };
+    // 머리 위 장식. 사람마다 다른 실루엣이 여기서 나온다.
+    // 3줄까지 위로 넘칠 수 있어 지도를 위로 세 줄 밀어 그렸다
+    const hat = CHAR_HATS[((o.animal | 0) % CHAR_HATS.length + CHAR_HATS.length)
+                          % CHAR_HATS.length];
+    for (let y = 0; y < 3; ++y) {
+      const row = hat[y];
+      for (let x = 0; x < W; ++x) {
+        const col = pal[row[flip ? (W - 1 - x) : x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x, y, 1, 1);
+      }
+    }
+
+    // 머리 꼭대기 한 줄에 빛. 위에서 빛이 온다는 걸 말하는 한 줄이고,
+    // 24명이 겹쳐 있을 때 앞뒤를 가르는 것도 이 줄이다
+    c.fillStyle = 'rgba(255,255,255,0.30)';
+    c.fillRect(5, TOP + 1, 6, 1);
+
+    // 사람의 발이 닿는 자리. 밑 몇 줄인지 알아야 바닥에 세울 수 있다
+    sp = { cv: cv, sw: W, sh: H, foot: H - 1, mid: 11 + TOP };
     spriteCache.set(key, sp);
-
-    // 판이 오래 돌면 자세 조합이 쌓인다. 너무 많아지면 통째로 버린다
     if (spriteCache.size > 900) spriteCache.clear();
     return sp;
   }
-
   function drawChar(g, cx, cy, r, hex, o) {
     const moving = !!o.moving;
-    const t = o.t || 0;
 
-    // 걸음과 숨쉬기를 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져
-    // 스프라이트를 구울 수가 없다. 여덟 토막이면 눈에는 이어져 보인다
+    // 걸음을 네 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져 구울 수가 없다.
+    // 다리 지도가 두 장뿐이라 네 토막이면 충분하다 — a a b b 로 번갈아 나간다
     const frame = moving
-      ? (Math.floor((o.walk || 0) / (Math.PI * 2) * SPRITE_FRAMES) % SPRITE_FRAMES
-         + SPRITE_FRAMES) % SPRITE_FRAMES
-      : Math.floor(t / 175) % SPRITE_FRAMES;
+      ? ((Math.floor((o.walk || 0) / (Math.PI * 2) * 4) % 4) + 4) % 4
+      : 0;
 
-    const pose = {
-      face: o.face | 0,
-      animal: o.animal | 0,
-      moving: moving,
-      walk: frame / SPRITE_FRAMES * Math.PI * 2,
-      t: frame * 175,
-      danger: !!o.danger,
-      dead: !!o.dead,
-    };
+    // 도트 크기는 타일에 맞춘다. 사람이 16 점 폭이고 타일이 16 점이라,
+    // 같은 눈금을 쓰면 사람과 바닥의 도트가 어긋나지 않는다.
+    // 이게 어긋나면 사람만 다른 해상도로 보여서 붙여넣은 것처럼 뜬다
+    const P = Math.max(1, Math.round(r * 2 / 16));
 
-    const key = [hex, r | 0, V.P, pose.animal, pose.face, moving ? 1 : 0,
-                 frame, pose.danger ? 1 : 0, pose.dead ? 1 : 0].join(',');
+    const key = [hex, o.face | 0, o.animal | 0, moving ? 1 : 0, frame,
+                 o.danger ? 1 : 0, o.dead ? 1 : 0].join(',');
+    const sp = bakeChar(key, hex, { face: o.face, animal: o.animal, moving: moving, frame: frame,
+                                    danger: o.danger, dead: o.dead });
 
-    const sp = bakeChar(key, r, hex, pose);
-    const P = V.P;
-
-    // 붙일 자리도 격자에 맞춘다. 반 픽셀에 붙이면 다시 흐려진다
+    // 발이 cy 보다 조금 아래에 오게 세운다. cy 는 몸의 중심이고
+    // 사람은 중심보다 발이 아래에 있다. 이 값이 어긋나면 바닥에 떠 보인다
     const dx = Math.round((cx - sp.sw * P / 2) / P) * P;
-    const dy = Math.round((cy - sp.up) / P) * P;
+    const dy = Math.round((cy - sp.mid * P) / P) * P;
 
     const smooth = g.imageSmoothingEnabled;
     g.imageSmoothingEnabled = false;
     g.drawImage(sp.cv, 0, 0, sp.sw, sp.sh, dx, dy, sp.sw * P, sp.sh * P);
     g.imageSmoothingEnabled = smooth;
   }
-
   function paintChar(g, cx, cy, r, hex, o) {
     const face = o.face | 0;
     const walk = o.walk || 0;
@@ -1533,64 +2123,101 @@ const Art = (() => {
   //
   // 마지막 0.5초에 세 가지가 한꺼번에 바뀐다. 빨라지고, 커지고, 붉어진다.
   // 하나만 바꾸면 못 알아채고 셋을 같이 바꾸면 안 볼 수가 없다
-  function drawBubble(g, cx, cy, r, near, t, hex) {
-    // 숨이 가빠지는 속도와 부푸는 양을 둘 다 올렸다.
-    //
-    // 전에는 52ms 주기에 16% 였다. 판에 물풍선이 열 개쯤 굴러다니면
-    // 그 정도로는 어느 게 곧 터질 건지 안 보인다.
-    // 물풍선은 **위험 표시**지 장식이 아니다
-    const beat = Math.sin(t / (near ? 38 : 200));
-    const grow = near ? 1 + Math.abs(beat) * 0.26 : 1;
+  // ── 물풍선을 도트로 찍는다 ─────────────────────────────────
+  //
+  // 원 위에 방사형 그라데이션을 얹어 그렸다. 유리구슬처럼 매끈했고,
+  // 판의 다른 것들을 도트로 바꾸고 나니 **물풍선만 다른 게임 것** 같았다.
+  //
+  // 14x14 다. 타일이 16 점이니 한 칸 안에 여유 있게 들어간다.
+  // 반짝을 두 점 찍고 오른쪽 아래로 갈수록 색을 내려서 둥글게 읽히게 한다 —
+  // 픽셀에서 둥근 것은 곡선이 아니라 **명암 계단**으로 만든다.
+  //
+  //   o 테두리  h 밝은 물  b 물  d 깊은 물  w 반짝  n 놓은 사람 색
+  const BUBBLE_DOTS = [
+      '....oooooo....',
+      '..oohhhhhhoo..',
+      '.ohhwwhhhhbbo.',
+      'ohhwwwhhhhbbbo',
+      'ohhwwhhhhhbbbo',
+      'ohhhhhhhhbbbbo',
+      'ohhhhhhhbbbbdo',
+      'obhhhhhbbbbddo',
+      'obbhhhbbbbdddo',
+      'obbbbbbbbdddwo',
+      '.obbbbbdddddo.',
+      '..oodddddddo..',
+      '....oonnnoo...',
+      '.....oooo.....',
+  ];
+  const bubCache = new Map();
 
-    // 물이 들었으니 가로와 세로가 반대로 움직인다
-    const rx = r * grow * (1 + beat * 0.10);
-    const ry = r * grow * (1 - beat * 0.10);
+  function bakeBubble(key, P, near, hex) {
+    let cv = bubCache.get(key);
+    if (cv) return cv;
 
-    g.fillStyle = 'rgba(0,0,0,0.28)';
-    g.beginPath();
-    g.ellipse(cx, cy + r * 0.80, rx * 0.86, ry * 0.28, 0, 0, 7);
-    g.fill();
+    const W = 14;
+    cv = document.createElement('canvas');
+    cv.width = W * P; cv.height = W * P;
+    const c = cv.getContext('2d');
 
-    const grad = g.createRadialGradient(cx - rx * 0.38, cy - ry * 0.42, r * 0.10,
-                                        cx, cy, r * 1.1);
-    if (near) {
-      grad.addColorStop(0,   'rgba(255,240,240,0.97)');
-      grad.addColorStop(0.5, 'rgba(255,150,140,0.92)');
-      grad.addColorStop(1,   'rgba(215,60,60,0.90)');
-    } else {
-      grad.addColorStop(0,   'rgba(240,252,255,0.97)');
-      grad.addColorStop(0.5, 'rgba(120,200,245,0.92)');
-      grad.addColorStop(1,   'rgba(30,120,200,0.92)');
+    // 곧 터지면 빨강으로 간다. **색이 바뀌는 게 아니라 색상만 돈다** —
+    // 명암 계단은 그대로 둬야 같은 물건이 익은 것으로 읽힌다
+    const pal = near ? {
+      '.': null,
+      'o': 'rgba(64,12,16,0.95)',
+      'h': '#ffd8d2', 'b': '#f0645c', 'd': '#a81f28', 'w': '#fffaf8',
+    } : {
+      '.': null,
+      'o': 'rgba(10,26,52,0.95)',
+      'h': '#d6f2ff', 'b': '#4aa8e8', 'd': '#1d5aa0', 'w': '#ffffff',
+    };
+    // 놓은 사람 색을 밑동 세 점에 넣는다. 누가 놓은 것인지 알아야
+    // 피할지 밟을지가 정해진다. 아래에 두는 건 위쪽 반짝을 안 가리려는 것이다
+    pal['n'] = hex || pal['d'];
+
+    for (let y = 0; y < W; ++y) {
+      const row = BUBBLE_DOTS[y];
+      for (let x = 0; x < W; ++x) {
+        const col = pal[row[x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x * P, y * P, P, P);
+      }
     }
-    g.fillStyle = grad;
-    g.beginPath();
-    g.ellipse(cx, cy, rx, ry, 0, 0, 7);
-    g.fill();
 
-    g.strokeStyle = near ? 'rgba(255,210,205,0.95)' : 'rgba(205,240,255,0.95)';
-    g.lineWidth = Math.max(1, r * 0.10);
-    g.stroke();
-
-    // 놓은 사람 색을 아래쪽에 얇게 두른다.
-    // 누가 놓은 물풍선인지 알아야 피할지 밟을지가 정해진다
-    if (hex) {
-      g.strokeStyle = hex;
-      g.lineWidth = Math.max(1.5, r * 0.16);
-      g.beginPath();
-      g.ellipse(cx, cy + ry * 0.42, rx * 0.72, ry * 0.30, 0, 0.15, Math.PI - 0.15);
-      g.stroke();
-    }
-
-    // 반짝임 둘. 이거 하나로 평평한 원이 물방울이 된다
-    g.fillStyle = 'rgba(255,255,255,0.88)';
-    g.beginPath();
-    g.ellipse(cx - rx * 0.36, cy - ry * 0.42, rx * 0.22, ry * 0.15, -0.6, 0, 7);
-    g.fill();
-    g.beginPath();
-    g.arc(cx + rx * 0.34, cy + ry * 0.30, rx * 0.08, 0, 7);
-    g.fill();
+    bubCache.set(key, cv);
+    if (bubCache.size > 160) bubCache.clear();
+    return cv;
   }
 
+  function drawBubble(g, cx, cy, r, near, t, hex) {
+    // 숨쉬기는 **크기가 아니라 도트 수**로 준다.
+    //
+    // 전에는 1.26 배까지 부드럽게 늘렸다. 도트 그림을 실수배로 늘리면
+    // 점이 뭉개져서 매끈한 그림으로 되돌아간다.
+    // 배율을 정수로만 바꾸면 부푸는 게 계단으로 보이는데, 그게 오히려 픽셀답고
+    // 곧 터진다는 신호로도 더 세게 읽힌다
+    const beat = Math.sin(t / (near ? 38 : 200));
+    const P0 = Math.max(1, Math.round(r * 2 / 14));
+    const P = (near && beat > 0.35) ? P0 + 1 : P0;
+
+    const cv = bakeBubble([near ? 1 : 0, P, hex || ''].join(','), P, near, hex);
+    const w = 14 * P;
+
+    // 그림자. 도트 배율에 맞춘 납작한 네모다. 타원을 쓰면 여기만 매끈해진다
+    g.fillStyle = 'rgba(0,0,0,0.30)';
+    g.fillRect(Math.round((cx - w * 0.36) / P) * P,
+               Math.round((cy + w * 0.36) / P) * P,
+               Math.round(w * 0.72 / P) * P, P * 2);
+
+    const dx = Math.round((cx - w / 2) / P) * P;
+    const dy = Math.round((cy - w / 2) / P) * P;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, dx, dy);
+    g.imageSmoothingEnabled = smooth;
+  }
   // ── 도트 숫자 ────────────────────────────────────────────────
   //
   // HUD 숫자를 브라우저 글꼴로 찍고 있었다. 판은 픽셀 아트인데 숫자만
@@ -1681,55 +2308,97 @@ const Art = (() => {
   // 이렇게 두면 모양을 고칠 때 좌표를 계산할 필요가 없다. 글자만 바꾸면 된다.
   // 좌표로 그리던 때는 화살표 하나 고치는 데 꼭짓점 일곱 개를 만져야 했다
   const ITEM_ART = {
-    // 물풍선 하나 더. 물방울
+    // 물풍선을 하나 더 들 수 있다. **두 개**를 그린다.
+    // 하나만 그리면 그건 물풍선 그 자체지 '하나 더' 가 아니다
     1: {
-      '.': null, 'o': '#8fd8ff', 'O': '#dff2ff', 'b': '#3b9ae8', 'k': '#12456f',
+      '.': null, 'w': '#ffffff', 'O': '#a8ddff', 'o': '#4aa8e8', 'b': '#1d5aa0', 'k': '#0a1a34',
       rows: [
-        '.....k.....',
-        '....kOk....',
-        '....kOk....',
-        '...kOOk....',
-        '...kOOok...',
-        '..kOOoobk..',
-        '.kOOooobbk.',
-        '.kOoooobbk.',
-        '.kOooobbbk.',
-        '..kkoobbk..',
-        '...kkkkk...',
+        '....kkkk.....',
+        '..kkOOOOkk...',
+        '.kOOwwOOObk..',
+        '.kOwwOOOObk..',
+        '.kOOOOOObbk..',
+        '.kOOOOObbbk..',
+        '..kOOObbbk...',
+        '...kkkkkk.kk.',
+        '.......kkOOkk',
+        '......kOwwOOk',
+        '......kOOOObk',
+        '.......kOObk.',
+        '........kkk..',
       ],
     },
-    // 물줄기가 길어진다. 위로 뻗는 화살
+    // 물줄기가 길어진다. **판에서 터지는 모양 그대로** 십자를 그린다.
+    //
+    // 전에는 위로 뻗는 화살표였다. 화살표는 '올라간다' 는 뜻이지
+    // '물줄기가 길어진다' 는 뜻이 아니다. 판 어디에도 화살표처럼 생긴 게 없으니
+    // 이 아이콘이 무엇을 가리키는지 배울 데가 없었다.
+    // 물줄기는 십자로 터진다. 그 십자를 그대로 그리면 배울 필요가 없다
     2: {
-      '.': null, 'o': '#ffb066', 'O': '#ffc078', 'b': '#e8590c', 'k': '#7a3200',
+      '.': null, 'w': '#ffffff', 'O': '#9ad7ff', 'o': '#4aa8e8', 'b': '#2f8fd8', 'k': '#0a2a4a',
       rows: [
-        '.....k.....',
-        '....kOk....',
-        '...kOObk...',
-        '..kOOOObk..',
-        '.kOOOOOObk.',
-        'kkkOOOObkkk',
-        '...kOOOb...',
-        '...kOOOb...',
-        '...kOOOb...',
-        '...kOOOb...',
-        '...kkkkk...',
+        '.....kkk.....',
+        '....kOOOk....',
+        '....kObOk....',
+        '.kkkkObOkkkk.',
+        'kOOOOObOOOOOk',
+        'kOObbbbbbbOOk',
+        'kbbbbbbbbbbbk',
+        'kOObbbbbbbOOk',
+        'kOOOOObOOOOOk',
+        '.kkkkObOkkkk.',
+        '....kObOk....',
+        '....kOOOk....',
+        '.....kkk.....',
       ],
     },
-    // 롤러. 바퀴
+    // 빨라진다. **번개**다.
+    //
+    // 바퀴를 그렸는데 아무도 못 알아봤다. 11 점짜리 바퀴는 그냥 동그라미고,
+    // 이 게임에는 탈것이 없어서 바퀴가 뭘 뜻하는지 짐작할 근거가 없다.
+    // 번개는 배울 게 없는 기호다. 실루엣도 십자·물방울과 안 겹친다
     3: {
-      '.': null, 'o': '#69db7c', 'O': '#a9e9b4', 'b': '#2f9e44', 'k': '#10401f',
+      '.': null, 'w': '#ffffff', 'O': '#ffe066', 'o': '#fcc419', 'b': '#e8940c', 'k': '#5a3400',
       rows: [
-        '...kkkkk...',
-        '.kkbOOObkk.',
-        '.kbOOOOObk.',
-        'kbOOOkOOObk',
-        'kbOOOkOOObk',
-        'kbkkkOkkkbk',
-        'kbOOOkOOObk',
-        'kbOOOkOOObk',
-        '.kbOOOOObk.',
-        '.kkbOOObkk.',
-        '...kkkkk...',
+        '........kkk..',
+        '.......kOOk..',
+        '......kOOk...',
+        '.....kOOk....',
+        '....kOOk.....',
+        '...kOOkkkk...',
+        '...kOOOOOk...',
+        '...kkkkOOk...',
+        '.....kOOk....',
+        '....kOOk.....',
+        '...kOOk......',
+        '..kOk........',
+        '..kk.........',
+      ],
+    },
+    // 대쉬. **오른쪽으로 밀려 나가는 쐐기 둘** 이다.
+    //
+    // 다른 셋과 뜻이 다르다 — 물풍선·물줄기·속도는 수치가 오르는 것이고,
+    // 이것은 새 동작이 열리는 것이다. 그래서 물건이 아니라 움직임을 그린다.
+    //
+    // 처음엔 잔상이 뒤에 남는 화살을 그렸다. 13 점 안에 선이 다섯 줄이라
+    // 확대하기 전에는 그냥 얼룩이었다. **점이 적으면 선도 적어야 한다.**
+    // 선 넷으로 줄이고 나니 작게 그려도 방향이 보인다
+    5: {
+      '.': null, 'O': '#c7f5ff', 'o': '#5ad2f0', 'b': '#1a9fc7', 'k': '#0c3a52',
+      rows: [
+        '.............',
+        'kk.....kk....',
+        'kOk....kOk...',
+        '.kOk....kOk..',
+        '..kOk....kOk.',
+        '...kOk....kOk',
+        '....kOk....kO',
+        '...kOk....kOk',
+        '..kOk....kOk.',
+        '.kOk....kOk..',
+        'kOk....kOk...',
+        'kk.....kk....',
+        '.............',
       ],
     },
   };

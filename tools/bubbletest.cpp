@@ -363,6 +363,96 @@ static void Test5_Trap()
 }
 
 // ── 시험 6 : 몸으로 부딪쳐야 터진다 ──────────────────────────
+// ── 시험 13 : 대쉬 ───────────────────────────────────────────
+//
+// 대쉬는 이 게임에서 유일하게 **한 틱에 크게 움직이는** 동작이다.
+// 크게 움직이는 것은 판정을 건너뛰기 쉽다. 그래서 여기서 재는 것은
+// '빠른가' 가 아니라 **'빨라도 규칙이 그대로인가'** 다.
+//
+//   벽을 안 뚫는다 · 물풍선에 막힌다 · 물줄기를 지나면 갇힌다 · 쿨타임이 지켜진다
+static void Test13_Dash()
+{
+    printf("\n=== 시험 13: 대쉬 ===\n");
+
+    OpenBoard();
+    int a = Join(5, 10);
+    Player& p = g_game.players[a];
+
+    // 안 먹었으면 아무 일도 없어야 한다. 여기가 뚫리면 아이템이 의미가 없다
+    StartDash(a, 1, 0);
+    Check(p.dash_ticks == 0, "안 먹었으면 대쉬가 안 나간다");
+
+    p.has_dash = true;
+    int x0 = p.px;
+    StartDash(a, 1, 0);
+    Check(p.dash_ticks == DASH_TICKS, "먹었으면 나간다");
+
+    for (int t = 0; t < DASH_TICKS; ++t) Tick();
+    int went = (p.px - x0) * 100 / TILE_UNITS;
+    printf("  탁 트인 데서 %d.%02d 칸 갔다\n", went / 100, went % 100);
+    Check(went > 200, "두 칸 넘게 간다");
+    Check(p.dash_ticks == 0, "정해진 틱이 지나면 멈춘다");
+
+    // 쿨타임. 바로 또 나가면 이 아이템은 그냥 속도 아이템이다
+    StartDash(a, 1, 0);
+    Check(p.dash_ticks == 0, "쿨타임 중에는 안 나간다");
+    printf("  남은 쿨타임 %d틱 / %d틱\n", p.dash_cd, DASH_COOLDOWN_TICKS);
+
+    // **벽을 안 뚫는다.** 대쉬에서 제일 무서운 것이 이것이다.
+    // 한 번에 96 을 옮기면 벽 너머 빈칸에 도착할 수 있어서 32 씩 쪼개 옮긴다
+    {
+        OpenBoard();
+        int b = Join(5, 10);
+        Player& q = g_game.players[b];
+        q.has_dash = true;
+        g_game.map.tile[10][8] = TILE_WALL;
+
+        StartDash(b, 1, 0);
+        for (int t = 0; t < DASH_TICKS + 2; ++t) Tick();
+
+        printf("  벽이 8번 칸일 때 멈춘 칸 %d\n", q.judge_tx);
+        Check(q.judge_tx < 8, "벽을 안 뚫는다");
+        Check(q.px + PLAYER_HALF <= 8 * TILE_UNITS, "몸도 벽에 안 들어간다");
+    }
+
+    // **물줄기를 지나가면 갇힌다.** 무적이 아니다.
+    // 판정 칸이 매 틱 갱신되고 한 틱에 0.375 칸씩만 가므로 어느 칸도 안 건너뛴다
+    {
+        OpenBoard();
+        int c = Join(5, 10);
+        Player& q = g_game.players[c];
+        q.has_dash = true;
+
+        SetBlast(7, 10, 0, 60);      // 두 칸 앞에 물줄기
+        StartDash(c, 1, 0);
+        for (int t = 0; t < DASH_TICKS; ++t) Tick();
+
+        printf("  물줄기를 지난 뒤 갇힘 %d틱\n", q.trap_ticks);
+        Check(q.trap_ticks > 0, "물줄기 위를 지나가면 갇힌다");
+    }
+
+    // 갇힌 채로는 못 한다. 갇힘이 제일 무거운 상태여야 한다
+    {
+        OpenBoard();
+        int d = Join(5, 10);
+        Player& q = g_game.players[d];
+        q.has_dash   = true;
+        q.trap_ticks = 30;
+        StartDash(d, 1, 0);
+        Check(q.dash_ticks == 0, "갇혀 있으면 대쉬가 안 나간다");
+    }
+
+    // 대각선으로 오면 한 축만 쓴다. 대각선을 받으면 실제 거리가 1.41배가 된다
+    {
+        OpenBoard();
+        int e = Join(5, 10);
+        Player& q = g_game.players[e];
+        q.has_dash = true;
+        StartDash(e, 1, 1);
+        printf("  대각선으로 시켰을 때 방향 (%d, %d)\n", q.dash_dx, q.dash_dy);
+        Check(q.dash_dy == 0, "대각선은 한 축으로 눕힌다");
+    }
+}
 static void Test6_PopByTouch()
 {
     printf("\n=== 시험 6: 갇힌 사람을 몸으로 터뜨리기 ===\n");
@@ -710,6 +800,7 @@ int main()
     Test6b_TrappedCannotPop();
     Test7_OwnBubble();
     Test12_PushBox();
+    Test13_Dash();
     Test8_Count();
     Test9_Drop();
     Test10_Pickup();

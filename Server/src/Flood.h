@@ -74,6 +74,10 @@ inline void UpdateRing()
         // 하나뿐이고 자리가 전원에게 보이므로 **먹으러 가는 것 자체가 위험**하다.
         // 그 과정에서 교전이 강제되는 것이 이 보급의 목적이다.
         DropItemNear(MAP_W / 2, MAP_H / 2, ITEM_ULTRA);
+
+        // 대쉬도 같이 놓는다. 마지막 구역은 좁아서 걸어 다니면 못 피하는데,
+        // 여기서 처음 먹는 사람이 나오면 마지막 싸움에 변수가 하나 생긴다
+        DropItemNear(MAP_W / 2, MAP_H / 2, ITEM_DASH);
         return;
     }
 

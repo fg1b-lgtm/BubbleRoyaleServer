@@ -54,6 +54,16 @@ struct Player
     int power_lv;        // 물줄기 아이템 수. 폭발이 뻗는 길이가 늘어난다
     int speed_lv;        // 롤러 수
 
+    // 대쉬. 먹었나 / 지금 나가는 중인가 / 언제 다시 쓸 수 있나 / 어느 쪽으로.
+    //
+    // 방향을 따로 들고 있는 이유는, 대쉬가 시작된 뒤에 키를 놓거나 다른 쪽을
+    // 눌러도 나가던 방향으로 끝까지 가야 하기 때문이다. 도중에 꺾이면
+    // 어디에 설지 예측이 안 돼서 쓸 수가 없다
+    bool has_dash;
+    int  dash_ticks;
+    int  dash_cd;
+    int  dash_dx, dash_dy;
+
     int      trap_ticks;    // 0 보다 크면 갇혀 있다. 아주 느리게만 움직인다
     int      invuln_ticks;  // 갇힘에서 빠져나온 직후 잠깐 무적
 
@@ -287,6 +297,42 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
             g_game.item[y][x]        = ITEM_NONE;
         }
     }
+
+    // 대쉬를 넷 뿌린다.
+    //
+    // 벽에서는 안 나오게 했으니 판에 들어올 길이 여기와 죽은 사람이 흘리는 것뿐이다.
+    // 넷인 이유는 구역이 아홉인데 전부에 두면 다 갖게 되고, 하나면 그 구역에서
+    // 시작한 사람만 갖기 때문이다. 넷이면 **가지러 갈지 말지가 판단**이 된다.
+    //
+    // 가운데 구역에는 안 둔다. 거기는 침수 보급이 오는 자리라 그것만으로 충분히 붐빈다.
+    // 씨앗을 쓰므로 같은 판 번호면 늘 같은 자리다 — 다시 돌려볼 수 있어야 한다
+    {
+        static const int kSpot[4][2] = {
+            { MAP_W / 6,     MAP_H / 6     },
+            { MAP_W * 5 / 6, MAP_H / 6     },
+            { MAP_W / 6,     MAP_H * 5 / 6 },
+            { MAP_W * 5 / 6, MAP_H * 5 / 6 },
+        };
+        // DropItemNear 는 Bubble.h 에 있고 그 파일이 이 파일을 먼저 읽으므로
+        // 여기서는 못 부른다. 하는 일이 '가까운 빈 칸 찾기' 뿐이라 그 자리에서 한다
+        for (int i = 0; i < 4; ++i) {
+            for (int r = 0; r <= 6; ++r) {
+                bool done = false;
+                for (int dy = -r; dy <= r && !done; ++dy) {
+                    for (int dx = -r; dx <= r && !done; ++dx) {
+                        if (r > 0 && dx > -r && dx < r && dy > -r && dy < r) continue;
+                        int x = kSpot[i][0] + dx, y = kSpot[i][1] + dy;
+                        if (x < 1 || y < 1 || x >= MAP_W - 1 || y >= MAP_H - 1) continue;
+                        if (g_game.map.tile[y][x] != TILE_EMPTY)   continue;
+                        if (g_game.item[y][x]    != ITEM_NONE)     continue;
+                        g_game.item[y][x] = ITEM_DASH;
+                        done = true;
+                    }
+                }
+                if (done) break;
+            }
+        }
+    }
 }
 
 // 타일 한가운데 좌표. 스폰할 때 쓴다
@@ -303,6 +349,44 @@ inline int TileCenter(int t)
 inline bool Occupied(const Player& p)
 {
     return p.s != nullptr || p.is_bot;
+}
+
+// 대쉬를 시작한다. 안 되는 경우가 여럿이라 여기 한 곳에서 다 본다.
+//
+// 클라이언트는 '연타했다' 만 보낸다. 되는지 안 되는지는 전부 여기서 정한다.
+// 이 판단을 클라에 두면 쿨타임을 지운 클라가 계속 대쉬한다.
+//
+// 소유 스레드 : tick
+inline void StartDash(int slot, int dx, int dy)
+{
+    if (slot < 0 || slot >= PLAYER_MAX) return;
+
+    Player& p = g_game.players[slot];
+    if (!p.alive || !p.has_dash) return;
+    if (p.dash_cd > 0 || p.dash_ticks > 0) return;
+
+    // 갇힌 채로는 못 한다. 갇히면 기어가는 게 규칙인데 대쉬로 빠져나가면
+    // 갇힘이 아무 일도 아니게 된다. 이 게임에서 갇힘은 제일 무거운 상태여야 한다
+    if (p.trap_ticks > 0) return;
+
+    // 한 축만 받는다. 대각선으로 받으면 실제 이동 거리가 1.41배가 되고,
+    // 벽에 비스듬히 박혔을 때 어디에 설지가 안 보인다
+    if (dx != 0) { dx = dx > 0 ? 1 : -1; dy = 0; }
+    else if (dy != 0) { dy = dy > 0 ? 1 : -1; }
+    else return;
+
+    p.dash_dx    = dx;
+    p.dash_dy    = dy;
+    p.dash_ticks = DASH_TICKS;
+    p.dash_cd    = DASH_COOLDOWN_TICKS;
+
+    // 보는 쪽도 바로 돌린다. 안 돌리면 뒷걸음질로 미끄러지는 것처럼 보인다
+    if (dx > 0)      p.face = FACE_RIGHT;
+    else if (dx < 0) p.face = FACE_LEFT;
+    else if (dy > 0) p.face = FACE_DOWN;
+    else             p.face = FACE_UP;
+
+    PushEvent(EVT_DASH, p.judge_tx, p.judge_ty, slot, (uint8_t)((dx + 1) | ((dy + 1) << 2)));
 }
 
 // 판에 앉힌다. 자리가 없으면 -1.
@@ -382,6 +466,11 @@ inline int AddPlayer(Session* s, bool bot = false)
     p.bubble_lv    = 0;
     p.power_lv     = 0;
     p.speed_lv     = 0;
+    p.has_dash     = false;
+    p.dash_ticks   = 0;
+    p.dash_cd      = 0;
+    p.dash_dx      = 0;
+    p.dash_dy      = 0;
     p.trap_ticks   = 0;
     p.invuln_ticks = 0;
     p.grazing      = false;
@@ -636,6 +725,47 @@ inline void MovePlayer(const GameMap& map, Player& p)
     else if (p.dir_x < 0) p.face = FACE_LEFT;
     else if (p.dir_y > 0) p.face = FACE_DOWN;
     else if (p.dir_y < 0) p.face = FACE_UP;
+
+    // ── 대쉬 ──────────────────────────────────────────────────
+    //
+    // 나가는 동안에는 누르는 키를 아예 안 본다. 시작한 방향으로 끝까지 간다.
+    //
+    // **한 번에 96 을 옮기지 않고 32 씩 쪼갠다.** 벽 판정은 '가려는 자리' 만
+    // 보기 때문에, 한 번에 크게 옮기면 벽 너머 빈칸에 도착해 버릴 수 있다.
+    // 지금 값으로는 안 뚫리지만 그건 우연이지 규칙이 아니다.
+    // 쪼개면 벽에 닿는 순간 거기서 서고, 그 자리가 대쉬의 끝이 된다.
+    //
+    // 무적이 아니다. 물줄기 위를 지나가면 갇힌다 — 이건 여기서 따로 안 막는다.
+    // 판정 칸이 매 틱 갱신되고, 한 틱에 0.375 칸씩만 가므로 어느 칸도 건너뛰지 않는다.
+    // 갇힌 사람을 터뜨리는 것도 같은 이유로 저절로 된다
+    if (p.dash_ticks > 0) {
+        --p.dash_ticks;
+
+        int left = DASH_SPEED;
+        while (left > 0) {
+            int step = left > DASH_SUBSTEP ? DASH_SUBSTEP : left;
+            left -= step;
+
+            int bx = p.px, by = p.py;
+            p.px = StepAxis(map, p.px, p.py, p.dash_dx * step, true);
+            p.py = StepAxis(map, p.py, p.px, p.dash_dy * step, false);
+
+            // 한 점도 못 갔으면 막힌 것이다. 벽이든 물풍선이든 거기서 끝난다.
+            // 남은 시간을 버리는 게 중요하다 — 안 버리면 벽에 붙어서 부르르 떤다
+            if (p.px == bx && p.py == by) {
+                p.dash_ticks = 0;
+                break;
+            }
+        }
+
+        p.py = ClampAxis(map, p.py, p.px, false, DASH_SPEED);
+        p.px = ClampAxis(map, p.px, p.py, true,  DASH_SPEED);
+
+        p.moving   = (p.px != was_x || p.py != was_y);
+        p.judge_tx = JudgeAxis(p.px);
+        p.judge_ty = JudgeAxis(p.py);
+        return;
+    }
 
     // 갇혀도 아주 느리게는 갈 수 있다.
     // 아예 묶어두면 5초가 죽은 시간이 된다. 기어서라도 물줄기 밖으로 나갈 수 있어야

@@ -207,6 +207,16 @@ const Predict = (() => {
 
   function stop() { live = false; errX = 0; errY = 0; }
 
+  // 예측을 쉬고 서버 자리를 그대로 쓴다. 대쉬처럼 짧고 특수한 동작에 쓴다.
+  //
+  // stop() 과 다르다. stop 은 예측을 끄는 것이라 다시 켤 때 한 번 튄다.
+  // 이건 켜둔 채로 자리만 맞추는 것이라, 대쉬가 끝나면 이어서 예측이 돈다.
+  // 어긋난 양(err)도 지운다 — 안 지우면 대쉬가 끝나고 그만큼 미끄러진다
+  function follow(sx, sy) {
+    px = sx; py = sy; live = true;
+    errX = 0; errY = 0;
+  }
+
   // 화면에 그릴 자리. 오차를 조금씩 녹여서 튐을 감춘다
   function view() {
     errX -= errX * 0.25;
@@ -227,7 +237,7 @@ const Predict = (() => {
   }
   function resetStats() { rawMax = 0; rawSum = 0; rawN = 0; snapped = 0; }
 
-  return { setup, tick, reconcile, view, stop, stats, resetStats,
+  return { setup, tick, reconcile, view, stop, follow, stats, resetStats,
            isLive: () => live,
            error: () => Math.hypot(errX, errY) };
 })();

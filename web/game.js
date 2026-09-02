@@ -472,6 +472,16 @@ function stepPrediction() {
   if (!me || !(me.flags & PF.ALIVE)) { Predict.stop(); return; }
   if (G.phase !== PHASE.PLAYING) { Predict.stop(); return; }
 
+  // 대쉬 중에는 예측을 쉰다.
+  //
+  // 대쉬는 걷기보다 세 배 빠르고 벽에 닿으면 그 자리에서 끝난다.
+  // 이 규칙을 여기서 한 번 더 구현하면 서버와 조금만 달라져도 매 틱 되돌아가고,
+  // **되돌아가는 게 늦는 것보다 훨씬 심하게 보인다.**
+  //
+  // 8틱(0.27초)뿐이라 그동안 서버 자리를 그대로 따라도 사람은 못 느낀다.
+  // 예측이 필요한 건 늘 하는 동작이지 0.27초짜리 특수 동작이 아니다
+  if (me.flags & PF.DASHING) { Predict.follow(me.x1, me.y1); return; }
+
   const [dx, dy] = inputDir();
   Predict.tick(G.tiles, dx, dy, me.speed_lv | 0, !!(me.flags & PF.TRAPPED));
 }
@@ -1176,8 +1186,14 @@ function drawHUD(now) {
   // 먹은 직후에는 그 칸이 튀어오르고 밝아진다. 뭘 먹었는지가 그 순간 보인다
   const me = G.players.get(G.myId);
   if (me) {
+    // 대쉬는 먹은 사람에게만 칸이 생긴다.
+    //
+    // 늘 자리를 잡아두고 비워두면 '못 먹은 것' 이 화면에 상주하는데,
+    // 그건 알림이 아니라 잔소리다. 먹는 순간 칸이 하나 늘어나는 것이
+    // **뭔가 새로 생겼다**는 걸 더 세게 말한다
     const cell = 62, gap = 8;
-    const bw = cell * 3 + gap * 4, bh = 68;
+    const cols = me.has_dash ? 4 : 3;
+    const bw = cell * cols + gap * (cols + 1), bh = 68;
 
     // 여백이 넉넉하면 판 아래가 아니라 **왼쪽 여백**에 놓는다.
     // 판 위에 얹으면 아래 두 줄이 가려지는데, 거기가 도망칠 자리다.
@@ -1198,6 +1214,13 @@ function drawHUD(now) {
         v: me.speed_lv,                   max: G.C.capSpeed,  t: '속도'   },
     ];
 
+    // 대쉬 칸. 숫자가 아니라 **남은 시간**이 들어간다.
+    // 다른 셋과 성질이 다른 아이템이라 칸 안에 들어가는 것도 다르다
+    if (me.has_dash) {
+      stats.push({ kind: ITEM.DASH, c: '#5ad2f0', v: -1, max: 0, t: '대쉬',
+                   cd: me.dash_cd || 0 });
+    }
+
     stats.forEach((st, i) => {
       const x = bx + gap + i * (cell + gap);
       const flash = Math.max(0, 1 - (now - (pickFlash[st.kind] || -9999)) / 500);
@@ -1215,8 +1238,33 @@ function drawHUD(now) {
       Art.drawItem(ctx, 0, 0, 30, st.kind, now);
       ctx.restore();
 
-      bigNum(String(st.v), x + cell / 2, by + 50, 19,
-             flash > 0 ? '#ffffff' : st.c, 'center');
+      if (st.cd !== undefined) {
+        // 남은 초. 다 찼으면 숫자 대신 '준비' 를 뜻하는 밝은 테두리를 두른다.
+        // 0 이라고 써두면 0개 가진 것처럼 읽힌다
+        if (st.cd > 0) {
+          bigNum(((st.cd / 30) + 0.9).toFixed(0), x + cell / 2, by + 50, 19,
+                 'rgba(255,255,255,0.40)', 'center');
+        }
+        else {
+          ctx.strokeStyle = st.c;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 4, by + 4, cell - 8, bh - 8);
+        }
+
+        // 쿨타임 중에 눌렀으면 잠깐 붉게 흔든다. **왜 안 나갔는지**를 말해주는 것이다.
+        // 아무 일도 안 일어나면 사람은 자기가 잘못 눌렀다고 여긴다
+        const den = Math.max(0, 1 - (now - dashDenied) / 320);
+        if (den > 0) {
+          ctx.strokeStyle = 'rgba(255,110,110,' + den + ')';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 4 + Math.sin(now / 24) * 2 * den, by + 4,
+                         cell - 8, bh - 8);
+        }
+      }
+      else {
+        bigNum(String(st.v), x + cell / 2, by + 50, 19,
+               flash > 0 ? '#ffffff' : st.c, 'center');
+      }
       // 판때기를 6px 키우고 글자를 그 안으로 넣는다.
       // 처음엔 글자만 위로 올렸다가 숫자와 겹쳤다. 자리가 없으면 자리를 만들어야 한다
       label(st.t, x + cell / 2, by + bh - 7, 9, 'rgba(255,255,255,0.45)', 'center', 1);
@@ -1766,6 +1814,19 @@ Hooks.event = function (type, x, y, who, val) {
       break;
     }
 
+    // 대쉬가 시작됐다. **떠난 자리**에 먼지를 남긴다.
+    //
+    // 도착 자리에 뭘 그리면 순간이동으로 보인다. 출발점에 남겨야
+    // 눈이 '여기서 저기로 갔다' 로 읽는다 — 빠른 것을 그리는 방법은
+    // 움직이는 것을 그리는 게 아니라 **지나간 자국**을 그리는 것이다
+    case EVT.DASH: {
+      const ddx = (val & 3) - 1, ddy = ((val >> 2) & 3) - 1;
+      FX.push(cx, cy, -ddx, -ddy, T, now, '#c7f5ff');
+      FX.push(cx, cy, -ddx, -ddy, T, now + 40, '#8fe3ff');
+      Sound.dash(pan, far);
+      break;
+    }
+
     case EVT.DROP:
       G.items[y][x] = val;
       if (val === ITEM.ULTRA) {
@@ -1936,6 +1997,52 @@ Hooks.event = function (type, x, y, who, val) {
 const held = new Set();
 let sentX = 0, sentY = 0;
 
+// ── 연타 알아보기 ──────────────────────────────────────────
+//
+// 같은 방향키를 260ms 안에 두 번 누르면 대쉬다.
+//
+// **키를 뗐다 다시 누른 것**만 센다. 눌러둔 채로는 keydown 이 자동 반복으로
+// 계속 오는데, 그걸 세면 걷기만 해도 대쉬가 나간다.
+//
+// 방향마다 따로 기억한다. 왼쪽을 눌렀다 오른쪽을 누르면 그건 연타가 아니라
+// 방향을 바꾼 것이다. 하나만 기억하면 좌우로 흔드는 것이 전부 대쉬가 된다.
+//
+// 서버에 '대쉬한다' 만 보낸다. 쿨타임도 갖고 있나도 서버가 본다 —
+// 여기서 미리 막으면 화면과 서버가 어긋날 때 눌러도 아무 일이 안 일어나는
+// 것처럼 보이고, 클라를 고친 사람은 그 검사를 지우면 그만이다
+const DASH_TAP_MS = 260;
+const lastTap = new Map();   // 방향키 -> 마지막으로 새로 누른 시각
+
+const DASH_DIR = {
+  ArrowLeft:  [-1, 0], a: [-1, 0],
+  ArrowRight: [ 1, 0], d: [ 1, 0],
+  ArrowUp:    [ 0,-1], w: [ 0,-1],
+  ArrowDown:  [ 0, 1], s: [ 0, 1],
+};
+
+// 화면 쪽에서도 한 번 본다. **막으려는 게 아니라 보여주려는 것**이다.
+// 쿨타임 중에 눌렀다는 걸 알아야 HUD 를 흔들어서 '아직이다' 를 말할 수 있다
+let dashDenied = 0;
+
+function tryDash(k) {
+  const d = DASH_DIR[k];
+  if (!d) return;
+
+  const now = performance.now();
+  const prev = lastTap.get(k) || -1e9;
+  lastTap.set(k, now);
+
+  if (now - prev > DASH_TAP_MS) return;
+  lastTap.set(k, -1e9);          // 세 번 눌러 두 번 나가지 않게 지운다
+
+  const me = G.players.get(G.myId);
+  if (!me || !(me.flags & PF.ALIVE)) return;
+
+  if (!me.has_dash || me.dash_cd > 0) { dashDenied = performance.now(); return; }
+
+  sendDash(d[0], d[1]);
+}
+
 function inputDir() {
   let dx = 0, dy = 0;
   if (held.has('ArrowLeft')  || held.has('a')) dx -= 1;
@@ -1980,7 +2087,7 @@ addEventListener('keydown', (e) => {
   if (k === 'r') { sendRestart(); return; }
   if (e.key === ' ') { hasPlaced = true; sendPlace(); return; }
 
-  if (!held.has(k)) { held.add(k); pushInput(); }
+  if (!held.has(k)) { held.add(k); tryDash(k); pushInput(); }
 });
 
 addEventListener('keyup', (e) => {
