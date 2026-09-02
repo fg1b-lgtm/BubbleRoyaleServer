@@ -50,6 +50,93 @@ const Art = (() => {
   const lighter = (c, t) => mix(c, WHITE, t);
   const darker  = (c, t) => mix(c, BLACK, t);
 
+  // ── 색 램프 ──────────────────────────────────────────────────
+  //
+  // **여기가 그림이 유치해 보이던 가장 큰 이유였다.**
+  //
+  // 9/2 까지 그늘은 검정을 섞고 빛은 흰색을 섞어서 만들었다. 밝기만 바꾼 것이다.
+  // 그러면 한 색의 그늘과 빛이 전부 같은 색상의 회색끼리라 화면이 납작해진다.
+  // 픽셀 아트를 배울 때 제일 먼저 배우는 게 이것이고, 밝기만 바꾸는 건
+  // '그림을 납작하게 만드는 가장 빠른 방법' 이라고 자료마다 똑같이 말한다.
+  //
+  // 실제 빛은 그렇지 않다. 해는 노랗고 그늘을 채우는 건 파란 하늘빛이다.
+  // 그래서 그늘은 파랑 쪽으로, 빛은 노랑 쪽으로 색상을 **돌린다.**
+  // 같은 밝기 차이라도 색상이 같이 돌면 면이 서 있는 것처럼 보인다.
+  //
+  // 채도도 같이 만진다. 그늘은 조금 죽이고 빛은 살린다 —
+  // 밝기만 올린 하이라이트는 색이 바래서 물감이 아니라 조명처럼 보인다.
+
+  function toHsl(c) {
+    const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn;
+    const sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    let h;
+    if (mx === r)      h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (mx === g) h = ((b - r) / d + 2) / 6;
+    else               h = ((r - g) / d + 4) / 6;
+    return [h, sat, l];
+  }
+
+  function fromHsl(h, sat, l) {
+    h = ((h % 1) + 1) % 1;
+    sat = Math.max(0, Math.min(1, sat));
+    l = Math.max(0, Math.min(1, l));
+    if (sat === 0) { const v = l * 255; return [v, v, v]; }
+    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+    const p = 2 * l - q;
+    const hue = (t) => {
+      t = ((t % 1) + 1) % 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    return [hue(h + 1 / 3) * 255, hue(h) * 255, hue(h - 1 / 3) * 255];
+  }
+
+  // 색상이 도는 목표 지점. 그늘은 남색(0.60), 빛은 주황(0.10) 쪽으로 간다.
+  // 끝까지 돌리지 않는다 — 다 돌리면 나무가 파래지고 돌이 주황이 된다.
+  // 원래 색이 뭐였는지는 남아 있어야 한다
+  const HUE_SHADE = 0.60;
+  const HUE_LIGHT = 0.10;
+
+  // 두 색상 중 가까운 쪽으로 도는 양. 색상환은 둥글어서 0.95 와 0.05 는 이웃이다
+  function towardHue(h, target, amount) {
+    let d = target - h;
+    while (d >  0.5) d -= 1;
+    while (d < -0.5) d += 1;
+    return h + d * amount;
+  }
+
+  // t 가 0 이면 원래 색, 1 이면 가장 깊은 그늘
+  function shade(c, t) {
+    const [h, sat, l] = toHsl(c);
+    return fromHsl(towardHue(h, HUE_SHADE, t * 0.22),
+                   sat * (1 - t * 0.18),
+                   l * (1 - t * 0.62));
+  }
+
+  // t 가 0 이면 원래 색, 1 이면 가장 밝은 빛
+  function light(c, t) {
+    const [h, sat, l] = toHsl(c);
+    return fromHsl(towardHue(h, HUE_LIGHT, t * 0.20),
+                   Math.min(1, sat * (1 + t * 0.20)),
+                   l + (1 - l) * t * 0.55);
+  }
+
+  // 한 재료의 다섯 단. 어두운 쪽부터 밝은 쪽으로.
+  //
+  // 다섯인 이유는, 셋이면 면이 세 개뿐이라 둥근 것을 못 만들고
+  // 일곱이면 32픽셀짜리 칸에서는 옆 단끼리 구분이 안 되기 때문이다.
+  // 옛날 16비트 게임들이 재료 하나에 네다섯 단을 쓴 것도 같은 이유다
+  function ramp(base) {
+    const c = (typeof base === 'string') ? rgb(base) : base;
+    return [shade(c, 0.85), shade(c, 0.45), c, light(c, 0.42), light(c, 0.82)];
+  }
+
   // ── 가감속 ───────────────────────────────────────────────────
   const easeOut  = (t) => 1 - Math.pow(1 - t, 3);
   const easeIn   = (t) => t * t * t;
@@ -69,44 +156,44 @@ const Art = (() => {
   // 상자는 그 장소에 있을 법한 것으로 (나무 궤짝, 얼음덩이, 화물, 항아리).
   const PLACES = [
     { name: '광장',   // 0 CROSSROADS — 돌바닥과 붉은 기와
-      floor: '#d2bfb2', floorAlt: '#cdb9ab', joint: '#c2a998', fleck: '#c9b2a3',
+      floor: '#a28c7d', floorAlt: '#9d8676', joint: '#856f5f', fleck: '#9c8170',
       wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
-      crate: '#d6945a', crateTop: '#ddb897', crateSide: '#b96f2e',
+      crate: '#dfa46f', crateTop: '#e6c8ac', crateSide: '#d17b2f',
       markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['crate', 'stone'], wallKinds: ['brick', 'brick', 'rock'],
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
-      floor: '#c7c2b1', floorAlt: '#c1bdaa', joint: '#b3ae97', fleck: '#bcb7a2',
+      floor: '#95907c', floorAlt: '#8f8b76', joint: '#757160', fleck: '#8d8870',
       wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
-      crate: '#c69c29', crateTop: '#d8bd73', crateSide: '#9e7d20',
-      markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['column', 'column', 'brick'],
+      crate: '#daae33', crateTop: '#e1c988', crateSide: '#b79020',
+      markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['ashlar', 'ashlar', 'brick'],
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
-      floor: '#c3c2c1', floorAlt: '#bebcbb', joint: '#afadac', fleck: '#b8b6b5',
+      floor: '#908f8e', floorAlt: '#8b8988', joint: '#747271', fleck: '#878584',
       wallTop: '#868079', wallSide: '#615d57', wallEdge: '#484541',
-      crate: '#ec893d', crateTop: '#eab48a', crateSide: '#cc6414',
+      crate: '#f39954', crateTop: '#f1c4a2', crateSide: '#e96f10',
       markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['barrel', 'crate'], wallKinds: ['metal', 'metal', 'brick'],
       step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
-      floor: '#9ad08c', floorAlt: '#90cc81', joint: '#75bf63', fleck: '#85c775',
+      floor: '#679c5a', floorAlt: '#619254', joint: '#496e3f', fleck: '#5a8e4e',
       wallTop: '#429236', wallSide: '#306a27', wallEdge: '#244f1d',
-      crate: '#d4945d', crateTop: '#dcb899', crateSide: '#b87031',
+      crate: '#dda472', crateTop: '#e5c8ae', crateSide: '#ce7c34',
       markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
-      floor: '#b3c99f', floorAlt: '#acc496', joint: '#99b77e', fleck: '#a4bf8d',
+      floor: '#80986b', floorAlt: '#798f64', joint: '#5f714e', fleck: '#738d5f',
       wallTop: '#638c48', wallSide: '#486534', wallEdge: '#354b27',
-      crate: '#d79174', crateTop: '#deb7a5', crateSide: '#c7663d',
+      crate: '#e0a389', crateTop: '#e7c8ba', crateSide: '#d0744d',
       markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['sack', 'crate'], wallKinds: ['wood', 'wood', 'rock'],
       step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
-      floor: '#dcc072', floorAlt: '#d8ba65', joint: '#cfa940', fleck: '#d5b356',
+      floor: '#a18947', floorAlt: '#957f42', joint: '#6a5a2f', fleck: '#8f793b',
       wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
-      crate: '#be9b86', crateTop: '#d0bbaf', crateSide: '#a7775b',
+      crate: '#caab99', crateTop: '#dccbc2', crateSide: '#b2846a',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
       step: 'sand' },
 
@@ -116,30 +203,30 @@ const Art = (() => {
     // 바닥을 식은 회색 벽돌로 내리고 차양을 사프란으로 올려서 떼어놨다.
     // 상자의 청록은 그대로 둔다. 그게 이 장소의 표식이다
     { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
-      floor: '#deb9c0', floorAlt: '#dbb2ba', joint: '#d3a0aa', fleck: '#d8abb4',
+      floor: '#b1818a', floorAlt: '#ac7b84', joint: '#9d616c', fleck: '#ad7681',
       wallTop: '#c46185', wallSide: '#9d3a5e', wallEdge: '#752b46',
-      crate: '#cd9930', crateTop: '#d8bb82', crateSide: '#a47a26',
+      crate: '#d8a743', crateTop: '#e1c897', crateSide: '#bd8b27',
       markH: 'car2', markV: 'lamp2', mark: 'well', crateKinds: ['sack', 'crate'], wallKinds: ['brick', 'brick', 'wood'],
       step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
-      floor: '#cbc395', floorAlt: '#c6be8a', joint: '#b8af70', fleck: '#c0b880',
+      floor: '#999161', floorAlt: '#8f885b', joint: '#6c6846', fleck: '#898356',
       wallTop: '#89843d', wallSide: '#635f2c', wallEdge: '#494721',
-      crate: '#e68599', crateTop: '#e9b0bb', crateSide: '#db516c',
+      crate: '#ee9cad', crateTop: '#f1c7cf', crateSide: '#e3627c',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['barrel', 'stone'], wallKinds: ['rock', 'rock', 'wood'],
       step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
-      floor: '#d2bbd2', floorAlt: '#ceb5ce', joint: '#c2a4c2', fleck: '#c9aec9',
+      floor: '#a186a1', floorAlt: '#9d809d', joint: '#876987', fleck: '#9b7b9b',
       wallTop: '#a76da9', wallSide: '#7e4b80', wallEdge: '#5e385f',
-      crate: '#b992db', crateTop: '#cdb6e2', crateSide: '#9f6acd',
-      markH: 'log2', markV: 'lamp2', mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'column'],
+      crate: '#c8a7e4', crateTop: '#dccbec', crateSide: '#ab7bd6',
+      markH: 'log2', markV: 'lamp2', mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'ashlar'],
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
-      floor: '#c5bde5', floorAlt: '#c0b7e3', joint: '#b1a6dd', fleck: '#bab0e0',
+      floor: '#8d83b9', floorAlt: '#897db6', joint: '#7265aa', fleck: '#8578b6',
       wallTop: '#8873d0', wallSide: '#6347c2', wallEdge: '#4a3297',
-      crate: '#ce9758', crateTop: '#d9ba96', crateSide: '#af7533',
+      crate: '#d8a66d', crateTop: '#e3c9ab', crateSide: '#c78235',
       markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['crate', 'barrel'], wallKinds: ['metal', 'metal', 'wood'],
       step: 'wood' },
   ];
@@ -357,29 +444,29 @@ const Art = (() => {
     return cv;
   }
 
-  // 장소 색에서 역할별 색을 만든다.
+  // 도트 지도의 글자를 그 재료의 실제 색으로 바꾼다.
   //
-  // a 밝은 면 / b 바탕 / c 그늘 / d 테두리 / h 반짝.
-  // 테두리는 장소 색이 아니라 **거의 검정**이다 —
-  // 장소 색으로 두르면 그 장소 안에서는 안 보인다. 검정은 어디서나 산다
-  // base/top/side 는 색 문자열이거나 이미 rgb 배열이다.
-  // 부르는 쪽이 계산해서 넘기는 경우가 있어 둘 다 받는다
-  function toRgb(v) { return typeof v === 'string' ? (v[0] === '#' ? rgb(v) : null) : v; }
-
-  function rolePal(base, top, side) {
-    const b = toRgb(base) || rgb('#888888');
-    const tp = toRgb(top);
-    const sd = toRgb(side);
-    return {
-      '.': null,
-      'a': tp ? css(tp) : top,
-      'b': css(b),
-      'c': sd ? css(sd) : side,
-      'd': 'rgba(10,12,16,0.92)',
-      'h': tp ? css(lighter(tp, 0.45)) : top,
-    };
+  // 지도에는 색이 아니라 **밝기 단**만 적혀 있다. 그래서 같은 널빤지 무늬가
+  // 마을에서는 초록 담이 되고 부두에서는 남색 판이 된다.
+  //
+  // 외곽선은 그 색의 아주 어두운 쪽이되 채도를 거의 죽인다.
+  // 채도가 남아 있으면 테두리가 물건보다 먼저 보인다 — 처음에 붉은 테두리가
+  // 궤짝보다 눈에 띄어서 알았다
+  function outlineOf(base) {
+    const c = (typeof base === 'string') ? rgb(base) : base;
+    const [h, sat, l] = toHsl(c);
+    return fromHsl(towardHue(h, HUE_SHADE, 0.45), sat * 0.30, 0.10);
   }
 
+  function tonePal(base) {
+    const r = ramp(base);
+    return {
+      '.': null,
+      '0': css(r[0]), '1': css(r[1]), '2': css(r[2]),
+      '3': css(r[3]), '4': css(r[4]),
+      'o': css(outlineOf(base)),
+    };
+  }
   // 구운 물건에서 이 칸 몫(16x16)만 오려 붙인다.
   // 넷짜리·가로 둘·세로 둘이 다 같은 일을 해서 한 곳으로 모았다
   function stampMark(g, cv, cx, cy, px, Y, T, P) {
@@ -419,20 +506,20 @@ const Art = (() => {
     return cv;
   }
 
-  // 잎과 줄기와 유리는 **장소 색을 안 따른다.**
-  // 야자수가 장소마다 다른 색이면 그건 야자수가 아니라 색칠한 벽이다.
-  // 장소 색은 몸통(a·b·c)과 강조(r)에만 들어간다
+  // 랜드마크 색. 몸통(a·b·c)은 그 장소 색을 따르고,
+  // 잎·줄기·유리는 안 따른다. 야자수가 장소마다 다른 색이면
+  // 그건 야자수가 아니라 색칠한 벽이다
   function markPal(th) {
-    const top = rgb(th.wallTop);
+    const r  = ramp(th.wallTop);
+    const gr = ramp('#4f9c4a');   // 잎
+    const nb = ramp('#8a5f38');   // 나무줄기
     return {
       '.': null,
-      'o': 'rgba(10,12,18,0.95)',
-      'a': css(lighter(top, 0.42)),
-      'b': css(top),
-      'c': css(darker(top, 0.40)),
-      'r': css(rgb(th.wallSide)),
-      'g': '#3f8f45', 'G': '#63bd5c',
-      'n': '#7a5330', 'N': '#a2743f',
+      'o': css(outlineOf(th.wallTop)),
+      'a': css(r[4]), 'b': css(r[2]), 'c': css(r[1]),
+      'r': css(ramp(th.wallSide)[2]),
+      'g': css(gr[2]), 'G': css(gr[4]),
+      'n': css(nb[1]), 'N': css(nb[3]),
       'w': '#8fd0f0', 'y': '#ffd85e', 't': '#2b2f38',
     };
   }
@@ -922,203 +1009,203 @@ const Art = (() => {
   };
   // ── 벽과 상자를 도트로 찍는다 ───────────────────────────────
   //
-  // 9/2 까지 비율로 그렸다. `T * 0.34` 같은 식으로 사각형을 얹는 방식이라,
-  // 아무리 다듬어도 **도형이지 도트가 아니었다.** 확대하면 반듯한 네모만 나온다.
+  // 값이 다섯 단이다.  0 가장 깊은 그늘 · 1 그늘 · 2 바탕 · 3 빛 · 4 가장 밝은 빛.
+  // o 는 외곽선인데 검정이 아니라 **그 재료의 아주 어두운 색**이다 —
+  // 순검정으로 두르면 물건이 스티커처럼 떠 보인다.
   //
-  // 픽셀 게임의 '잘 짜인' 느낌은 낮은 해상도에 맞춰 **한 점 한 점을 손으로 놓는 데서**
-  // 나온다. 널빤지 이음새가 몇 번째 줄인지, 못이 어느 점인지가 정해져 있어야 한다.
-  // 아이템을 도트 지도로 바꿨을 때 제일 잘 나왔던 이유가 그것이다.
+  // 9/2 까지 세 단이었다. 세 단으로는 면이 세 개뿐이라 둥근 것도 각진 것도
+  // 못 만든다. 옛날 16비트 게임들이 재료 하나에 네다섯 단을 쓴 이유가 그것이다.
   //
-  // 16x16 이다. 타일이 38px 이면 한 점이 2~3px 이라 눈에 도트가 보인다.
-  // 색은 지도에 안 적는다 — 글자는 **역할**이고 실제 색은 장소 팔레트에서 온다.
-  // 그래야 같은 모양이 열 곳에서 그 장소의 색으로 나온다.
+  // 빛은 늘 왼쪽 위에서 온다. 판 전체에 광원이 하나여야 물건들이 같은 세상에 있어 보인다.
   //
-  //   a 밝은 면   b 바탕   c 그늘   d 테두리   h 반짝   . 비워둠
+  // 벽은 이어 붙는다. 그래서 외곽선을 안 두르고, **가로로 쭉 이어지는 밝은 줄도 안 넣는다** —
+  // 그 줄이 곧 16픽셀마다 생기는 이음매가 된다. 바위에서 한 번 겪었다.
   const WALL_DOTS = {
     'brick': [
-      'aaaaaaaaaaaaaaaa',
-      'abbbbbbcbbbbbbbc',
-      'abbbbbbcbbbbbbbc',
-      'accccccccccccccc',
-      'abbbcbbbbbbbcbbb',
-      'abbbcbbbbbbbcbbb',
-      'accccccccccccccc',
-      'abbbbbbcbbbbbbbc',
-      'abbbbbbcbbbbbbbc',
-      'accccccccccccccc',
-      'abbbcbbbbbbbcbbb',
-      'abbbcbbbbbbbcbbb',
-      'accccccccccccccc',
-      'abbbbbbcbbbbbbbc',
-      'abbbbbbcbbbbbbbc',
-      'cccccccccccccccc',
+      '0000000000000000',
+      '0433333304333333',
+      '0322222203222222',
+      '0322222203222222',
+      '0111111101111111',
+      '0000000000000000',
+      '0433333304333333',
+      '0322222203222222',
+      '0322222203222222',
+      '0111111101111111',
+      '0000000000000000',
+      '0433333304333333',
+      '0322222203222222',
+      '0322222203222222',
+      '0111111101111111',
+      '0000000000000000',
     ],
-    'column': [
-      'aaaaaaaaaaaaaaaa',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'abbcaabbcaabbcab',
-      'cccccccccccccccc',
+    'ashlar': [
+      '0000000000000000',
+      '4440444444444444',
+      '2220322222222222',
+      '2220322222221222',
+      '2220311222222222',
+      '2220322222222222',
+      '2220322222222222',
+      '1110111111111111',
+      '0000000000000000',
+      '4444444444404444',
+      '2222222222203222',
+      '2222222222203212',
+      '2212222222203222',
+      '2222222221103222',
+      '2222222222203222',
+      '1111111111101111',
     ],
     'metal': [
-      'aaaaaaaaaaaaaaaa',
-      'abbbbbbbbbbbbbbc',
-      'abhbbbbbbbbbbhbc',
-      'abdbbbbbbbbbbdbc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'accccccccccccccc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'abhbbbbbbbbbbhbc',
-      'abdbbbbbbbbbbdbc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'cccccccccccccccc',
+      '0300000003000000',
+      '0333333303333333',
+      '0322222203222222',
+      '0333333203222222',
+      '0322432203224322',
+      '0322102203221022',
+      '0322222203222222',
+      '0322222203222222',
+      '0300000003000000',
+      '0333333303333333',
+      '0322222203222222',
+      '0322222203333332',
+      '0322432203224322',
+      '0322102203221022',
+      '0322222203222222',
+      '0322222203222222',
     ],
     'wood': [
-      'aaaaaaaaaaaaaaaa',
-      'abbbbcabbbbcabbc',
-      'abhbbcabbbbcabbc',
-      'abbbbcabhbbcabbc',
-      'abbbbcabbbbcahbc',
-      'abbbbcabbbbcabbc',
-      'abhbbcabbbbcabbc',
-      'abbbbcabbbbcabbc',
-      'abbbbcahbbbcabbc',
-      'abbbbcabbbbcabhc',
-      'abhbbcabbbbcabbc',
-      'abbbbcabbbbcabbc',
-      'abbbbcabhbbcabbc',
-      'abbbbcabbbbcabbc',
-      'abhbbcabbbbcabbc',
-      'cccccccccccccccc',
+      '0322222103222221',
+      '0322422103224221',
+      '0322022103100111',
+      '0310111103222221',
+      '0310111103222221',
+      '0322222103222221',
+      '0322222103222221',
+      '0322222103222221',
+      '0322222103101111',
+      '0322222103222221',
+      '0322222103222221',
+      '0310111103222221',
+      '0322222103222221',
+      '0322222103101111',
+      '0322422103224221',
+      '0322022103220221',
     ],
     'rock': [
-      'aaaaaaaaaaaaaaaa',
-      'aabbbbbcbbbbbbbc',
-      'aabbbbcbbbbbbbbc',
-      'abbbbbcbbbbabbbc',
-      'abbbbcbbbbbabbbc',
-      'abbbcbbbbbbbbbbc',
-      'abbcbbbbbbbbbbbc',
-      'abcbbbbbbccbbbbc',
-      'abbbbbbbcbbcbbbc',
-      'abbbbbbcbbbbcbbc',
-      'abbbbbcbbbbbbcbc',
-      'abbbbbbbbbbbbbcc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'abbbbbbbbbbbbbbc',
-      'cccccccccccccccc',
+      '3333322222222222',
+      '3333322223333222',
+      '3300002223333022',
+      '2211111113333022',
+      '2211111112222022',
+      '2233331112222022',
+      '2222222222222222',
+      '2222220222000222',
+      '2333222022111222',
+      '2333222202111222',
+      '2333222222333222',
+      '2222200022222222',
+      '2222211122221112',
+      '2222233322221112',
+      '2222222222221112',
+      '2222222222222222',
     ],
   };
 
   const CRATE_DOTS = {
     'crate': [
       '................',
-      '..dddddddddddd..',
-      '.dhaaaaaaaaaahd.',
-      '.dabbbbbbbbbbad.',
-      '.dabbbbbbbbbbad.',
-      '.dccccccccccccd.',
-      '.dabbbbbbbbbbad.',
-      '.dabbbbbbbbbbad.',
-      '.dccccccccccccd.',
-      '.dabbbbbbbbbbad.',
-      '.dabbbbbbbbbbad.',
-      '.dcccccccccccdd.',
-      '.dcccccccccccdd.',
-      '..dddddddddddd..',
-      '...dd......dd...',
+      '..oooooooooooo..',
+      '.o444444444444o.',
+      '.o433333333331o.',
+      '.o430000000021o.',
+      '.o430344430021o.',
+      '.o430034300021o.',
+      '.o430003430021o.',
+      '.o430034300021o.',
+      '.o430344430021o.',
+      '.o430000000021o.',
+      '.o432222222221o.',
+      '.o411111111111o.',
+      '.o400000000000o.',
+      '..oooooooooooo..',
       '................',
     ],
     'stone': [
       '................',
-      '....dddddd......',
-      '..ddhaaaaadd....',
-      '.dhaaaaaabbbd...',
-      '.dabbbabbbbbbd..',
-      '.dabbbcbbbbbbd..',
-      '.dbbbbcbbbbbbd..',
-      '.dbbbbbcbbbbbd..',
-      '.dbbbbbbcbbbbd..',
-      '.dbbbbbbbcbbcd..',
-      '.dcbbbbbbbcbcd..',
-      '.dccbbbbbbbccd..',
-      '..dcccccccccd...',
-      '...ddddddddd....',
-      '................',
+      '.....oooooo.....',
+      '...oo444444oo...',
+      '..o444444333o...',
+      '.o44443333322o..',
+      '.o44333333222o..',
+      'o4333333322221o.',
+      'o3333322222211o.',
+      'o3332222222111o.',
+      'o3222222211111o.',
+      'o2222221111111o.',
+      'o1222111111110o.',
+      '.o1111111110oo..',
+      '.o000000000o....',
+      '..ooooooooo.....',
       '................',
     ],
     'barrel': [
       '................',
-      '...dddddddd.....',
-      '..dhaaaaaahd....',
-      '.daabbabbbbad...',
-      '.dabbbabbbbbd...',
-      '.ddddddddddddd..',
-      '.dccccacccccd...',
-      '.dabbbabbbbbd...',
-      '.dabbbabbbbbd...',
-      '.ddddddddddddd..',
-      '.dccccacccccd...',
-      '.dabbbabbbbbd...',
-      '.dcbbbabbbbcd...',
-      '..dcccccccccd...',
-      '...dddddddd.....',
+      '...oooooooooo...',
+      '..o3444333221o..',
+      '.o13444333221o..',
+      '.o13444333221o..',
+      '.o11111111111o..',
+      'o113444333221o..',
+      'o113444333221o..',
+      'o113444333221o..',
+      'o113444333221o..',
+      '.o11111111111o..',
+      '.o13444333221o..',
+      '.o13444333221o..',
+      '..o134433322o...',
+      '...oooooooooo...',
       '................',
     ],
     'sack': [
       '................',
-      '......dddd......',
-      '.....dcccd......',
-      '.....daaad......',
-      '....dhaaabd.....',
-      '...dhaabbbbd....',
-      '..dhaabbbbbbd...',
-      '..dabbbbbbbcd...',
-      '.dabbbbbbbbbcd..',
-      '.dabbbbbbbbbcd..',
-      '.dabbbbbbbbbcd..',
-      '.dcbbbbbbbbccd..',
-      '.dccbbbbbbcccd..',
-      '..dccccccccccd..',
-      '..ddddddddddd...',
+      '......oooo......',
+      '.....o2222o.....',
+      '.....o1111o.....',
+      '....o344321o....',
+      '...o34443221o...',
+      '..o3444432221o..',
+      '..o3444332221o..',
+      '.o344433222211o.',
+      '.o344332222111o.',
+      '.o343322222111o.',
+      '.o333222221110o.',
+      '.o322222111100o.',
+      '..o2211111000o..',
+      '..oooooooooooo..',
       '................',
     ],
     'ice': [
       '................',
-      '.....dddd.......',
-      '...ddhaaadd.....',
-      '..dhaaaabbbd....',
-      '..dahaabbbbd....',
-      '.dbahaabbbbbd...',
-      '.dbbahabbbbbd...',
-      '.dbbbahabbbbd...',
-      '.dbbbbahabbbd...',
-      '.dbbbbbahabbd...',
-      '.dcbbbbbahabd...',
-      '.dccbbbbbahbd...',
-      '..dccbbbbbbd....',
-      '...dcccccccd....',
-      '....ddddddd.....',
+      '......oooo......',
+      '.....o4444o.....',
+      '....o444433o....',
+      '...o44443332o...',
+      '..o4444o3322o...',
+      '..o444o13322o...',
+      '.o4443o113322o..',
+      '.o443o1113322o..',
+      '.o43o11144332o..',
+      '.o3o111144332o..',
+      '.o3o111133322o..',
+      '.o22111112211o..',
+      '..o211000110o...',
+      '..oooooooooo....',
       '................',
     ],
   };
+
   // ── 장소마다 다른 무늬 ───────────────────────────────────────
   //
   // 9/2 까지 열 장소가 **색만 달랐다.** 모양이 전부 같으니 멀리서 보면
@@ -1381,9 +1468,7 @@ const Art = (() => {
           // 그 점은 없는 것과 같다. 픽셀 아트가 색을 적게 쓰면서도 또렷한 이유가
           // 색마다 명도를 확실히 벌려놓기 때문이다
           const cv = bakeTile('w:' + wk + ':' + th.name + ':' + dp, rows,
-                              rolePal(th.wallTop,
-                                      css(lighter(rgb(th.wallTop), 0.40)),
-                                      css(darker(rgb(th.wallTop), 0.42))), dp);
+                              tonePal(th.wallTop), dp);
           blitTile(g, cv, px, Y - V.WH, dp);
 
           // 넷이 붙었으면 그 위에 물건을 덮는다.
@@ -1483,7 +1568,7 @@ const Art = (() => {
     const ck = kinds[tileHash(gx, gy) % kinds.length];
     const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
     const cv = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
-                        rolePal(th.crate, th.crateTop, th.crateSide), dp);
+                        tonePal(th.crate), dp);
     blitTile(g, cv, px, py - V.CH, dp);
 
     if (!box) return;
@@ -1937,99 +2022,97 @@ const Art = (() => {
 
   // ── 사람을 도트로 찍는다 ────────────────────────────────────
   //
-  // 9/2 까지 타원을 겹쳐 그렸다. 머리 타원, 몸 타원, 발 타원.
-  // 그래서 아무리 만져도 둥글둥글했다 — **곡선을 그리면 곡선이 나온다.**
+  // 16x18 에 다리 두 줄, 머리 위 장식 세 줄이 더 붙는다.
   //
-  // 픽셀 게임의 캐릭터가 또렷한 건 색이 예뻐서가 아니라 **점 수가 적어서**다.
-  // 16x20 이면 눈이 한 점, 팔이 한 줄, 발이 두 점이다. 그 안에서 뭘 살릴지
-  // 고르고 나면 나머지는 저절로 각이 진다. 크아 캐릭터도, 옛날 액션 게임들도
-  // 대개 이 언저리다 — 넓게 잡아야 사람 하나에 16~24 점.
+  // **머리 · 몸 · 다리가 한 덩어리여야 한다.** 처음엔 셋을 따로 그리고 사이에
+  // 외곽선 줄을 넣었더니, 머리가 몸 위에 얹힌 세 개의 물건으로 보였다.
+  // 목과 어깨가 이어져 있어야 사람으로 읽힌다.
   //
-  // 머리가 11줄, 몸이 7줄, 발이 2줄이다. 머리를 크게 잡는 건 취향이 아니라
-  // 작은 화면에서 **누구인지 읽히는 곳이 얼굴뿐**이기 때문이다.
+  // 눈은 검은 점 하나가 아니라 **어두운 칸 + 흰 반짝** 두 칸이다.
+  // 이 한 점이 없으면 인형이고, 있으면 사람이 된다. 16픽셀에서 제일 값이 큰 두 점이다.
   //
-  //   o 테두리   H 모자 밝은 면   h 모자   s 살결   e 눈   m 입
-  //   b 몸(팀색)   d 몸 그늘   f 신발   . 비워둠
+  // 빛은 왼쪽 위에서 온다. 그래서 왼쪽이 밝고 오른쪽에 그늘이 진다.
   //
-  // 팀색은 모자와 몸 두 군데에 들어간다. 한 군데면 24명 중에 누가 누군지
-  // 안 보이고, 온몸이면 실루엣이 뭉개진다
+  //   o 외곽선  H 모자 밝은 면  h 모자  m 모자 그늘
+  //   S 살결 밝은 면  s 살결  d 살결 그늘  e 눈  W 눈 반짝  q 입
+  //   B 몸 밝은 면  b 몸(팀색)  0 몸 깊은 그늘  F 신발  k 장식 강조
   const CHAR_BODY = {
     'down': [
       '.....oooooo.....',
       '...ooHHHHHHoo...',
-      '..oHHHHHHHHHHo..',
-      '..oHHHHHHHHHHo..',
-      '.oHHHHHHHHHHHHo.',
-      '.osssssssssssso.',
-      '.ossessssssesso.',
-      '.ossessssssesso.',
-      '.osssssssssssso.',
-      '..ossssmmsssso..',
-      '...oossssssoo...',
-      '.....oooooo.....',
-      '...oobbbbbboo...',
-      '..obbbbbbbbbbo..',
-      '.sobbbddddbbbos.',
-      '.sobbbddddbbbos.',
-      '.sobbbbbbbbbbos.',
-      '..obbbbbbbbbbo..',
+      '..oHHHHHHHHhho..',
+      '.oHHHHHHHHhhhho.',
+      '.oHHHHHHHhhhhmo.',
+      '.ohhSSSSssssdmo.',
+      '.oSSSSSssssssdo.',
+      '.oSSWeSssSWeSdo.',
+      '.oSSSSSssssssdo.',
+      '.oSSSSsqqsssSdo.',
+      '..oSSssssssddo..',
+      '...ooosssooooo..',
+      '..oBBoossoo0Bo..',
+      '.oBBBbbbbbbb0Bo.',
+      'soBBbbbbbbbbb0os',
+      'soBB00000000b0os',
+      '.oBbbbbbbbbbb0o.',
+      '..oBbbbbbbbb00..',
     ],
     'side': [
       '.....oooooo.....',
       '...ooHHHHHHoo...',
-      '..oHHHHHHHHHHo..',
-      '..oHHHHHHHHHHo..',
-      '.oHHHHHHHHHHHHo.',
-      '.osssssssssssso.',
-      '.ossssssseesso..',
-      '.ossssssseesso..',
-      '.ossssssssssso..',
-      '..osssssmmsso...',
-      '...oossssssoo...',
-      '.....oooooo.....',
-      '...oobbbbbboo...',
-      '..obbbbbbbbbbo..',
-      '..obbbbbdddbos..',
-      '..obbbbbdddbos..',
-      '..obbbbbbbbbbo..',
-      '..obbbbbbbbbbo..',
+      '..oHHHHHHHHhho..',
+      '.oHHHHHHHHhhhho.',
+      '.oHHHHHHHhhhhmo.',
+      '.ohhSSSSsssssmo.',
+      '.oSSSSSSssssddo.',
+      '.oSSSSSSsWeSddo.',
+      '.oSSSSSSsssdddo.',
+      '.oSSSSSSqqsdddo.',
+      '..oSSSsssssddo..',
+      '...ooosssooooo..',
+      '..oBBoossoo0Bo..',
+      '.oBBBbbbbbbb0Bo.',
+      '.oBBbbbbbbbbb0os',
+      '.oBB00000000b0os',
+      '.oBbbbbbbbbbb0o.',
+      '..oBbbbbbbbb00..',
     ],
     'up': [
       '.....oooooo.....',
       '...ooHHHHHHoo...',
-      '..oHHHHHHHHHHo..',
-      '..oHHHHHHHHHHo..',
-      '.oHHHHHHHHHHHHo.',
-      '.oHHHHHHHHHHHHo.',
+      '..oHHHHHHHHhho..',
+      '.oHHHHHHHHhhhho.',
+      '.oHHHHHHHhhhhmo.',
+      '.oHHHHHHHhhhhmo.',
       '.oooooooooooooo.',
-      '.ohhhhhhhhhhhho.',
-      '.ohhhohhhhohhho.',
-      '..ohhhhhhhhhho..',
-      '...oohhhhhhoo...',
-      '.....oooooo.....',
-      '...oobbbbbboo...',
-      '..obbbbbbbbbbo..',
-      '.sobbbddddbbbos.',
-      '.sobbbddddbbbos.',
-      '.sobbbbbbbbbbos.',
-      '..obbbbbbbbbbo..',
+      '.ohhhhhhhhhhmmo.',
+      '.ohhhohhhhohhmo.',
+      '..ohhhhhhhhmmo..',
+      '...oohhhhhmmo...',
+      '...ooosssooooo..',
+      '..oBBoossoo0Bo..',
+      '.oBBBbbbbbbb0Bo.',
+      'soBBbbbbbbbbb0os',
+      'soBB00000000b0os',
+      '.oBbbbbbbbbbb0o.',
+      '..oBbbbbbbbb00..',
     ],
   };
 
-  // 다리만 갈아 끼운다. 걸을 때 몸통까지 다시 그릴 이유가 없고,
-  // 발 두 점이 번갈아 뜨는 것만으로 걷는 것으로 읽힌다
+  // 다리 두 줄만 갈아 끼운다. 몸통까지 다시 그릴 이유가 없고,
+  // 발이 번갈아 뜨는 것만으로 걷는 것으로 읽힌다
   const CHAR_LEGS = {
     'idle': [
-      '...ooffooffoo...',
-      '....offo.offo...',
+      '..ooFFFooFFFoo..',
+      '...oFFo...oFFo..',
     ],
     'a': [
-      '...ooffooffoo...',
-      '....offo.oo.....',
+      '..ooFFFooFFFoo..',
+      '...oFFo....ooo..',
     ],
     'b': [
-      '...ooffooffoo...',
-      '.....oo.offo....',
+      '..ooFFFooFFFoo..',
+      '...ooo....oFFo..',
     ],
   };
   // 머리 위 장식 여덟 가지.
@@ -2101,31 +2184,34 @@ const Art = (() => {
     cv.width = W; cv.height = H;
     const c = cv.getContext('2d');
 
-    const base = rgb(hex);
-    const skin = o.dead ? [150, 158, 172] : [246, 222, 196];
+    // 팀색과 살결을 각각 다섯 단으로 편다.
+    //
+    // 팀색은 모자와 몸 두 군데에 들어간다. 한 군데면 24명 중에 누가 누군지
+    // 안 보이고, 온몸이면 실루엣이 뭉개진다
+    const bs = ramp(hex);
+    const sk = ramp(o.dead ? '#9aa2b0' : '#f0c9a0');
+
     const pal = {
       '.': null,
-      'o': 'rgba(12,14,20,0.95)',
-      'H': css(lighter(base, 0.34)),
-      'h': css(base),
-      'b': css(base),
-      'd': css(darker(base, 0.34)),
-      's': css(skin),
-      'e': 'rgba(20,22,30,0.95)',
-      'm': css(darker(skin, 0.30)),
-      'f': 'rgba(38,30,26,0.95)',
-      'k': css(lighter(base, 0.60)),   // 장식 강조색
+      'o': css(outlineOf(hex)),
+      'H': css(bs[4]), 'h': css(bs[3]), 'm': css(bs[1]),
+      'S': css(sk[3]), 's': css(sk[2]), 'd': css(sk[1]),
+      'e': 'rgba(26,24,34,0.96)', 'W': '#ffffff', 'q': css(sk[0]),
+      'B': css(bs[3]), 'b': css(bs[2]), 'c': css(bs[1]), '0': css(bs[0]),
+      'F': '#4a3e36', 'f': '#2e2622',
+      'k': css(bs[4]),
     };
 
     // 물에 갇히면 온몸이 파랗게 뜬다. 색을 바꾸는 게 아니라 **눈금을 옮긴다** —
     // 팀색은 그대로 두고 밝기만 올려야 누구인지 계속 읽힌다
     if (o.danger) {
-      pal['H'] = css(lighter(base, 0.62));
-      pal['h'] = css(lighter(base, 0.48));
-      pal['b'] = css(lighter(base, 0.48));
-      pal['d'] = css(base);
+      pal['H'] = css(light(bs[4], 0.45));
+      pal['h'] = css(light(bs[3], 0.45));
+      pal['B'] = css(light(bs[3], 0.45));
+      pal['b'] = css(light(bs[2], 0.45));
+      pal['c'] = css(bs[2]);
+      pal['0'] = css(bs[1]);
     }
-
     for (let y = 0; y < rows.length; ++y) {
       const row = rows[y];
       for (let x = 0; x < W; ++x) {

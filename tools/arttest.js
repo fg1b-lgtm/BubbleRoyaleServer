@@ -164,7 +164,7 @@ console.log('');
 // 상대휘도. 0 이 검정, 1 이 흰색
 const lum = (hex) => luminance(hex);
 
-console.log('  장소        바닥   상자   벽위   벽옆   바닥-상자');
+console.log('  장소        바닥   상자   벽위   벽옆   상자-바닥');
 
 let orderBad = [], gapBad = [];
 const gaps = [];
@@ -172,21 +172,31 @@ const gaps = [];
 for (const pl of Art.PLACES) {
     const f = lum(pl.floor), c = lum(pl.crate);
     const wt = lum(pl.wallTop), ws = lum(pl.wallSide);
-    const g1 = f - c;
-    gaps.push([pl.name, g1, c - wt]);
+    const g1 = c - f;
+    gaps.push([pl.name, g1, f - wt]);
 
     console.log('  ' + pl.name.padEnd(10)
                 + f.toFixed(2).padStart(5) + c.toFixed(2).padStart(7)
                 + wt.toFixed(2).padStart(7) + ws.toFixed(2).padStart(7)
                 + g1.toFixed(2).padStart(11));
 
-    // **바닥 > 부술 수 있는 것 > 못 부수는 것.** 이 순서가 곧 게임의 위계다.
-    // 벽이 상자보다 밝으면 '못 부수는 것' 이 더 가벼워 보인다. 거꾸로다
-    if (!(f > c && c > wt && wt > ws)) orderBad.push(pl.name);
+    // **상자 > 바닥 > 못 부수는 벽.**
+    //
+    // 9/3 에 순서를 뒤집었다. 전에는 바닥이 제일 밝았는데, 바닥은 화면에서
+    // 제일 넓은 면이다. 제일 넓은 면이 제일 밝으면 그 위에 놓인 물건이
+    // 전부 바닥에 눌린다. 확대해서 보고 알았다 — 상자도 벽도 다 뿌옜다.
+    //
+    // 배경은 조용하고 어두워야 하고, 만질 수 있는 것이 떠 있어야 한다.
+    // 부술 수 있는 상자가 제일 밝은 것도 그래서다. 눈이 먼저 가야 하는 것이
+    // 판을 바꿀 수 있는 것이어야 한다.
+    //
+    // 못 부수는 벽이 제일 어두운 건 그대로 둔다. 벽이 상자보다 밝으면
+    // '못 부수는 것' 이 더 가벼워 보인다
+    if (!(c > f && f > wt && wt > ws)) orderBad.push(pl.name);
 }
 
 check(orderBad.length === 0,
-      '어디서나 바닥 > 상자 > 벽 순으로 어두워진다 (부술 수 있는 것이 더 밝다)'
+      '어디서나 상자 > 바닥 > 벽 순으로 어두워진다 (부술 수 있는 것이 제일 밝다)'
       + (orderBad.length ? ' — 뒤집힌 곳: ' + orderBad.join(', ') : ''));
 
 // 간격이 들쭉날쭉하면 어떤 장소는 막힌 데가 잘 보이고 어떤 장소는 안 보인다.
@@ -195,7 +205,7 @@ check(orderBad.length === 0,
     const g1s = gaps.map(g => g[1]);
     const spread = Math.max(...g1s) - Math.min(...g1s);
     console.log('');
-    console.log('  바닥-상자 간격이 ' + Math.min(...g1s).toFixed(2)
+    console.log('  상자-바닥 간격이 ' + Math.min(...g1s).toFixed(2)
                 + ' ~ ' + Math.max(...g1s).toFixed(2) + ' 로 벌어져 있다 (차이 '
                 + spread.toFixed(2) + ')');
     check(spread <= 0.22,
