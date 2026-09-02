@@ -153,8 +153,30 @@ inline int CenterAxis(const GameMap& map, int move_pos, int side_pos,
         return side_pos;   // 트인 데다. 안 건드린다
     }
 
+    // **몸이 실제로 안 들어갈 때만 당긴다.**
+    //
+    // 전에는 좁은 데로 들어가면 매 틱 칸 한가운데로 끌어당겼다.
+    // 그런데 상자를 100%로 채운 판에서는 거의 모든 통로가 '좁은 데'라
+    // 사실상 늘 켜져 있었다. 그래서 좌우로 걸으면 위아래로 밀리고
+    // 위아래로 걸으면 옆으로 밀렸다. 조작이 아니라 미끄러짐이다.
+    //
+    // 통로가 한 칸(256)이고 몸이 204 라 가운데에서 26 만큼은 벗어나도 들어간다.
+    // 그 안에 있으면 아무것도 안 한다. 벗어났을 때만, 들어갈 수 있는 데까지만 당긴다.
+    // **도와주는 것과 조종을 뺏는 것은 다르다.**
+    // 한 점을 뺀다. 몸 끝이 경계에 **딱** 닿으면 그 다음 칸에 든 것으로 세기 때문이다.
+    // 이 한 점이 없으면 줄을 맞춰도 통로를 못 지난다 — 시험이 잡아줬다
+    const int slack = TILE_UNITS / 2 - PLAYER_HALF - 1;
+
     int center = st * TILE_UNITS + TILE_UNITS / 2;
-    int d      = center - side_pos;
+    int off    = side_pos - center;
+
+    if (off >= -slack && off <= slack) {
+        return side_pos;   // 이대로도 들어간다. 손대지 않는다
+    }
+
+    // 들어갈 수 있는 가장 가까운 자리까지만
+    int want = center + (off > 0 ? slack : -slack);
+    int d    = want - side_pos;
 
     int pull = speed * LANE_SNAP_PERCENT / 100;
     if (pull < 1) pull = 1;

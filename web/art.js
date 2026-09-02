@@ -319,6 +319,266 @@ const Art = (() => {
   // 통째로 한 장에 그려두면 사람이 늘 벽 앞이나 늘 벽 뒤에 있게 된다.
   //
   // g 는 이 줄만 담는 종이다. 위로 V.TOP, 아래로 V.BOT 만큼 여유가 있다
+  // 도트 지도 하나를 그 장소 색으로 칠해 종이에 굽는다.
+  //
+  // 지도의 글자는 역할이고 색은 장소가 준다. 그래서 같은 널빤지 무늬가
+  // 마을에서는 초록 담이 되고 부두에서는 남색 판이 된다.
+  //
+  // 매 칸 도트를 찍으면 한 칸에 256번이라 판 하나에 45만 번이다. 한 번만 굽는다.
+  // 종류 x 장소 x 배율이라 캐시가 백 개를 안 넘는다
+  const tileCache = new Map();
+
+  function bakeTile(key, rows, pal, P) {
+    let cv = tileCache.get(key);
+    if (cv) return cv;
+
+    cv = document.createElement('canvas');
+    cv.width = 16 * P; cv.height = 16 * P;
+    const c = cv.getContext('2d');
+
+    for (let r = 0; r < 16; ++r) {
+      const row = rows[r];
+      for (let x = 0; x < 16; ++x) {
+        const col = pal[row[x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x * P, r * P, P, P);
+      }
+    }
+
+    tileCache.set(key, cv);
+    if (tileCache.size > 240) tileCache.clear();
+    return cv;
+  }
+
+  // 장소 색에서 역할별 색을 만든다.
+  //
+  // a 밝은 면 / b 바탕 / c 그늘 / d 테두리 / h 반짝.
+  // 테두리는 장소 색이 아니라 **거의 검정**이다 —
+  // 장소 색으로 두르면 그 장소 안에서는 안 보인다. 검정은 어디서나 산다
+  // base/top/side 는 색 문자열이거나 이미 rgb 배열이다.
+  // 부르는 쪽이 계산해서 넘기는 경우가 있어 둘 다 받는다
+  function toRgb(v) { return typeof v === 'string' ? (v[0] === '#' ? rgb(v) : null) : v; }
+
+  function rolePal(base, top, side) {
+    const b = toRgb(base) || rgb('#888888');
+    const tp = toRgb(top);
+    const sd = toRgb(side);
+    return {
+      '.': null,
+      'a': tp ? css(tp) : top,
+      'b': css(b),
+      'c': sd ? css(sd) : side,
+      'd': 'rgba(10,12,16,0.92)',
+      'h': tp ? css(lighter(tp, 0.45)) : top,
+    };
+  }
+
+  function blitTile(g, cv, px, py, P) {
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, Math.round(px / P) * P, Math.round(py / P) * P);
+    g.imageSmoothingEnabled = smooth;
+  }
+  // ── 벽과 상자를 도트로 찍는다 ───────────────────────────────
+  //
+  // 9/2 까지 비율로 그렸다. `T * 0.34` 같은 식으로 사각형을 얹는 방식이라,
+  // 아무리 다듬어도 **도형이지 도트가 아니었다.** 확대하면 반듯한 네모만 나온다.
+  //
+  // 픽셀 게임의 '잘 짜인' 느낌은 낮은 해상도에 맞춰 **한 점 한 점을 손으로 놓는 데서**
+  // 나온다. 널빤지 이음새가 몇 번째 줄인지, 못이 어느 점인지가 정해져 있어야 한다.
+  // 아이템을 도트 지도로 바꿨을 때 제일 잘 나왔던 이유가 그것이다.
+  //
+  // 16x16 이다. 타일이 38px 이면 한 점이 2~3px 이라 눈에 도트가 보인다.
+  // 색은 지도에 안 적는다 — 글자는 **역할**이고 실제 색은 장소 팔레트에서 온다.
+  // 그래야 같은 모양이 열 곳에서 그 장소의 색으로 나온다.
+  //
+  //   a 밝은 면   b 바탕   c 그늘   d 테두리   h 반짝   . 비워둠
+  const WALL_DOTS = {
+    'brick': [
+      'aaaaaaaaaaaaaaaa',
+      'abbbbbbcbbbbbbbc',
+      'abbbbbbcbbbbbbbc',
+      'accccccccccccccc',
+      'abbbcbbbbbbbcbbb',
+      'abbbcbbbbbbbcbbb',
+      'accccccccccccccc',
+      'abbbbbbcbbbbbbbc',
+      'abbbbbbcbbbbbbbc',
+      'accccccccccccccc',
+      'abbbcbbbbbbbcbbb',
+      'abbbcbbbbbbbcbbb',
+      'accccccccccccccc',
+      'abbbbbbcbbbbbbbc',
+      'abbbbbbcbbbbbbbc',
+      'cccccccccccccccc',
+    ],
+    'column': [
+      'aaaaaaaaaaaaaaaa',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'abbcaabbcaabbcab',
+      'cccccccccccccccc',
+    ],
+    'metal': [
+      'aaaaaaaaaaaaaaaa',
+      'abbbbbbbbbbbbbbc',
+      'abhbbbbbbbbbbhbc',
+      'abdbbbbbbbbbbdbc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'accccccccccccccc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'abhbbbbbbbbbbhbc',
+      'abdbbbbbbbbbbdbc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'cccccccccccccccc',
+    ],
+    'wood': [
+      'aaaaaaaaaaaaaaaa',
+      'abbbbcabbbbcabbc',
+      'abhbbcabbbbcabbc',
+      'abbbbcabhbbcabbc',
+      'abbbbcabbbbcahbc',
+      'abbbbcabbbbcabbc',
+      'abhbbcabbbbcabbc',
+      'abbbbcabbbbcabbc',
+      'abbbbcahbbbcabbc',
+      'abbbbcabbbbcabhc',
+      'abhbbcabbbbcabbc',
+      'abbbbcabbbbcabbc',
+      'abbbbcabhbbcabbc',
+      'abbbbcabbbbcabbc',
+      'abhbbcabbbbcabbc',
+      'cccccccccccccccc',
+    ],
+    'rock': [
+      'aaaaaaaaaaaaaaaa',
+      'aabbbbbcbbbbbbbc',
+      'aabbbbcbbbbbbbbc',
+      'abbbbbcbbbbabbbc',
+      'abbbbcbbbbbabbbc',
+      'abbbcbbbbbbbbbbc',
+      'abbcbbbbbbbbbbbc',
+      'abcbbbbbbccbbbbc',
+      'abbbbbbbcbbcbbbc',
+      'abbbbbbcbbbbcbbc',
+      'abbbbbcbbbbbbcbc',
+      'abbbbbbbbbbbbbcc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'abbbbbbbbbbbbbbc',
+      'cccccccccccccccc',
+    ],
+  };
+
+  const CRATE_DOTS = {
+    'crate': [
+      '................',
+      '..dddddddddddd..',
+      '.dhaaaaaaaaaahd.',
+      '.dabbbbbbbbbbad.',
+      '.dabbbbbbbbbbad.',
+      '.dccccccccccccd.',
+      '.dabbbbbbbbbbad.',
+      '.dabbbbbbbbbbad.',
+      '.dccccccccccccd.',
+      '.dabbbbbbbbbbad.',
+      '.dabbbbbbbbbbad.',
+      '.dcccccccccccdd.',
+      '.dcccccccccccdd.',
+      '..dddddddddddd..',
+      '...dd......dd...',
+      '................',
+    ],
+    'stone': [
+      '................',
+      '....dddddd......',
+      '..ddhaaaaadd....',
+      '.dhaaaaaabbbd...',
+      '.dabbbabbbbbbd..',
+      '.dabbbcbbbbbbd..',
+      '.dbbbbcbbbbbbd..',
+      '.dbbbbbcbbbbbd..',
+      '.dbbbbbbcbbbbd..',
+      '.dbbbbbbbcbbcd..',
+      '.dcbbbbbbbcbcd..',
+      '.dccbbbbbbbccd..',
+      '..dcccccccccd...',
+      '...ddddddddd....',
+      '................',
+      '................',
+    ],
+    'barrel': [
+      '................',
+      '...dddddddd.....',
+      '..dhaaaaaahd....',
+      '.daabbabbbbad...',
+      '.dabbbabbbbbd...',
+      '.ddddddddddddd..',
+      '.dccccacccccd...',
+      '.dabbbabbbbbd...',
+      '.dabbbabbbbbd...',
+      '.ddddddddddddd..',
+      '.dccccacccccd...',
+      '.dabbbabbbbbd...',
+      '.dcbbbabbbbcd...',
+      '..dcccccccccd...',
+      '...dddddddd.....',
+      '................',
+    ],
+    'sack': [
+      '................',
+      '......dddd......',
+      '.....dcccd......',
+      '.....daaad......',
+      '....dhaaabd.....',
+      '...dhaabbbbd....',
+      '..dhaabbbbbbd...',
+      '..dabbbbbbbcd...',
+      '.dabbbbbbbbbcd..',
+      '.dabbbbbbbbbcd..',
+      '.dabbbbbbbbbcd..',
+      '.dcbbbbbbbbccd..',
+      '.dccbbbbbbcccd..',
+      '..dccccccccccd..',
+      '..ddddddddddd...',
+      '................',
+    ],
+    'ice': [
+      '................',
+      '.....dddd.......',
+      '...ddhaaadd.....',
+      '..dhaaaabbbd....',
+      '..dahaabbbbd....',
+      '.dbahaabbbbbd...',
+      '.dbbahabbbbbd...',
+      '.dbbbahabbbbd...',
+      '.dbbbbahabbbd...',
+      '.dbbbbbahabbd...',
+      '.dcbbbbbahabd...',
+      '.dccbbbbbahbd...',
+      '..dccbbbbbbd....',
+      '...dcccccccd....',
+      '....ddddddd.....',
+      '................',
+    ],
+  };
   // ── 장소마다 다른 무늬 ───────────────────────────────────────
   //
   // 9/2 까지 열 장소가 **색만 달랐다.** 모양이 전부 같으니 멀리서 보면
@@ -555,12 +815,35 @@ const Art = (() => {
         g.fillStyle = 'rgba(0,0,0,0.34)';
         pr(g, px, Y + T - V.WH * 0.25, T, V.WH * 0.25);
 
-        // 윗면. V.WH 만큼 위로 올라가 있다. 이 어긋남이 곧 높이다
-        g.fillStyle = css(top);
-        g.fillRect(px, Y - V.WH, T, T);
+        // 윗면. V.WH 만큼 위로 올라가 있다. 이 어긋남이 곧 높이다.
+        //
+        // **도트 지도를 그대로 붙인다.** 전에는 바탕을 칠하고 그 위에 비율로 계산한
+        // 선을 얹었다. 그러면 줄눈이 배율에 따라 반 픽셀에 걸려 흐려지고,
+        // 확대하면 반듯한 사각형만 나와서 도형처럼 보인다.
+        // 16x16 을 한 번 구워서 붙이면 어느 배율에서든 도트가 도트로 남는다
+        {
+          const dp = Math.max(1, Math.round(T / 16));
+          const rows = WALL_DOTS[th.wallKind] || WALL_DOTS.rock;
+          // 무늬 대비를 세게 준다.
+          //
+          // 처음엔 밝은 면을 원래 색에서 조금만 올렸더니 무늬가 거의 안 보였다.
+          // 낮은 해상도에서는 **한 점이 곧 정보**라, 옆 점과 명도가 비슷하면
+          // 그 점은 없는 것과 같다. 픽셀 아트가 색을 적게 쓰면서도 또렷한 이유가
+          // 색마다 명도를 확실히 벌려놓기 때문이다
+          const cv = bakeTile('w:' + th.wallKind + ':' + th.name + ':' + dp, rows,
+                              rolePal(th.wallTop,
+                                      css(lighter(rgb(th.wallTop), 0.40)),
+                                      css(darker(rgb(th.wallTop), 0.42))), dp);
+          blitTile(g, cv, px, Y - V.WH, dp);
 
-        // 장소마다 다른 무늬. 벽돌인지 철판인지 바위인지가 여기서 갈린다
-        wallPattern(g, th.wallKind, px, Y - V.WH, T, x, y);
+          // 윗변 림. 물건이 바닥에서 떠 보이게 하는 한 줄이다.
+          // 위쪽에 벽이 이어져 있으면 안 긋는다 — 덩어리 한가운데에 줄이 생기면
+          // 하나짜리 벽이 여럿 붙어 있는 것처럼 보인다
+          if (!isWall(x, y - 1)) {
+            g.fillStyle = 'rgba(255,255,255,0.26)';
+            g.fillRect(px, Y - V.WH, T, dp);
+          }
+        }
 
         // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘.
         //
@@ -584,67 +867,39 @@ const Art = (() => {
         if (!isWall(x, y + 1)) g.fillRect(px, Y + T - 1, T, 1);
       }
       else if (t === 2 || t === 4) {
-        // 상자. 벽보다 낮고 모서리가 둥글다.
-        // 부술 수 있는 것과 없는 것이 **모양으로** 갈려야 한다. 색만으로는 부족하다
-        // 여백을 키웠다. 윗면 + 높이가 타일 안에 들어와야 칸이 끊겨 보인다.
-        //   여백 2m + 윗면 w = T,  그리고 w + CH < T 여야 한다
-        const m = Math.max(1, Math.round(T * 0.15));
-        const w = T - m * 2;
-
-        // 그림자. 타원 대신 모서리 깎은 납작한 네모다.
+        // 상자도 도트 지도다.
         //
-        // 자리를 타일 밑에 두었더니 상자 높이를 줄인 뒤로 **상자와 떨어져서**
-        // 회색 막대가 따로 떠 있는 것처럼 보였다. 그림자는 물건에 붙어 있어야
-        // 그 물건의 그림자로 읽힌다. 상자 바닥에 맞춰 붙인다
-        const botY = Y + m - V.CH + w * 0.5 + (w * 0.5 + V.CH);
-        g.fillStyle = 'rgba(0,0,0,0.24)';
-        pbox(g, px + m + V.P, botY - V.P, w, V.P * 2);
+        // 밀 수 있는 상자는 **모양이 아니라 덧그린 쇠테로** 구분한다.
+        // 실루엣까지 바꾸면 어느 것이 밀리는지 외워야 하는데, 그건 규칙이 아니라 암기다.
+        // 쇠테는 한눈에 '이건 다르다' 를 말하면서 칸을 채우는 면은 그대로 둔다
+        const dp = Math.max(1, Math.round(T / 16));
+        const box = (t === 4);
 
-        // 옆면
-        g.fillStyle = css(cs);
-        pbox(g, px + m, Y + m - V.CH + w * 0.5, w, w * 0.5 + V.CH);
+        // 그림자. 물건에 붙어 있어야 그 물건의 그림자로 읽힌다
+        g.fillStyle = 'rgba(0,0,0,0.30)';
+        pr(g, px + T * 0.14, Y + T * 0.80, T * 0.74, T * 0.10);
 
-        // 윗면. 그라데이션이 아니라 세 단으로 나눈다.
-        // 위 3분의 1이 밝고, 가운데가 바탕, 아래가 그늘이다
-        const bx0 = px + m, by0 = Y + m - V.CH;
-        g.fillStyle = css(ct);
-        pbox(g, bx0, by0, w, w);
-        g.fillStyle = css(cc);
-        pr(g, bx0, by0 + w * 0.38, w, w * 0.62 - V.P);
-        g.fillStyle = css(mix(cc, rgb('#000000'), 0.12));
-        pr(g, bx0 + V.P, by0 + w - V.P * 2, w - V.P * 2, V.P * 2);
+        const rows = CRATE_DOTS[th.crateKind] || CRATE_DOTS.crate;
+        const cv = bakeTile('c:' + th.crateKind + ':' + th.name + ':' + dp, rows,
+                            rolePal(th.crate, th.crateTop, th.crateSide), dp);
+        blitTile(g, cv, px, Y - V.CH, dp);
 
-        // 1픽셀 테두리. 픽셀 아트에서 물건을 물건으로 만드는 건 이 선이다
-        g.fillStyle = css(darker(cs, 0.42), 0.95);
-        g.fillRect(q(bx0 + V.P), q(by0), q(w - V.P * 2), V.P);
-        g.fillRect(q(bx0 + V.P), q(by0 + w * 0.5 + V.CH + w * 0.5 - V.P), q(w - V.P * 2), V.P);
-        g.fillRect(q(bx0), q(by0 + V.P), V.P, q(w * 0.5 + V.CH + w * 0.5 - V.P * 2));
-        g.fillRect(q(bx0 + w - V.P), q(by0 + V.P), V.P, q(w * 0.5 + V.CH + w * 0.5 - V.P * 2));
-
-        // 장소마다 다른 물건이 쌓여 있다. 궤짝 · 드럼통 · 자루 · 돌덩이 · 얼음.
-        // 실루엣은 같은 네모로 두고 무늬만 바꾼다. 어디가 막혔는지가 먼저다
-        cratePattern(g, th.crateKind, px + m, Y + m - V.CH, w, cc, cs, x, y);
-
-        // 밀 수 있는 상자만 쇠테와 못.
-        // "이건 밀 수 있다" 를 글자 없이 알리는 유일한 방법이다
         if (box) {
-          const bx = px + m, by = Y + m - V.CH;
+          // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
+          const bx = Math.round((px + dp) / dp) * dp;
+          const by = Math.round((Y - V.CH + dp * 4) / dp) * dp;
+          const bw = dp * 14;
 
-          // 쇠테 두 줄. 선이 아니라 칠한 띠다
-          const bandH = Math.max(V.P, q(w * 0.10));
-          g.fillStyle = 'rgba(84,94,110,0.92)';
-          pr(g, bx, by + w * 0.26, w, bandH);
-          pr(g, bx, by + w * 0.70, w, bandH);
+          g.fillStyle = 'rgba(84,94,110,0.95)';
+          g.fillRect(bx, by, bw, dp);
+          g.fillRect(bx, by + dp * 5, bw, dp);
+          g.fillStyle = 'rgba(150,162,182,0.95)';
+          g.fillRect(bx, by - dp, bw, dp);
+          g.fillRect(bx, by + dp * 4, bw, dp);
 
-          g.fillStyle = 'rgba(140,152,172,0.85)';
-          pr(g, bx, by + w * 0.26, w, V.P);
-          pr(g, bx, by + w * 0.70, w, V.P);
-
-          // 못 네 개. 한 점씩
-          g.fillStyle = 'rgba(226,234,246,0.95)';
+          g.fillStyle = 'rgba(228,236,248,0.95)';
           for (let i = 0; i < 4; ++i) {
-            pr(g, bx + (i & 1 ? w - w * 0.22 : w * 0.14),
-                  by + (i < 2 ? w * 0.28 : w * 0.72), V.P, V.P);
+            g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
           }
         }
       }

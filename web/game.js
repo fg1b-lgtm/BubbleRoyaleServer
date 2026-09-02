@@ -220,8 +220,16 @@ function resize() {
   // 캐릭터가 작게 느껴지던 것의 절반이 여기서 풀린다
   const availW = Math.max(360, window.innerWidth  - 16);
   const availH = Math.max(320, window.innerHeight - 34);
-  const ts = Math.max(16, Math.min(72,
-    Math.floor(Math.min(availW / view.w, availH / view.h))));
+  // 타일 크기를 **16의 배수로** 맞춘다.
+  //
+  // 벽과 상자를 16x16 도트 지도로 찍으므로, 타일이 16의 배수가 아니면
+  // 한 점이 정수 픽셀로 안 떨어진다. 38px 타일이면 점 하나가 2.375px 이라
+  // 반올림해서 2px 로 찍고 나면 **한 칸에 6픽셀이 남아 벽 사이에 틈이 생긴다.**
+  //
+  // 픽셀 게임이 배율을 정수로만 쓰는 이유가 이것이다. 조금 작아지더라도
+  // 점이 점으로 떨어지는 쪽이 낫다 — 틈이 벌어진 벽은 벽으로 안 보인다
+  const raw = Math.floor(Math.min(availW / view.w, availH / view.h));
+  const ts = Math.max(16, Math.min(64, Math.floor(raw / 16) * 16));
 
   Art.setScale(ts);
 

@@ -48,6 +48,20 @@ struct RoundResult
 
     // 침수 몇 단계까지 갔나. 안 걸리는 단계는 만들어놓고 안 쓰는 것이다
     int  flood_reached;
+
+    // **갇힌 순간**을 뜯어본다. 죽은 순간이 아니라 갇힌 순간이어야 한다 —
+    // 물줄기는 0.5초 남아 있다가 사라지므로, 죽을 때쯤엔 범인이 이미 없다.
+    //
+    // trap_age 는 그 칸의 물줄기가 **몇 틱째**였나다.
+    //  1  터지는 그 틱에 거기 있었다  -> 못 피한 것. 있을 수 있는 일이다
+    //  2+ 이미 깔려 있는 물줄기에 **걸어 들어갔다** -> 지속을 모르는 것이다
+    int  trapped_total;
+    int  trapped_walked_in;   // 3틱째 이후에 갇힌 수 = 진짜로 걸어 들어간 것
+    int  trapped_own;         // 그중 자기가 놓은 것
+    int  trap_age_sum;
+    int  trapped_same_tile;   // 서 있던 칸 그대로 갇혔다 (걸치기가 풀린 것)
+    int  trapped_grazing;     // 갇히기 직전 틱에 걸치는 중이었다
+    int  trap_reason[16];     // 갇힐 때 어느 규칙으로 움직이고 있었나
 };
 
 // ── 조각별 계측 (레벨 디자인용) ─────────────────────────────
@@ -206,6 +220,9 @@ static void PlayRound(unsigned int seed, RoundResult& r)
 
     int drowning_before[PLAYER_MAX];
     bool alive_before[PLAYER_MAX];
+    int  trap_before[PLAYER_MAX];
+    int  jt_before[PLAYER_MAX];
+    bool graze_before[PLAYER_MAX];
     int  last_dx[PLAYER_MAX] = {}, last_dy[PLAYER_MAX] = {};
     uint8_t last_why[PLAYER_MAX] = {};
     int sample = 0;
@@ -216,6 +233,10 @@ static void PlayRound(unsigned int seed, RoundResult& r)
         for (int i = 0; i < PLAYER_MAX; ++i) {
             drowning_before[i] = g_game.players[i].flood_ticks;
             alive_before[i]    = g_game.players[i].alive;
+            trap_before[i]     = g_game.players[i].trap_ticks;
+            jt_before[i]       = g_game.players[i].judge_ty * MAP_W
+                               + g_game.players[i].judge_tx;
+            graze_before[i]    = g_game.players[i].grazing;
 
         }
 
@@ -262,6 +283,27 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             if (q.dir_x != 0 || q.dir_y != 0) {
                 last_dx[i] = q.dir_x; last_dy[i] = q.dir_y; last_why[i] = g_reason[i];
             }
+        }
+
+        // 갓 갇힌 사람. 물줄기가 몇 틱째였는지가 이 판의 진짜 질문이다
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            const Player& p = g_game.players[i];
+            if (!p.alive || trap_before[i] > 0 || p.trap_ticks <= 0) continue;
+
+            int left = g_game.blast[p.judge_ty][p.judge_tx];
+            if (left <= 0) continue;                       // 물줄기 말고 다른 이유
+            int age = BLAST_DURATION_TICKS - left + 1;
+
+            ++r.trapped_total;
+            r.trap_age_sum += age;
+            // 1~2틱째는 터지는 순간에 휘말린 것이다. 봇은 틱 앞부분에서 방향을 정하고
+            // 물줄기는 그 뒤에 깔리므로, 한 틱은 어쩔 수 없이 밀린다. 그건 게임이다.
+            // 3틱째부터가 **이미 깔려 있는 물에 제 발로 들어간** 것이고, 그것만 버그다
+            if (age >= 3) ++r.trapped_walked_in;
+            if (g_game.blast_owner[p.judge_ty][p.judge_tx] == (int8_t)i) ++r.trapped_own;
+            if (jt_before[i] == p.judge_ty * MAP_W + p.judge_tx) ++r.trapped_same_tile;
+            if (graze_before[i]) ++r.trapped_grazing;
+            if (g_reason[i] >= 0 && g_reason[i] < 16) ++r.trap_reason[g_reason[i]];
         }
 
         for (int i = 0; i < PLAYER_MAX; ++i) {
@@ -384,6 +426,8 @@ int main(int argc, char** argv)
     long long pushed = 0;
     long long capped = 0, items_at[8] = {};
     long long selfd = 0, flips = 0, wet = 0;
+    long long tt = 0, tw = 0, town = 0, tage = 0, tsame = 0, tgraze = 0;
+    long long treason[16] = {};
     int flood_hit[FLOOD_STAGES + 1] = {};
     int cap_rounds = 0;
     long long self_kill = 0, win_items = 0;
@@ -405,6 +449,13 @@ int main(int argc, char** argv)
         pushed += r.boxes_pushed;
         ++flood_hit[r.flood_reached];
         selfd += r.self_deaths;
+        tt   += r.trapped_total;
+        tw   += r.trapped_walked_in;
+        town += r.trapped_own;
+        tage += r.trap_age_sum;
+        tsame  += r.trapped_same_tile;
+        tgraze += r.trapped_grazing;
+        for (int k = 0; k < 16; ++k) treason[k] += r.trap_reason[k];
         flips += r.flips;
         wet += r.wet_flips;
         if (r.cap_tick > 0) { capped += r.cap_tick; ++cap_rounds; }
@@ -437,6 +488,27 @@ int main(int argc, char** argv)
     printf("  자기 물풍선에 갇힌 횟수: %lld,  그러다 죽은 수: %lld\n",
            self_kill / rounds, selfd / rounds);
 
+    // **갇힌 순간의 물줄기 나이.**
+    //
+    // 1틱째면 터지는 순간 거기 있었던 것이고, 그건 못 피한 것이다 — 게임이다.
+    // 2틱째 이후면 이미 물이 깔려 있는 칸으로 **걸어 들어간** 것이다.
+    // 물줄기가 0.5초 남아 있다는 걸 판단에 못 넣고 있다는 뜻이고, 그건 버그다
+    printf("  갇힌 횟수 %lld  (터질 때 휘말림 %lld,  깔린 데로 걸어 들어감 %lld = %lld%%)\n",
+           tt / rounds, (tt - tw) / rounds, tw / rounds, tt ? tw * 100 / tt : 0);
+    // 갇힐 때 무슨 생각을 하고 있었나. 이게 있어야 어느 규칙을 고칠지 알 수 있다
+    printf("  갇힐 때 하던 일:");
+    for (int k = 0; k < 16; ++k) {
+        if (treason[k] > 0) printf(" %s %lld", BOT_REASON_NAME[k], treason[k]);
+    }
+    printf("\n");
+
+    // 칸을 바꾸다 갇혔나, 서 있던 자리에서 갇혔나.
+    // 후자면 **걸치기로 버티다 중심이 미끄러진 것**이다. 봇은 칸 단위로만 생각하는데
+    // 몸은 칸의 0.8 이고 자리는 연속이라, 물 옆 칸에 바짝 붙어 서면 한 점만 밀려도 들어간다
+    printf("  그중 서 있던 칸에서 그대로 %lld,  직전에 걸치는 중이었던 %lld\n",
+           tsame / rounds, tgraze / rounds);
+    printf("  갇힐 때 물줄기 평균 나이 %lld틱 / %d틱  (자기 것에 갇힌 %lld)\n",
+           tt ? tage / tt : 0, BLAST_DURATION_TICKS, town / rounds);
     // 관전하면 제일 먼저 눈에 걸리는 것. 봇이 제자리에서 덜덜 떠는 횟수다.
     // '이상해 보인다' 를 고칠 수 있으려면 숫자여야 한다
     printf("  방향을 한 틱 만에 뒤집은 횟수: %lld (그중 물가에서 %lld)\n",

@@ -131,8 +131,16 @@ const Predict = (() => {
       : (solid(tiles, st - 1, ahead) || solid(tiles, st + 1, ahead));
     if (!narrow) return sidePos;
 
-    const center = st * C.tileUnits + (C.tileUnits >> 1) ;
-    let d = center - sidePos;
+    // 몸이 실제로 안 들어갈 때만 당긴다. Movement.h 와 같은 규칙이다 —
+    // 여기가 다르면 예측이 서버와 갈려서 매 틱 되돌아간다
+    const slack = (C.tileUnits >> 1) - HALF - 1;
+
+    const center = st * C.tileUnits + (C.tileUnits >> 1);
+    const off = sidePos - center;
+    if (off >= -slack && off <= slack) return sidePos;
+
+    const want = center + (off > 0 ? slack : -slack);
+    let d = want - sidePos;
 
     let pull = Math.floor(speed * C.laneSnap / 100);
     if (pull < 1) pull = 1;

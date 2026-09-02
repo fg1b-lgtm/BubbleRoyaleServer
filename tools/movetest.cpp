@@ -317,6 +317,45 @@ static void Test7_NoSlide()
     printf("  막힌 방향을 누르는 동안 세로 %d -> %d\n", start_y, p.py);
     Check(p.py == start_y, "막혔으면 옆으로 한 점도 안 밀린다");
 
+    // **걷는 동안 옆으로 안 밀린다.** 9/2 에 들어온 신고 그대로다.
+    //
+    // 몸이 통로에 이미 들어가는 자리(가운데에서 25 안쪽)면 줄 맞춤은 아무 일도 하면 안 된다.
+    // 전에는 통로가 좁기만 하면 매 틱 가운데로 당겼는데, 상자를 100%로 채운 판은
+    // 거의 모든 칸이 좁아서 사실상 늘 켜져 있었다. 그래서 좌우로 걸으면 위아래로,
+    // 위아래로 걸으면 좌우로 밀렸다. **도와주는 것과 조종을 뺏는 것은 다르다.**
+    {
+        GameMap om;
+        MakeOpenMap(om);
+        for (int gy = 0; gy < MAP_H; ++gy)
+            for (int gx = 0; gx < MAP_W; ++gx)
+                if (gy != 6 && gx > 0 && gx < MAP_W - 1 && gy > 0 && gy < MAP_H - 1)
+                    om.tile[gy][gx] = TILE_BLOCK;   // 6번 줄만 남긴 좁은 통로
+
+        int worst = 0;
+        for (int off = -25; off <= 25; off += 5) {
+            Player w = MakePlayer(2, 6);
+            w.py     = 6 * TILE_UNITS + TILE_UNITS / 2 + off;
+            int y0   = w.py;
+
+            w.dir_x = 1; w.dir_y = 0;
+            for (int t = 0; t < 40; ++t) MovePlayer(om, w);
+
+            int drift = w.py - y0;
+            if (drift < 0) drift = -drift;
+            if (drift > worst) worst = drift;
+        }
+        printf("  좁은 통로를 40틱 걸었을 때 세로로 밀린 최대량 %d\n", worst);
+        Check(worst == 0, "들어가는 자리면 걷는 동안 옆으로 안 밀린다");
+
+        // 도움을 없앤 게 아니라 조건을 좁힌 것이다. 정말 안 들어갈 때는 여전히 맞춰준다
+        Player w2 = MakePlayer(2, 6);
+        w2.py     = 6 * TILE_UNITS + TILE_UNITS / 2 + 95;
+        w2.dir_x = 1; w2.dir_y = 0;
+        for (int t = 0; t < 60; ++t) MovePlayer(om, w2);
+        printf("  치우쳐 있으면 맞춰줘서 가로 타일 %d 까지\n", w2.px / TILE_UNITS);
+        Check(w2.px / TILE_UNITS > 4, "안 들어가는 자리면 맞춰준다");
+    }
+
     // 도와주지 않을 뿐이지 막는 게 아니다.
     //
     // 벽 앞까지 오른쪽으로 간 다음, 아래를 눌러 통로 줄에 맞추고, 다시 오른쪽.

@@ -46,7 +46,19 @@ inline const int DY[4] = {  0,  0,  1, -1 };
 // 위험을 두 겹으로 나눈다.
 //
 //   g_danger  놓인 물풍선 전부의 십자. **여기 서 있지 않는다**
-//   g_soon    곧 터질 것과 이미 터진 것. **여기를 지나가지도 않는다**
+//   g_soon    곧 터질 것. **여기를 지나가지도 않는다**
+//   g_burn    이미 터져서 물이 깔려 있는 칸. **무슨 일이 있어도 안 들어간다**
+//
+// 9/2 에 세 겹이 됐다. 그 전엔 g_soon 하나가 '곧 터진다' 와 '이미 터졌다' 를
+// 같이 들고 있었는데, 그 둘은 성질이 아주 다르다.
+//
+// 곧 터지는 칸은 **도박**이다. 빨리 지나가면 산다. 그래서 도망칠 때는 밟아도 된다.
+// 이미 물이 깔린 칸은 **확정**이다. 발을 들이는 순간 갇힌다. 도망칠 때도 안 된다.
+//
+// 이걸 안 나눴더니 이런 일이 났다 — 봇이 물풍선을 놓으면 자기 칸이 위험해지고,
+// 위험한 칸에 서 있으면 길찾기가 위험 검사를 통째로 껐다(안 그러면 못 나가니까).
+// 그 순간 **옆에서 타고 있는 물줄기까지 길로 쳐서** 그리로 걸어 들어갔다.
+// 30판에 44번 갇혔는데 44번 전부가 이미 깔린 물에 걸어 들어간 것이었다.
 //
 // 처음엔 한 겹이었다. 그걸로 '지나가지 않는다' 를 하니 판 전체가 막혀서
 // 봇들이 서로 못 만나고 30판에 3판이 무승부로 끝났다. 판이 안 끝나는 건 떨림보다 나쁘다.
@@ -57,15 +69,21 @@ inline const int DY[4] = {  0,  0,  1, -1 };
 // 소유 스레드 : tick
 inline bool g_danger[MAP_H][MAP_W];
 inline bool g_soon[MAP_H][MAP_W];
+inline bool g_burn[MAP_H][MAP_W];
 
 inline void BuildDangerMap(int lookahead)
 {
     memset(g_danger, 0, sizeof(g_danger));
     memset(g_soon,   0, sizeof(g_soon));
+    memset(g_burn,   0, sizeof(g_burn));
 
     for (int y = 0; y < MAP_H; ++y) {
         for (int x = 0; x < MAP_W; ++x) {
-            if (g_game.blast[y][x] > 0) { g_danger[y][x] = true; g_soon[y][x] = true; }
+            if (g_game.blast[y][x] > 0) {
+                g_danger[y][x] = true;
+                g_soon[y][x]   = true;
+                g_burn[y][x]   = true;
+            }
         }
     }
 
@@ -155,7 +173,14 @@ inline void BuildEnemyMap()
 // 되감기를 보면 놓기 직후 방향이 정지이고 도망목표가 자기 칸이다. 놓고 서 있는 것이다
 inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int* out_dy,
                      int me = -1, int* found_dist = nullptr, bool allow_push = false,
-                     bool allow_danger = false, int* out_gx = nullptr, int* out_gy = nullptr)
+                     bool allow_danger = false, int* out_gx = nullptr, int* out_gy = nullptr,
+                     // 급하지 않은 목표는 위험 칸을 **아예 안 밟는다.**
+                     //
+                     // 아이템을 주우러 가다 십자에 발을 들이면 도망 규칙이 이겨서 나오고,
+                     // 나오면 다시 아이템이 이겨서 들어간다. 판당 1028회 왕복했다.
+                     // 목숨 걸 이유가 없는 일에는 위험한 길을 안 고르면 된다.
+                     // 도망은 이걸 안 쓴다 — 도망은 급한 일이고, 다 막으면 나갈 길이 없어진다
+                     bool strict = false)
 {
     static int  dist[MAP_H][MAP_W];
     static int  fromd[MAP_H][MAP_W];
@@ -198,6 +223,10 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
     // 이미 위험한 칸에 있으면 예외다. 그때는 위험을 밟고서라도 나가야 한다.
     // 물을 안 지나가게 한 것과 같은 꼴이다
     const bool start_danger = g_soon[sy][sx];
+
+    // 타고 있는 칸 위에 서 있는 경우에만 타는 칸을 밟는다.
+    // 그때는 이미 갇혔거나 걸치기로 버티는 중이라, 나가는 길밖에 답이 없다
+    const bool start_burn = g_burn[sy][sx];
 
     while (head < tail) {
         int x = qx[head], y = qy[head];
@@ -254,6 +283,11 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
             if (dist[ny][nx] >= 0) continue;
             if (!start_wet && IsUnderWater(nx, ny)) continue;
+            // **타는 칸은 도망칠 때도 안 밟는다.** 여기가 9/2 에 고친 자리다.
+            // 위 두 줄과 달리 start_danger 로 안 풀린다 — 위험해졌다고 해서
+            // 확정으로 갇히는 길이 답이 되지는 않기 때문이다
+            if (!start_burn && g_burn[ny][nx]) continue;
+            if (strict && !start_danger && g_danger[ny][nx]) continue;
             if (!start_danger && !allow_danger && g_soon[ny][nx]) continue;
             if (!Passable(nx, ny)) {
                 // 막힌 칸이라도 밀 수 있는 상자면 지나갈 수 있다.
@@ -469,6 +503,45 @@ inline void ClearGoal(int slot)
     g_goal_ttl[slot] = 0;
 }
 
+// 그 칸에 몸이 닿으면 안 되는가
+inline bool Bad(int x, int y)
+{
+    if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return false;
+    return g_burn[y][x] || g_soon[y][x];
+}
+// 서 있기로 했을 때 **몸을 칸 안으로 모은다.**
+//
+// 봇은 칸으로 생각하는데 몸은 칸의 0.8 이고 자리는 연속이다.
+// 그래서 물줄기 옆 칸으로 도망쳐 놓고, 들어온 그 경계에 몸을 반쯤 걸친 채
+// 멈춰 서는 일이 생긴다. 중심은 안전한 칸이라 봇은 다 됐다고 여기지만,
+// 몸은 물에 닿아 있어서 걸치기 상태로 버티는 중이다.
+// 거기서 한 점만 밀리면 중심이 넘어가고 그대로 갇힌다.
+//
+// 30판 재보니 갇힌 31번 중 18번이 **직전 틱에 걸치는 중**이었다.
+// 관전할 때 '끄트머리에서 왔다갔다하다 맞아 죽는다' 로 보이던 게 이것이다.
+//
+// 몸 반지름이 102 고 칸 반이 128 이라, 중심이 가운데에서 26 안쪽이면
+// 몸이 칸 밖으로 나갈 수가 없다. 그 밖이면 가운데 쪽으로 한 발 뗀다.
+// 26 안에 들어오면 멈춘다 — 딱 가운데를 노리면 지나쳐서 덜덜 떤다
+inline void StandStill(Player& p, int tx, int ty)
+{
+    p.dir_x = 0; p.dir_y = 0;
+
+    const int in = TILE_UNITS / 2 - PLAYER_HALF - 1;
+    const int ox = p.px - (tx * TILE_UNITS + TILE_UNITS / 2);
+    const int oy = p.py - (ty * TILE_UNITS + TILE_UNITS / 2);
+
+    // 삐져나간 쪽 칸이 위험할 때만 모은다.
+    // 아무 데서나 가운데로 붙으면 골목에서 몸이 자꾸 끌려가 보인다
+    const bool bad_x = (ox >  in && Bad(tx + 1, ty))
+                    || (ox < -in && Bad(tx - 1, ty));
+    const bool bad_y = (oy >  in && Bad(tx, ty + 1))
+                    || (oy < -in && Bad(tx, ty - 1));
+
+    // 더 많이 삐져나간 축부터. 한 틱에 한 축만 움직인다
+    if (bad_x && (!bad_y || abs(ox) >= abs(oy))) { p.dir_x = ox > 0 ? -1 : 1; return; }
+    if (bad_y)                                   { p.dir_y = oy > 0 ? -1 : 1; return; }
+}
 // 놓자마자 확인해 둔 칸으로 출발한다.
 //
 // 제자리에 서서 다음 틱을 기다리면 퓨즈의 첫 틱들을 그냥 버린다.
@@ -484,7 +557,7 @@ inline void FleeTo(int slot, Player& p, int tx, int ty, int gx, int gy)
             return;
         }
     }
-    p.dir_x = 0; p.dir_y = 0;
+    StandStill(p, tx, ty);
 }
 
 // 이번 틱에 어느 규칙으로 방향을 정했나.
@@ -554,15 +627,47 @@ inline void ThinkBot(int slot)
         if (!fleeing && g_danger[ty][tx]) drop = true;
 
         if (!drop && StepToward(tx, ty, gx, gy, &dx, &dy)) {
-            p.dir_x = dx; p.dir_y = dy;
-            g_reason[slot] = fleeing ? R_FLEE_KEEP : g_goal_why[slot];
-            return;
+            // **여기서 한 번 더 본다.**
+            //
+            // 목표를 고를 때는 길찾기가 위험 칸을 다 빼고 길을 뽑았다.
+            // 그런데 그 뒤로는 StepToward 가 목표 쪽으로 **직선 한 걸음**을 낼 뿐이라,
+            // 가는 도중에 그 길에 불이 붙어도 아무도 안 본다. 그냥 걸어 들어간다.
+            //
+            // 30판에 갇힌 33번 중 절반이 이 줄에서 나왔다 —
+            // 하던 일을 보니 도망(유지) 473, 아이템 235 로 전부 '목표를 들고 가는 중' 이었다.
+            // 이미 물이 깔린 칸은 확정으로 갇히므로, 무슨 목표든 이것보다 급하지 않다.
+            // 목표를 놓고 아래에서 다시 고른다
+            if (!Bad(tx + dx, ty + dy)) {
+                p.dir_x = dx; p.dir_y = dy;
+                g_reason[slot] = fleeing ? R_FLEE_KEEP : g_goal_why[slot];
+                return;
+            }
+            // 목표를 버리지 않고 **기다린다.**
+            //
+            // 처음엔 여기서 목표를 버리고 다시 골랐다. 갇히는 건 줄었는데
+            // 방향 뒤집기가 1380 에서 2303 으로 늘었다. 불을 보고 딴 데로 틀었다가,
+            // 0.5초 뒤 불이 꺼지면 원래 목표가 다시 이겨서 되돌아오는 진동이다.
+            //
+            // 물줄기는 0.5초면 사라진다. 사람도 그 앞에서 잠깐 서서 기다리지
+            // 지도를 다시 그리지 않는다. 목표는 그대로 두고 발만 멈춘다
+            // 단, **발밑이 안전할 때만** 기다린다.
+            // 내 칸도 십자 안이면 기다리는 건 그냥 죽는 것이다. 그때는 목표를 버리고
+            // 아래 도망 규칙에 맡긴다. 기다림은 안전한 데서만 할 수 있는 선택이다
+            if (!g_danger[ty][tx]) {
+                // 여기서는 가운데로 모으지 않는다. 모았다가 다시 목표로 가면
+                // 그 왕복이 방향 뒤집기로 잡힌다. 불 앞에서는 그냥 선다
+                p.dir_x = 0; p.dir_y = 0;
+                g_reason[slot] = R_IDLE;
+                return;
+            }
+            ClearGoal(slot);
         }
-
-        // 도착해서 푸는 것과 막혀서 푸는 것은 다르다.
-        // 도착했으면 그 자리에서 할 일이 있다. 잠깐 머문다
-        if (gx == tx && gy == ty) g_settle[slot] = HoldTicks(p) * 2;
-        ClearGoal(slot);
+        else {
+            // 도착해서 푸는 것과 막혀서 푸는 것은 다르다.
+            // 도착했으면 그 자리에서 할 일이 있다. 잠깐 머문다
+            if (gx == tx && gy == ty) g_settle[slot] = HoldTicks(p) * 2;
+            ClearGoal(slot);
+        }
     }
 
     // 1) 위험하면 도망 목표를 세운다.
@@ -594,7 +699,7 @@ inline void ThinkBot(int slot)
     }
     // 2) 잠긴 구역이면 가운데로
     if (IsUnderWater(tx, ty)) {
-        if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy)) {
+        if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy, -1, nullptr, false, false, nullptr, nullptr, true)) {
             p.dir_x = dx; p.dir_y = dy;
             g_reason[slot] = R_WATER;
             return;
@@ -631,13 +736,13 @@ inline void ThinkBot(int slot)
     //    아이템은 봇이 굳이 가려는 유일한 목표라 '막혔다' 가 성립하는 자리다.
     //    도망칠 때는 안 켠다. 미는 데 쉬는 시간이 붙어서 그동안 맞는다
     int gx2 = -1, gy2 = -1;
-    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2)) {
+    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_ITEM;
         SetGoal(slot, p, gx2, gy2, R_ITEM);
         return;
     }
-    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, true)) {
+    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, true, false, nullptr, nullptr, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_ITEM_PUSH;
         return;
@@ -661,11 +766,11 @@ inline void ThinkBot(int slot)
     if (g_settle[slot] > 0) {
         --g_settle[slot];
         g_reason[slot] = R_IDLE;
-        p.dir_x = 0; p.dir_y = 0;
+        StandStill(p, tx, ty);
         return;
     }
 
-    if (FindStep(tx, ty, Goal::Enemy, 18, &dx, &dy, slot, nullptr, false, false, &gx2, &gy2)) {
+    if (FindStep(tx, ty, Goal::Enemy, 18, &dx, &dy, slot, nullptr, false, false, &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_HUNT;
         SetGoal(slot, p, gx2, gy2, R_HUNT);
@@ -673,16 +778,23 @@ inline void ThinkBot(int slot)
     }
 
     // 7) 부술 게 있는 쪽으로
-    if (FindStep(tx, ty, Goal::Block, 14, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2)) {
+    if (FindStep(tx, ty, Goal::Block, 14, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_BLOCK;
         SetGoal(slot, p, gx2, gy2, R_BLOCK);
         return;
     }
 
-    if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy)) {
+    // 가운데로 걷는 규칙도 **목표를 기억한다.**
+    //
+    // 나머지를 다 고치고 나니 뒤집기 1등이 가운데->가운데(판당 385)로 남았다.
+    // 이 규칙만 목표를 안 들고 매 틱 처음부터 골랐다. 기준 칸이 한 칸 바뀌면
+    // '가운데에 더 가까운 칸' 이 좌우로 번갈아 나온다. 앞에서 고친 것과 같은 병이다
+    if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy, -1, nullptr, false, false,
+                 &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_CENTER;
+        SetGoal(slot, p, gx2, gy2, R_CENTER);
         return;
     }
 
@@ -696,7 +808,7 @@ inline void ThinkBot(int slot)
     // 되감기에서 59틱(2초) 서 있던 것도 그동안 안 죽었다.
     // 보기에 답답한 것과 틀린 것은 다르다
     g_reason[slot] = R_IDLE;
-    p.dir_x = 0; p.dir_y = 0;
+    StandStill(p, tx, ty);
 }
 
 // ── 한 틱 ────────────────────────────────────────────────────
