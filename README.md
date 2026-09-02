@@ -85,6 +85,23 @@ run.bat
 | `run.bat bots 8` | 빈자리를 봇 8명까지 채운다 (`bots 0` 이면 안 채운다) |
 | `run.bat aoi 0` | AOI 를 끈다. 켜고 끈 값을 비교할 때 |
 
+지연이 있는 네트워크를 흉내 내려면 다리에 스위치가 있다.
+같은 컴퓨터에서만 돌려보면 손맛을 지연 0 을 전제로 맞추게 된다.
+
+```bat
+node webridge.js delay 80 jitter 30
+```
+
+**내 캐릭터는 화면이 미리 움직인다** (`web/predict.js`).
+서버 권위는 그대로고, 화면이 서버와 같은 계산을 미리 한 번 돌려 그려준다.
+서버 답이 오면 맞춰보고 어긋난 만큼만 조용히 녹인다.
+
+```
+키를 누르고 화면이 움직이기까지
+  지연 0        32ms -> 17ms
+  왕복 160ms   217ms -> 17ms      예측이 아예 틀려 순간이동한 횟수 0
+```
+
 **같은 씨앗이면 같은 판이라는 것을 지문으로 확인한다.**
 씨앗만 찍으면 씨앗을 넣었다는 것까지만 증명된다.
 
@@ -173,6 +190,7 @@ build.bat ..\tools\probe.cpp
 | `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지, HUD 글자 대비, 스물넷이 다 보일 때 프레임 비용, 이벤트마다 소리가 몇 겹인지 |
 | `node tools/viewertest.js` | 예(`bots 0`) + 다리 | 자리가 다 찼을 때 스물다섯 번째로 붙은 사람. 안 끊고 관전시키나 |
 | `node tools/arttest.js` | 아니오 | 아트를 숫자로. 장소 열 곳의 색거리, 방향·걷기가 다른 그림인가, 이펙트가 쌓이지 않나 |
+| `node tools/playshot.js [폴더]` | 예 + 다리 | **브라우저에 붙어 실제로 한 판 한다.** 키를 눌러 플레이하고 원하는 순간을 찍는다. 확대해 잘라 찍기, 입력 지연 재기, 예측 어긋남 재기 |
 
 앞의 셋은 소켓을 안 쓴다. **게임 규칙만 꺼내서 두들기므로 서버를 켤 필요가 없다.**
 
@@ -188,9 +206,9 @@ floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest  34 PASS / 0 FAIL   (UI 대비 · 붐빌 때 프레임 · 사운드 믹스 포함)
+clienttest  41 PASS / 0 FAIL   (UI 대비 · 붐빌 때 프레임 · 사운드 믹스 포함)
 viewertest   6 PASS / 0 FAIL
-arttest      8 PASS / 0 FAIL
+arttest     13 PASS / 0 FAIL
 roundsim    60판 전부 결판, 평균 2분 58초
 봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
 
