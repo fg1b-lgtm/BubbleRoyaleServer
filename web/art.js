@@ -1261,8 +1261,13 @@ const Art = (() => {
   // 마지막 0.5초에 세 가지가 한꺼번에 바뀐다. 빨라지고, 커지고, 붉어진다.
   // 하나만 바꾸면 못 알아채고 셋을 같이 바꾸면 안 볼 수가 없다
   function drawBubble(g, cx, cy, r, near, t, hex) {
-    const beat = Math.sin(t / (near ? 52 : 200));
-    const grow = near ? 1 + Math.abs(beat) * 0.16 : 1;
+    // 숨이 가빠지는 속도와 부푸는 양을 둘 다 올렸다.
+    //
+    // 전에는 52ms 주기에 16% 였다. 판에 물풍선이 열 개쯤 굴러다니면
+    // 그 정도로는 어느 게 곧 터질 건지 안 보인다.
+    // 물풍선은 **위험 표시**지 장식이 아니다
+    const beat = Math.sin(t / (near ? 38 : 200));
+    const grow = near ? 1 + Math.abs(beat) * 0.26 : 1;
 
     // 물이 들었으니 가로와 세로가 반대로 움직인다
     const rx = r * grow * (1 + beat * 0.10);

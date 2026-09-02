@@ -64,6 +64,7 @@ let lastPhase = -1;
 let danger = false;
 let bubbleTiles = new Set();
 let killPop = -9999;    // 내가 잡은 순간. HUD 킬 수가 튀어오른다
+let alivePop = -9999;   // 누가 죽은 순간. 남은 사람 수가 튀어오른다
 const pickFlash = {};   // 아이템 종류별로 마지막에 먹은 시각
 
 // ── 한 판의 기록 ─────────────────────────────────────────────
@@ -482,9 +483,13 @@ function drawWorld(now, dt) {
   if (G.blasts.length) {
     const total = (G.C.blast / G.C.tickRate) * 1000;
     const hit = new Set();
-    for (const b of G.blasts) hit.add(b.x + ',' + b.y);
+    // 아직 안 뻗은 칸은 없는 것으로 친다. 윤곽선도 그때그때 다시 잡혀야
+    // 물줄기가 자라는 것처럼 보인다
+    for (const b of G.blasts) if (b.born <= now) hit.add(b.x + ',' + b.y);
 
     for (const b of G.blasts) {
+      if (b.born > now) continue;
+
       const age = Math.max(0, Math.min(1, 1 - (b.until - now) / total));
       const heat = Math.max(0, 1 - age * 3);      // 앞의 1/3 만 하얗게 탄다
 
@@ -550,8 +555,31 @@ function drawWorld(now, dt) {
 
     const bs = bucketB[y];
     if (bs) for (const b of bs) {
-      const near = b.fuse < G.C.tickRate * 0.5;
-      Art.drawBubble(ctx, b.tx * T + T / 2, b.ty * T + T / 2, T * 0.40, near, now,
+      // 터지기 직전. 예고는 임팩트만큼 중요하다 —
+      // **예고 없는 폭발은 억울하고, 예고만 있는 폭발은 시시하다.**
+      //
+      // 두 단으로 나눈다.
+      //   1초 전  숨이 가빠진다. '곧 터지겠구나'
+      //   0.3초 전 부풀어 오르고 바닥에 그림자 고리가 퍼진다. '지금 나가야 한다'
+      // 마지막 단은 반응할 시간을 주지 않을 만큼 짧아야 한다. 주면 난이도가 사라진다
+      const fuseSec = b.fuse / G.C.tickRate;
+      const near = fuseSec < 1.0;
+      const bx = b.tx * T + T / 2, by = b.ty * T + T / 2;
+
+      if (fuseSec < 0.34) {
+        // 바닥 고리. 물풍선 밑에서 밖으로 퍼진다. 캐릭터에 안 가리게 발밑에 깐다
+        const k = 1 - fuseSec / 0.34;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,240,240,' + (0.55 * (1 - k)) + ')';
+        ctx.lineWidth = Math.max(1.5, T * 0.06);
+        ctx.beginPath();
+        ctx.ellipse(bx, by + T * 0.30, T * (0.35 + k * 0.55), T * (0.14 + k * 0.22),
+                    0, 0, 7);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      Art.drawBubble(ctx, bx, by, T * 0.40, near, now,
                      b.owner === 0xFF ? null : colorOf(b.owner));
     }
 
@@ -656,6 +684,17 @@ function drawWorld(now, dt) {
   FX.done(ctx);
 }
 
+// 갇힌 지 얼마나 됐나. 1 이면 방금, 0 이면 곧 풀린다.
+//
+// 서버는 '갇혔다' 만 보내고 남은 틱은 안 보낸다. 익사와 달리 본인만 아는 정보가
+// 아니라 **모두가 알아야 하는 정보**라 스냅샷에 실을 수도 있지만,
+// 화면이 갇힌 순간의 틱을 적어두면 그것만으로 셀 수 있다. 상수는 이미 받았다
+function trapLeft(p) {
+  if (p.trapFrom === undefined) return 1;
+  const gone = G.tick - p.trapFrom;
+  return Math.max(0, Math.min(1, 1 - gone / G.C.trap));
+}
+
 function drawPlayer(id, p, alpha, now, T) {
   // 남은 스냅샷 두 장 사이를 보간한다. 그게 부드러움의 전부다.
   //
@@ -718,8 +757,30 @@ function drawPlayer(id, p, alpha, now, T) {
   });
 
   // 갇힘. 물방울이 통째로 씌워진다.
-  // 글자를 안 쓴다. 갇혔다는 건 이 그림 하나로 다 보인다
+  // 글자를 안 쓴다. 갇혔다는 건 이 그림 하나로 다 보인다.
+  //
+  // 여기에 **사냥 신호**를 하나 더 얹는다.
+  // 갇힌 사람은 이 게임에서 유일하게 '지금 가면 잡는다' 가 성립하는 상태다.
+  // 물줄기는 사람을 못 죽이고 마무리는 몸으로 해야 하므로,
+  // 갇힌 사람이 어디 있는지가 **판 건너에서도 보여야** 교전이 일어난다.
+  //
+  // 남은 시간은 고리가 조여드는 것으로 보여준다. 숫자를 쓰지 않는다 —
+  // 남의 상태에 숫자를 띄우면 화면이 시끄러워지고, 여기서 필요한 건
+  // '있다/곧 풀린다' 두 가지뿐이다
   if (p.flags & PF.TRAPPED) {
+    const left = trapLeft(p);            // 0~1. 1이면 방금 갇혔다
+    const pulse = 0.5 + 0.5 * Math.sin(now / 200);
+
+    // 바닥 고리. 시간이 갈수록 조여든다
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,220,120,' + (0.25 + 0.35 * pulse * left) + ')';
+    ctx.lineWidth = Math.max(1.5, T * 0.05);
+    ctx.beginPath();
+    ctx.ellipse(px, py + r * 0.95, T * (0.30 + left * 0.45), T * (0.12 + left * 0.18),
+                0, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+
     const wob = Math.sin(now / 140) * 0.07;
     const g = ctx.createRadialGradient(px - r * 0.4, py - r * 0.55, r * 0.2, px, py, r * 1.45);
     g.addColorStop(0, 'rgba(255,255,255,0.40)');
@@ -896,7 +957,18 @@ function drawHUD(now) {
   // 패널을 넓혔다. 칸 스물넷이 오른쪽 절반을 통째로 쓰므로
   // 좁게 두면 숫자와 칸이 겹친다
   panel(W / 2 - 110, 10, 220, 44, 8);
-  bigNum(String(G.aliveCount), W / 2 - 62, 44, 26, '#fff', 'right');
+
+  // 누가 죽으면 남은 수가 한 번 튀어오른다.
+  // 이 숫자가 이 게임에서 제일 중요한 숫자인데 조용히 바뀌면 바뀐 줄 모른다
+  {
+    const ap = Math.max(0, 1 - (now - alivePop) / 420);
+    ctx.save();
+    ctx.translate(W / 2 - 62, 44);
+    const k = 1 + Art.overshoot(Math.min(1, ap * 2)) * 0.45 * ap;
+    ctx.scale(k, k);
+    bigNum(String(G.aliveCount), 0, 0, 26, ap > 0 ? '#ffd166' : '#fff', 'right');
+    ctx.restore();
+  }
   label('생존', W / 2 - 54, 44, 13, 'rgba(255,255,255,0.55)');
 
   // 누가 살아 있나. 칸 스물넷. 내 칸만 하얗다.
@@ -1306,6 +1378,13 @@ Hooks.snapshot = function (prevPhase) {
     } else {
       p.drownFrom = undefined;
     }
+
+    // 갇힌 순간도 같은 방식으로 적어둔다. 고리가 조여드는 데 쓴다
+    if (p.flags & PF.TRAPPED) {
+      if (p.trapFrom === undefined) p.trapFrom = G.tick;
+    } else {
+      p.trapFrom = undefined;
+    }
   }
 
   // 물풍선이 어디 있었는지 기억해둔다.
@@ -1342,6 +1421,22 @@ Hooks.snapshot = function (prevPhase) {
   }
 };
 
+// 이 칸이 폭발 중심에서 몇 칸 떨어져 있나.
+//
+// 서버는 '이 칸이 물줄기에 덮였다' 만 보내고 어느 물풍선에서 나왔는지는 안 보낸다.
+// 보낼 수도 있지만 그러려고 패킷을 늘리기는 아깝다 —
+// 화면은 물풍선이 어디 있었는지를 이미 알고 있다(bubbleTiles).
+// 제일 가까운 중심까지의 거리면 충분하다. 겹쳐 터져도 먼저 닿는 쪽을 따른다
+function centerDist(x, y) {
+  let best = 8;
+  for (const key of bubbleTiles) {
+    const c = key.split(',');
+    const d = Math.abs(x - (+c[0])) + Math.abs(y - (+c[1]));
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 Hooks.event = function (type, x, y, who, val) {
   const T = Art.V.TS;
   const now = gameTime;
@@ -1355,15 +1450,34 @@ Hooks.event = function (type, x, y, who, val) {
     // 그래서 **중심에서만** 크게 터뜨린다. 칸마다 터뜨리면 사거리보다 넓어 보이고
     // 소리도 다섯 번 겹쳐서 찢어진다
     case EVT.BLAST: {
-      G.blasts.push({ x, y, until: now + (G.C.blast / G.C.tickRate) * 1000 });
-
       const isCenter = bubbleTiles.has(x + ',' + y);
+
+      // **물줄기는 중심에서 바깥으로 뻗어나간다.**
+      //
+      // 서버는 한 틱에 십자를 통째로 만든다. 규칙으로는 그게 맞다 —
+      // 사거리 안이면 동시에 맞는다.
+      // 그런데 화면까지 동시에 나타나면 **물이 뻗은 게 아니라 네모가 켜진 것**으로 보인다.
+      // 어디서 시작해 어디까지 갔는지가 안 읽히고, 그게 이 게임에서 제일 중요한 정보다.
+      //
+      // 판정은 안 건드린다. 서버가 정한 그대로 맞는다. 그리는 시각만 칸마다 늦춘다.
+      // 한 칸에 22ms 면 사거리 4가 88ms 다. 사람이 '뻗었다' 로 느끼는 최소치쯤이고
+      // 반응할 시간을 주지는 않는다
+      const away = centerDist(x, y);
+      const lead = away * 22;
+
+      G.blasts.push({
+        x: x, y: y,
+        born:  now + lead,
+        until: now + lead + (G.C.blast / G.C.tickRate) * 1000,
+      });
+
       if (isCenter) {
         FX.burstWater(cx, cy, T, now, false);
         FX.shake(0.16);
         Sound.boom(pan, far);
       } else {
-        FX.splash(cx, cy, T, now);
+        // 뻗어나간 칸도 제 시각에 튄다. 물보라가 물줄기보다 먼저 나면 앞뒤가 안 맞는다
+        FX.splash(cx, cy, T, now + lead);
       }
       break;
     }
@@ -1411,18 +1525,32 @@ Hooks.event = function (type, x, y, who, val) {
       Sound.drop(pan, far);
       break;
 
-    case EVT.ITEM:
+    case EVT.ITEM: {
       G.items[y][x] = ITEM.NONE;
-      FX.pickup(cx, cy, T, now,
-                val === ITEM.ULTRA ? '#ffd166' :
-                val === ITEM.BUBBLE ? '#4dabf7' :
-                val === ITEM.POWER ? '#ff922b' : '#51cf66');
+
+      const icol = val === ITEM.ULTRA ? '#ffd166' :
+                   val === ITEM.BUBBLE ? '#4dabf7' :
+                   val === ITEM.POWER ? '#ff922b' : '#51cf66';
+      FX.pickup(cx, cy, T, now, icol);
+
+      // 먹은 사람에게로 빨려 들어간다.
+      // 반짝이만 튀면 '없어졌다' 까지만 보이고 '누구 것이 됐다' 가 안 보인다.
+      // 남이 먹은 것도 보여야 한다 — 저쪽이 세졌다는 게 정보다
+      {
+        const taker = G.players.get(who);
+        if (taker) {
+          FX.suck(cx, cy,
+                  taker.x1 / G.C.tileUnits * T, taker.y1 / G.C.tileUnits * T,
+                  T, now, icol);
+        }
+      }
       if (mine) {
         // 뭘 먹었는지 HUD 의 그 칸이 튀어오른다. 먹은 순간에만 눈이 간다
         pickFlash[val === ITEM.ULTRA ? ITEM.POWER : val] = now;
         (val === ITEM.ULTRA ? Sound.ultra(pan, far) : Sound.item(pan, far));
       }
       break;
+    }
 
     // 이 게임에서 제일 큰 리턴. 여기만 연출을 아끼지 않는다
     case EVT.GRAZE:
@@ -1434,16 +1562,36 @@ Hooks.event = function (type, x, y, who, val) {
       }
       break;
 
-    case EVT.CHAIN:
+    // 연쇄. 물풍선이 물풍선을 터뜨린다.
+    //
+    // 소리는 단마다 음이 올라가는데 화면은 늘 같았다. 귀로만 세는 셈이었다.
+    // **연쇄는 이 게임에서 제일 큰 판을 뒤집는 수**라 몇 단인지가 보여야 한다.
+    // 고리를 단수만큼 크게 퍼뜨린다. 숫자를 안 쓰고 크기로 센다
+    case EVT.CHAIN: {
+      const step = Math.min(val || 1, 6);
       FX.burstWater(cx, cy, T, now, true);
-      FX.shake(0.10);
+      FX.ring(cx, cy, T * (0.5 + step * 0.28), now, '#bfe9ff');
+      FX.shake(0.10 + step * 0.03);
       Sound.chain(val, pan, far);
       break;
+    }
 
+    // 갇혔다. 7초 동안 못 움직이고 남이 와서 마무리한다.
+    //
+    // **내가 갇힌 순간이 이 게임에서 제일 나쁜 순간이다.** 그런데 흔들림 하나뿐이었다.
+    // 나쁜 순간일수록 확실히 알려야 다음 판에 안 그런다 —
+    // 뭐가 잘못됐는지 모르고 죽으면 배우는 게 없다.
+    //
+    // 짧은 정지를 준다. 잡았을 때(120ms)보다 짧게(70ms) — 당한 쪽에 긴 정지를 주면
+    // 벌 받는 느낌이 든다. 알리기만 하고 곧바로 돌려준다
     case EVT.TRAP:
       FX.graze(cx, cy, T, now, 1);
       Sound.trap(pan, far);
-      if (mine) FX.shake(0.3);
+      if (mine) {
+        FX.stop(70, performance.now());
+        FX.shake(0.45);
+        FX.flashOut('rgba(120,190,255,0.45)', 240, now);
+      }
       break;
 
     case EVT.BREAK:
@@ -1480,12 +1628,23 @@ Hooks.event = function (type, x, y, who, val) {
       }
       break;
 
-    case EVT.DEATH:
+    case EVT.DEATH: {
       markDead(who);
-      FX.kill(cx, cy, T, now, '#ff6b6b');
+
+      // 사람 하나가 판에서 빠지는 건 이 게임에서 제일 큰 사건이다.
+      // **여운(follow-through)** 을 준다 — 터지는 순간뿐 아니라 그 뒤 반 초를 쓴다.
+      //   1) 그 사람 색으로 터진다. 누가 죽었는지가 색으로 남는다
+      //   2) 고리가 한 번 크게 퍼진다. 판 건너에서도 '저기서 하나 죽었다' 가 보인다
+      //   3) 남은 사람 수가 HUD 에서 튀어오른다
+      const col = colorOf(who);
+      FX.kill(cx, cy, T, now, col);
+      FX.ring(cx, cy, T, now, col);
+      alivePop = now;
+
       Sound.death(pan, far);
       if (mine) { FX.shake(0.6); FX.flashOut('rgba(180,30,30,0.6)', 300, now); }
       break;
+    }
 
     case EVT.DROWN:
       if (mine) Sound.drown();

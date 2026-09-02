@@ -346,11 +346,19 @@ for (let y = 0; y < MAP_H; ++y) {
 // SNAPSHOT. 사람 넷을 서로 다른 방향과 상태로 넣는다.
 //   p0 오른쪽을 보며 걷는 중   p1 위를 보며 서 있음
 //   p2 갇힘                     p3 물에 잠김 + 무적
-function snapshot(tick, phase, ringOn, want, wantB) {
-    const np = want || 4, nb = wantB || 2;
+function snapshot(tick, phase, ringOn, want, wantB, dry) {
+    // 0 을 넘길 수 있어야 한다. want || 4 로 쓰면 0 이 4 가 되어
+    // '아무도 없는 판' 을 만들 수 없다. 연출을 재려면 조용한 판이 필요하다
+    const np = (want === undefined ? 4 : want);
+    const nb = (wantB === undefined ? 2 : wantB);
     return pkt(7, 28 + np * 11 + nb * 4, (v, o) => {
         v.setUint32(o, tick, true);
-        for (let i = 0; i < 9; ++i) v.setUint8(o + 4 + i, i === 0 ? 2 : (i === 1 ? 1 : 0));
+        // dry 면 아홉 구역이 전부 멀쩡하다.
+        // 침수 예고 구역이 있으면 거기 비가 내리는데, 그게 확률이라
+        // 연출을 잴 때마다 배경 조각 수가 흔들린다
+        for (let i = 0; i < 9; ++i) {
+            v.setUint8(o + 4 + i, dry ? 0 : (i === 0 ? 2 : (i === 1 ? 1 : 0)));
+        }
         v.setUint8(o + 13, phase);
         v.setUint16(o + 14, 20, true);
         v.setUint8(o + 16, 0xFF);
@@ -525,6 +533,85 @@ let pushOk = false, pushFrom = null;
   console.log('  판이 안 변할 때 프레임당 fillRect: ' + perFrame.toFixed(1) + ' 번');
   check(perFrame < 400, '판이 안 변하면 다시 안 그린다 (미리 그려둔 종이를 붙이기만 한다)');
 
+  // ── 연출이 시간을 쓰는가 ────────────────────────────────────
+  //
+  // 게임 필은 **예고 → 임팩트 → 여운** 세 박자다.
+  // 셋 다 있어야 사건이 '일어났다' 로 느껴진다. 하나라도 빠지면
+  //   예고가 없으면 억울하고, 임팩트가 없으면 시시하고, 여운이 없으면 안 남는다.
+  //
+  // 여기서는 **여운**만 잴 수 있다. 사건을 먹인 뒤 몇 프레임 동안
+  // 이펙트가 살아 있는지를 본다. 한 프레임 만에 사라지면 여운이 없는 것이다
+  console.log();
+  console.log('  --- 연출: 사건 뒤에 얼마나 남나 ---');
+
+  const AFTER = [
+      ['폭발',   () => feed(event(9, 12, 12, 0, 0))],   // BLAST
+      ['마무리', () => feed(event(15, 12, 12, 0, 2))],  // POP
+      ['죽음',   () => feed(event(5, 12, 12, 1, 0))],   // DEATH
+      ['연쇄',   () => feed(event(2, 12, 12, 0, 3))],   // CHAIN
+      ['아이템', () => feed(event(6, 12, 12, 0, 1))],   // ITEM
+      ['갇힘',   () => feed(event(3, 12, 12, 1, 0))],   // TRAP
+  ];
+
+  // **배경 조각을 빼고 센다.**
+  //
+  // 이 계측을 네 번 고쳤다. 매번 다른 이유로 틀렸다.
+  //   1) 0 이 될 때까지 셌다 -> 판이 도는 중이라 0 이 안 된다
+  //   2) FX 만 따로 돌렸다   -> 조각의 born 은 게임 시각인데 실제 시각으로 그렸다
+  //   3) 반감기로 셌다       -> 배경 조각이 34개라 절반 아래로 안 내려간다
+  //   4) 배경을 빼고 센다    <- 지금
+  //
+  // 배경(물 파문 같은 것)이 몇 개인지 먼저 재두고, 사건이 만든 것만 뺀 수로 본다.
+  // 판을 조용하게 만들려고 애쓰는 것보다 이쪽이 튼튼하다 —
+  // 판이 어떻든 배경은 배경대로 세면 된다
+  // 사람도 물풍선도 없고 **잠긴 구역도 없는** 판.
+  //
+  // 처음엔 사람과 물풍선만 뺐다. 그런데 배경 조각이 26~33 으로 흔들려서
+  // 시험이 돌릴 때마다 다른 답을 냈다. 원인은 침수 예고 구역의 비였다 —
+  // 확률로 내리므로 셀 때마다 다르다. 안 내리게 만드는 게 맞다
+  feed(snapshot(200, 2, false, 0, 0, true));
+  for (let i = 0; i < 60; ++i) { now += 16; api.frame(now); }
+
+  let base = 0;
+  for (let i = 0; i < 30; ++i) { now += 16; api.frame(now); base += api.FX.count(); }
+  base = Math.round(base / 30);
+  console.log('    (배경 조각 ' + base + ' 개. 여기서부터 센다)');
+
+  const tails = [];
+
+  for (const [name, fire] of AFTER) {
+      const before = api.FX.count();
+      fire();
+      const born = api.FX.count() - before;
+
+      if (born <= 0) {
+          tails.push([name, 0]);
+          console.log('    ' + name.padEnd(5) + ' 조각을 하나도 안 만든다');
+          continue;
+      }
+
+      let frames = 0;
+      for (; frames < 300; ++frames) {
+          now += 16; api.frame(now);
+          if (api.FX.count() - base <= born / 2) break;
+      }
+      tails.push([name, frames]);
+      console.log('    ' + name.padEnd(5) + ' 조각 ' + String(born).padStart(3)
+                  + ' 개,  절반까지 ' + String(frames).padStart(3)
+                  + ' 프레임 (' + Math.round(frames * 16) + 'ms)');
+  }
+
+  // 한 프레임 만에 끝나면 그건 연출이 아니라 깜빡임이다
+  const tooShort = tails.filter(t => t[1] < 4).map(t => t[0]);
+  check(tooShort.length === 0,
+        '큰 사건은 여운이 남는다 (네 프레임 이상)'
+        + (tooShort.length ? ' — 너무 짧은 것: ' + tooShort.join(', ') : ''));
+
+  // 반대로 너무 길면 다음 사건이 앞 사건에 묻힌다
+  const tooLong = tails.filter(t => t[1] > 90).map(t => t[0]);
+  check(tooLong.length === 0,
+        '여운이 다음 사건을 덮을 만큼 길지는 않다 (1.4초 이내)'
+        + (tooLong.length ? ' — 너무 긴 것: ' + tooLong.join(', ') : ''));
   // ── UI: 글자가 읽히나 ───────────────────────────────────────
   //
   // HUD 판때기가 rgba(10,15,22,0.72) 라 **뒤 바닥이 28% 비친다.**
@@ -614,10 +701,17 @@ let pushOk = false, pushFrom = null;
   console.log();
   console.log('  --- 사운드: 이벤트마다 몇 겹으로 울리나 ---');
 
+  // Common/Protocol.h 의 EventType 그대로다.
+  //
+  // 9/2 까지 이 표가 **통째로 틀려 있었다.** 1을 MOVE, 14를 CHAIN 으로 적어놨는데
+  // 실제로는 1이 GRAZE, 2가 CHAIN 이다. 번호로 먹이고 이름으로 읽으니
+  // 검사는 통과하는데 **읽는 사람이 다른 사건을 보고 있었다.**
+  // 연출이 얼마나 남는지를 재려다 '연쇄가 0 프레임' 이 나와서 들켰다.
+  // 그 자리에 있던 건 연쇄가 아니라 RING 이었다
   const EVT_NAME = {
-      1: 'MOVE', 2: 'PLACE', 3: 'BOOM', 4: 'BREAK', 5: 'DEATH', 6: 'ITEM',
-      7: 'TRAP', 8: 'BUBBLE', 9: 'BLAST', 10: 'ESCAPE', 11: 'FLOOD', 12: 'WARN',
-      13: 'GRAZE', 14: 'CHAIN', 15: 'POP', 16: 'PUSH',
+      1: 'GRAZE', 2: 'CHAIN', 3: 'TRAP', 4: 'BREAK', 5: 'DEATH', 6: 'ITEM',
+      7: 'BLOCK', 8: 'BUBBLE', 9: 'BLAST', 10: 'FLOOD_WARN', 11: 'FLOOD',
+      12: 'DROWN', 13: 'DROP', 14: 'RING', 15: 'POP', 16: 'PUSH',
   };
 
   const silent = [];

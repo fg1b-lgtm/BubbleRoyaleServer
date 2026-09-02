@@ -239,6 +239,47 @@ const FX = (() => {
       }
     },
 
+    // 크게 한 번 퍼지는 고리.
+    //
+    // 판 건너에서 무슨 일이 일어났는지를 알리는 유일한 수단이다.
+    // 화면은 한 구역만 보여주고 소리는 멀면 작아지는데, 고리는 커지면서 지나가므로
+    // 눈 구석에 걸린다. **글자 없이 사건을 알리는 방법**이다
+    ring(x, y, T, now, color) {
+      parts.push({
+        x: x, y: y, vx: 0, vy: 0,
+        r: T * 0.35, r1: T * 2.4,        // 작게 시작해 크게 퍼진다
+        color: color || '#fff',
+        grav: 0, drag: 1,
+        born: now, life: 520,
+        glow: true, shape: 'ring', rot: 0, spin: 0,
+      });
+    },
+
+    // 먹은 것이 나에게 빨려 들어온다.
+    //
+    // 전에는 아이템 자리에서 반짝이만 튀었다. 그러면 '없어졌다' 까지만 보이고
+    // **'내 것이 됐다' 가 안 보인다.** 먹었다는 건 자리 이동이라
+    // 사라지는 자리와 도착하는 자리를 선으로 이어줘야 몸으로 안다.
+    //
+    // 도착점으로 끌려가는 조각을 쓴다. 조각마다 도착 시각을 조금씩 달리해서
+    // 한꺼번에 빨려들지 않게 한다
+    suck(x, y, tx, ty, T, now, color) {
+      for (let i = 0; i < 7; ++i) {
+        const a = rnd(0, 6.283);
+        const life = rnd(220, 340);
+        parts.push({
+          x: x + Math.cos(a) * T * 0.30,
+          y: y + Math.sin(a) * T * 0.30,
+          vx: 0, vy: 0,
+          toX: tx, toY: ty,               // 여기로 끌려간다
+          r: T * 0.09, r1: T * 0.02,
+          color: color, grav: 0, drag: 1,
+          born: now, life: life,
+          glow: true, shape: 'dot', rot: 0, spin: 0,
+        });
+      }
+    },
+
     // 비. 곧 물이 차는 구역에 내린다. 예고를 붉은 테두리로만 하면 UI 고,
     // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
     rain(x0, y0, w, h, T, now, count) {
@@ -273,8 +314,18 @@ const FX = (() => {
           // 프레임이 밀려도 같은 시각에 같은 데 있게 하려는 것이다
           const k = t * 22;
           const damp = p.drag === 1 ? k : (1 - Math.pow(p.drag, k)) / (1 - p.drag);
-          const x = p.x + p.vx * damp;
-          const y = p.y + p.vy * damp + p.grav * k * k;
+
+          let x, y;
+          if (p.toX !== undefined) {
+            // 도착점으로 끌려가는 조각. 처음엔 천천히, 끝에서 확 빨린다.
+            // 등속으로 가면 '끌려간다' 가 아니라 '옮겨진다' 로 보인다
+            const e = t * t * t;
+            x = p.x + (p.toX - p.x) * e;
+            y = p.y + (p.toY - p.y) * e;
+          } else {
+            x = p.x + p.vx * damp;
+            y = p.y + p.vy * damp + p.grav * k * k;
+          }
 
           g.globalAlpha = (1 - t) * (1 - t);
 
