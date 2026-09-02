@@ -72,42 +72,42 @@ const Art = (() => {
       floor: '#d2bfb2', floorAlt: '#cdb9ab', joint: '#c2a998', fleck: '#c9b2a3',
       wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
       crate: '#d6945a', crateTop: '#ddb897', crateSide: '#b96f2e',
-      mark: 'well', crateKinds: ['crate', 'stone'], wallKinds: ['brick', 'brick', 'rock'],
+      markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['crate', 'stone'], wallKinds: ['brick', 'brick', 'rock'],
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
       floor: '#c7c2b1', floorAlt: '#c1bdaa', joint: '#b3ae97', fleck: '#bcb7a2',
       wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
       crate: '#c69c29', crateTop: '#d8bd73', crateSide: '#9e7d20',
-      mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['column', 'column', 'brick'],
+      markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['column', 'column', 'brick'],
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
       floor: '#c3c2c1', floorAlt: '#bebcbb', joint: '#afadac', fleck: '#b8b6b5',
       wallTop: '#868079', wallSide: '#615d57', wallEdge: '#484541',
       crate: '#ec893d', crateTop: '#eab48a', crateSide: '#cc6414',
-      mark: 'car', crateKinds: ['barrel', 'crate'], wallKinds: ['metal', 'metal', 'brick'],
+      markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['barrel', 'crate'], wallKinds: ['metal', 'metal', 'brick'],
       step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
       floor: '#9ad08c', floorAlt: '#90cc81', joint: '#75bf63', fleck: '#85c775',
       wallTop: '#429236', wallSide: '#306a27', wallEdge: '#244f1d',
       crate: '#d4945d', crateTop: '#dcb899', crateSide: '#b87031',
-      mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
+      markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
       floor: '#b3c99f', floorAlt: '#acc496', joint: '#99b77e', fleck: '#a4bf8d',
       wallTop: '#638c48', wallSide: '#486534', wallEdge: '#354b27',
       crate: '#d79174', crateTop: '#deb7a5', crateSide: '#c7663d',
-      mark: 'tree', crateKinds: ['sack', 'crate'], wallKinds: ['wood', 'wood', 'rock'],
+      markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['sack', 'crate'], wallKinds: ['wood', 'wood', 'rock'],
       step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
       floor: '#dcc072', floorAlt: '#d8ba65', joint: '#cfa940', fleck: '#d5b356',
       wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
       crate: '#be9b86', crateTop: '#d0bbaf', crateSide: '#a7775b',
-      mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
+      markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
       step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
@@ -119,28 +119,28 @@ const Art = (() => {
       floor: '#deb9c0', floorAlt: '#dbb2ba', joint: '#d3a0aa', fleck: '#d8abb4',
       wallTop: '#c46185', wallSide: '#9d3a5e', wallEdge: '#752b46',
       crate: '#cd9930', crateTop: '#d8bb82', crateSide: '#a47a26',
-      mark: 'well', crateKinds: ['sack', 'crate'], wallKinds: ['brick', 'brick', 'wood'],
+      markH: 'car2', markV: 'lamp2', mark: 'well', crateKinds: ['sack', 'crate'], wallKinds: ['brick', 'brick', 'wood'],
       step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
       floor: '#cbc395', floorAlt: '#c6be8a', joint: '#b8af70', fleck: '#c0b880',
       wallTop: '#89843d', wallSide: '#635f2c', wallEdge: '#494721',
       crate: '#e68599', crateTop: '#e9b0bb', crateSide: '#db516c',
-      mark: 'palm', crateKinds: ['barrel', 'stone'], wallKinds: ['rock', 'rock', 'wood'],
+      markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['barrel', 'stone'], wallKinds: ['rock', 'rock', 'wood'],
       step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
       floor: '#d2bbd2', floorAlt: '#ceb5ce', joint: '#c2a4c2', fleck: '#c9aec9',
       wallTop: '#a76da9', wallSide: '#7e4b80', wallEdge: '#5e385f',
       crate: '#b992db', crateTop: '#cdb6e2', crateSide: '#9f6acd',
-      mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'column'],
+      markH: 'log2', markV: 'lamp2', mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'column'],
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
       floor: '#c5bde5', floorAlt: '#c0b7e3', joint: '#b1a6dd', fleck: '#bab0e0',
       wallTop: '#8873d0', wallSide: '#6347c2', wallEdge: '#4a3297',
       crate: '#ce9758', crateTop: '#d9ba96', crateSide: '#af7533',
-      mark: 'car', crateKinds: ['crate', 'barrel'], wallKinds: ['metal', 'metal', 'wood'],
+      markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['crate', 'barrel'], wallKinds: ['metal', 'metal', 'wood'],
       step: 'wood' },
   ];
 
@@ -380,6 +380,63 @@ const Art = (() => {
     };
   }
 
+  // 구운 물건에서 이 칸 몫(16x16)만 오려 붙인다.
+  // 넷짜리·가로 둘·세로 둘이 다 같은 일을 해서 한 곳으로 모았다
+  function stampMark(g, cv, cx, cy, px, Y, T, P) {
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, cx * 16 * P, cy * 16 * P, 16 * P, 16 * P,
+                Math.round(px / P) * P,
+                Math.round((Y - V.WH) / P) * P, T, T);
+    g.imageSmoothingEnabled = smooth;
+  }
+
+  // 둘짜리. 가로면 32x16, 세로면 16x32 다
+  function bakeMark2(th, P, dir, flip) {
+    const name = dir === 'H' ? th.markH : th.markV;
+    const key = 'M' + dir + ':' + name + ':' + th.name + ':' + P + ':' + (flip ? 1 : 0);
+    let cv = tileCache.get(key);
+    if (cv) return cv;
+
+    const rows = (dir === 'H' ? LANDMARK_H : LANDMARK_V)[name];
+    const W = rows[0].length, H = rows.length;
+
+    cv = document.createElement('canvas');
+    cv.width = W * P; cv.height = H * P;
+    const c = cv.getContext('2d');
+    const pal = markPal(th);
+
+    for (let y = 0; y < H; ++y) {
+      const row = rows[y];
+      for (let x = 0; x < W; ++x) {
+        const col = pal[row[flip ? (W - 1 - x) : x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x * P, y * P, P, P);
+      }
+    }
+    tileCache.set(key, cv);
+    return cv;
+  }
+
+  // 잎과 줄기와 유리는 **장소 색을 안 따른다.**
+  // 야자수가 장소마다 다른 색이면 그건 야자수가 아니라 색칠한 벽이다.
+  // 장소 색은 몸통(a·b·c)과 강조(r)에만 들어간다
+  function markPal(th) {
+    const top = rgb(th.wallTop);
+    return {
+      '.': null,
+      'o': 'rgba(10,12,18,0.95)',
+      'a': css(lighter(top, 0.42)),
+      'b': css(top),
+      'c': css(darker(top, 0.40)),
+      'r': css(rgb(th.wallSide)),
+      'g': '#3f8f45', 'G': '#63bd5c',
+      'n': '#7a5330', 'N': '#a2743f',
+      'w': '#8fd0f0', 'y': '#ffd85e', 't': '#2b2f38',
+    };
+  }
+
   // 물건 하나를 통째로 한 번만 굽는다. 32x32 라 칸마다 찍으면 한 물건에
   // 1024 번이고 판에 수십 개가 뜬다. 구워두고 네 번 오려 붙인다
   function bakeLandmark(th, P) {
@@ -392,21 +449,7 @@ const Art = (() => {
     cv.width = 32 * P; cv.height = 32 * P;
     const c = cv.getContext('2d');
 
-    // 잎과 줄기와 유리는 **장소 색을 안 따른다.**
-    // 야자수가 장소마다 다른 색이면 그건 야자수가 아니라 색칠한 벽이다.
-    // 장소 색은 몸통(a·b·c)과 강조(r)에만 들어간다
-    const top = rgb(th.wallTop);
-    const pal = {
-      '.': null,
-      'o': 'rgba(10,12,18,0.95)',
-      'a': css(lighter(top, 0.42)),
-      'b': css(top),
-      'c': css(darker(top, 0.40)),
-      'r': css(rgb(th.wallSide)),
-      'g': '#3f8f45', 'G': '#63bd5c',
-      'n': '#7a5330', 'N': '#a2743f',
-      'w': '#8fd0f0', 'y': '#ffd85e', 't': '#2b2f38',
-    };
+    const pal = markPal(th);
 
     for (let y = 0; y < 32; ++y) {
       const row = rows[y];
@@ -756,6 +799,125 @@ const Art = (() => {
       '......obbcccccccccccbbccccccco..',
       '.......ooocccccccccbbbbccccco...',
       '.........occcccccccoobbbccco....',
+    ],
+  };
+  // ── 둘이 붙어도 물건이 된다 ─────────────────────────────────
+  //
+  // 넷이 붙는 자리는 판에 그리 많지 않다. 둘씩 붙은 자리가 훨씬 흔한데,
+  // 거기가 계속 맨 벽이면 판 대부분은 여전히 심심하다.
+  //
+  // 가로 둘은 32x16, 세로 둘은 16x32 다. 넷짜리와 같은 규칙으로 짝수 자리에서만
+  // 묶고, 칸마다 자기 몫만 오려 붙인다.
+  //
+  // 자동차가 가로 둘인 건 자동차가 그렇게 생겼기 때문이다. 세로로 세운 자동차는
+  // 위에서 본 자동차가 아니라 그냥 세로로 긴 네모다
+  const LANDMARK_H = {
+    'car2': [
+      '................................',
+      '.........ooooooooooooooo........',
+      '........orrrrrrrrrrrrrrro.......',
+      '........orrrrrrrrrrrrrrro.......',
+      '........orrwwwwwrwwwwwrro.......',
+      '........orrwwwwwrwwwwwrro.......',
+      '...oooooorrwwwwwrwwwwwrroooooo..',
+      '..oaaaaaaaaaaaaaaaaaaaaaaaaaaao.',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrrryyo',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrrryyo',
+      '.oyyrrrrrrrrrrrrrrrrrrrrrrrrryyo',
+      '..occcccctccccccccccccctcccccco.',
+      '..occccctttccccccccccctttccccco.',
+      '...ooootttttoooooooootttttoooo..',
+      '.......ottto.........ottto......',
+      '........oto...........oto.......',
+    ],
+    'log2': [
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '................................',
+      '..oooooooooooooooooooooooooooo..',
+      '.oNNNNNNNNNNNNNNNNNNNNNNNNNNNNo.',
+      'oNNNNNNNNNNNNNNNNNNNNNNNNNNNNNo.',
+      'NNNcNNNnnncnnnncnnnncnnnncnnnno.',
+      'NNcccNNnnncnnnncnnnncnnnncnnnno.',
+      'NNNcNNNnnncnnnncnnnncnnnncnnnno.',
+      'oNNNNNnnnncnnnncnnnncnnnncnnnno.',
+      '.oNNNcnnnncnnnncnnnncnnnncnnnno.',
+      '.onnnncccccccccccccccccccccnnno.',
+      '..oooocccccccccccccccccccccooo..',
+      '......ooooooooooooooooooooo.....',
+    ],
+  };
+
+  const LANDMARK_V = {
+    'lamp2': [
+      '......oooo......',
+      '.....obbbbo.....',
+      '....oobbbboo....',
+      '...orrbbbbrro...',
+      '...oryyyyyyro...',
+      '...oryyyyyyro...',
+      '...oryyyyyyro...',
+      '...oryyyyyyro...',
+      '...oryyyyyyro...',
+      '...orrrrrrrro...',
+      '....ooabbboo....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '.....oabbbo.....',
+      '...oooabbbooo...',
+      '..occcccccccco..',
+      '..occcccccccco..',
+      '..occcccccccco..',
+    ],
+    'cact2': [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '......oooo......',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
+      '.....oGgGgo.....',
+      '..o..oGgggo.....',
+      '.ogo.oGgggo.....',
+      '.ogo.oGgggo.....',
+      '.ogoooGgGgo..o..',
+      '.oggggGgggo.ogo.',
+      '.oggggGgggo.ogo.',
+      '.oggggGgggo.ogo.',
+      '.oggggGgGgooogo.',
+      '..ooooGgggggggo.',
+      '.....oGgggggggo.',
+      '.....oGgggggggo.',
+      '.....oGgGgggggo.',
+      '.....oGgggoooo..',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
+      '.....oGgGgo.....',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
+      '.....oGgGgo.....',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
+      '.....oGgggo.....',
     ],
   };
   // ── 벽과 상자를 도트로 찍는다 ───────────────────────────────
@@ -1231,18 +1393,36 @@ const Art = (() => {
           //
           // 칸마다 자기 몫(16x16)만 오려 붙인다. 줄 단위로 그리는 구조라
           // 두 줄짜리 그림을 한 번에 그리면 앞뒤 순서가 무너진다
+          // 넷 -> 가로 둘 -> 세로 둘 순으로 본다.
+          //
+          // 순서가 중요하다. 넷이 붙은 자리는 가로 둘이기도 하고 세로 둘이기도 해서,
+          // 가로를 먼저 보면 큰 물건이 영영 안 나온다. **큰 것부터 집어야** 한다
           const qx = x & ~1, qy = y & ~1;
-          if (th.mark && LANDMARK[th.mark]
-              && isWall(qx, qy) && isWall(qx + 1, qy)
-              && isWall(qx, qy + 1) && isWall(qx + 1, qy + 1)) {
-            const lc = bakeLandmark(th, dp);
-            const sx = (x - qx) * 16 * dp, sy = (y - qy) * 16 * dp;
-            const smooth = g.imageSmoothingEnabled;
-            g.imageSmoothingEnabled = false;
-            g.drawImage(lc, sx, sy, 16 * dp, 16 * dp,
-                        Math.round(px / dp) * dp,
-                        Math.round((Y - V.WH) / dp) * dp, T, T);
-            g.imageSmoothingEnabled = smooth;
+          const quad = isWall(qx, qy) && isWall(qx + 1, qy)
+                    && isWall(qx, qy + 1) && isWall(qx + 1, qy + 1);
+
+          // **다 놓지 않는다.** 짝이 되는 자리마다 자동차를 놓았더니 부두가
+          // 주차장이 됐다. 물건이 흔해지면 그건 더는 눈에 띄는 물건이 아니다.
+          //
+          // 넷짜리는 원래 드물어서 다 놓고, 둘짜리는 셋 중 하나만 놓는다.
+          // 묶음의 왼쪽 위 자리로 정하므로 한 묶음의 네 칸이 같은 답을 낸다 —
+          // 칸마다 따로 던지면 물건이 반만 그려진다
+          const hq = tileHash(qx, qy);
+
+          if (th.mark && LANDMARK[th.mark] && quad) {
+            stampMark(g, bakeLandmark(th, dp), (x - qx), (y - qy), px, Y, T, dp);
+          }
+          else if (th.markH && LANDMARK_H[th.markH] && hq % 3 === 0
+                   && isWall(qx, y) && isWall(qx + 1, y)) {
+            // 좌우를 뒤집어 섞는다. 자동차가 전부 같은 쪽을 보고 서 있으면
+            // 그건 세워둔 차가 아니라 무늬다
+            stampMark(g, bakeMark2(th, dp, 'H', (hq & 4) !== 0),
+                      (x - qx), 0, px, Y, T, dp);
+          }
+          else if (th.markV && LANDMARK_V[th.markV] && tileHash(x, qy) % 3 === 0
+                   && isWall(x, qy) && isWall(x, qy + 1)) {
+            stampMark(g, bakeMark2(th, dp, 'V', (tileHash(x, qy) & 4) !== 0),
+                      0, (y - qy), px, Y, T, dp);
           }
 
           // 윗변 림. 물건이 바닥에서 떠 보이게 하는 한 줄이다.
@@ -1808,9 +1988,9 @@ const Art = (() => {
       '..oHHHHHHHHHHo..',
       '.oHHHHHHHHHHHHo.',
       '.oHHHHHHHHHHHHo.',
-      '.oHHHHHHHHHHHHo.',
-      '.oHHHhhhhhhHHHo.',
-      '.oHhhhhhhhhhhHo.',
+      '.oooooooooooooo.',
+      '.ohhhhhhhhhhhho.',
+      '.ohhhohhhhohhho.',
       '..ohhhhhhhhhho..',
       '...oohhhhhhoo...',
       '.....oooooo.....',
