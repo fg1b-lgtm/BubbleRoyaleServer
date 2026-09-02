@@ -26,8 +26,8 @@
     font: 12px/1.4 "Pretendard", "Segoe UI", system-ui, sans-serif;
     display: flex; flex-direction: column; align-items: center;
     height: 100vh; overflow: hidden;
-    background:
-      radial-gradient(1200px 700px at 50% -10%, #16202e 0%, #0a0e14 55%, #06090d 100%);
+    /* 배경도 그라데이션을 뺐다. 판 밖이 부드럽게 번지면 판 안의 또렷함이 죽는다 */
+    background: #0a0e14;
   }
 
   header {
@@ -37,18 +37,21 @@
     font-size: 11px; color: var(--dim);
     overflow: hidden; white-space: nowrap;
   }
+  /* 위 띠도 판과 같은 재료로 만든다.
+     둥근 알약 모양 칩과 그라데이션 글자는 웹 대시보드의 말투다.
+     판이 픽셀 아트인데 그 위가 웹이면 두 개가 다른 게임처럼 보인다.
+     모서리를 없애고, 그라데이션을 없애고, 테두리를 1px 로 세운다 */
   .mark {
-    font-weight: 800; font-size: 11px; letter-spacing: .16em;
-    background: linear-gradient(180deg, #ffffff, #8fc7de);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-weight: 800; font-size: 11px; letter-spacing: .18em;
+    color: #dbe6f2;
   }
   .chip {
     display: inline-flex; align-items: center; gap: 5px;
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 999px; padding: 2px 8px; font-size: 11px; color: var(--dim);
+    background: #141a24; border: 1px solid #2b3546;
+    border-radius: 0; padding: 2px 8px; font-size: 11px; color: var(--dim);
   }
   .chip b { color: var(--ink); font-weight: 600; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); }
+  .dot { width: 6px; height: 6px; border-radius: 0; background: var(--bad); }
   .on  { color: var(--good); }
   .off { color: var(--bad); }
   .keys { opacity: .5; }

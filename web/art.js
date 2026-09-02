@@ -69,44 +69,44 @@ const Art = (() => {
   // 상자는 그 장소에 있을 법한 것으로 (나무 궤짝, 얼음덩이, 화물, 항아리).
   const PLACES = [
     { name: '광장',   // 0 CROSSROADS — 돌바닥과 붉은 기와
-      floor: '#c9bda8', floorAlt: '#c0b39e', joint: '#a2957f', fleck: '#b3a58e',
-      wallTop: '#c96f5a', wallSide: '#7d3a2e', wallEdge: '#4f231b',
-      crate: '#c08b52', crateTop: '#dda76a', crateSide: '#7e5628',
+      floor: '#d2bfb2', floorAlt: '#cdb9ab', joint: '#c2a998', fleck: '#c9b2a3',
+      wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
+      crate: '#d6945a', crateTop: '#ddb897', crateSide: '#b96f2e',
       crateKind: 'stone', wallKind: 'brick',
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
-      floor: '#e0dcd2', floorAlt: '#d7d2c7', joint: '#b8b2a4', fleck: '#c8c2b4',
-      wallTop: '#f2eee4', wallSide: '#9a9280', wallEdge: '#6b6455',
-      crate: '#cbab5e', crateTop: '#e6c87c', crateSide: '#846a2f',
+      floor: '#c7c2b1', floorAlt: '#c1bdaa', joint: '#b3ae97', fleck: '#bcb7a2',
+      wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
+      crate: '#c69c29', crateTop: '#d8bd73', crateSide: '#9e7d20',
       crateKind: 'stone', wallKind: 'column',
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
-      floor: '#9fa5ac', floorAlt: '#959ba2', joint: '#767c84', fleck: '#868c94',
-      wallTop: '#8b939d', wallSide: '#3f464f', wallEdge: '#252a31',
-      crate: '#cf7a35', crateTop: '#ea9450', crateSide: '#82471a',
+      floor: '#c3c2c1', floorAlt: '#bebcbb', joint: '#afadac', fleck: '#b8b6b5',
+      wallTop: '#868079', wallSide: '#615d57', wallEdge: '#484541',
+      crate: '#ec893d', crateTop: '#eab48a', crateSide: '#cc6414',
       crateKind: 'barrel', wallKind: 'metal',
       step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
-      floor: '#8fc267', floorAlt: '#84b85d', joint: '#6a9c48', fleck: '#79ad52',
-      wallTop: '#d9c9a4', wallSide: '#8a6a45', wallEdge: '#57402a',
-      crate: '#b5793f', crateTop: '#d09252', crateSide: '#734a26',
+      floor: '#9ad08c', floorAlt: '#90cc81', joint: '#75bf63', fleck: '#85c775',
+      wallTop: '#429236', wallSide: '#306a27', wallEdge: '#244f1d',
+      crate: '#d4945d', crateTop: '#dcb899', crateSide: '#b87031',
       crateKind: 'crate', wallKind: 'wood',
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
-      floor: '#b8a184', floorAlt: '#ae977b', joint: '#907a5f', fleck: '#a08a6e',
-      wallTop: '#e8ddc4', wallSide: '#8e7f63', wallEdge: '#5b5040',
-      crate: '#9c7b52', crateTop: '#b8946a', crateSide: '#634d31',
-      crateKind: 'crate', wallKind: 'wood',
+      floor: '#b3c99f', floorAlt: '#acc496', joint: '#99b77e', fleck: '#a4bf8d',
+      wallTop: '#638c48', wallSide: '#486534', wallEdge: '#354b27',
+      crate: '#d79174', crateTop: '#deb7a5', crateSide: '#c7663d',
+      crateKind: 'sack', wallKind: 'wood',
       step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
-      floor: '#e3cf9c', floorAlt: '#dac591', joint: '#bda772', fleck: '#cdb782',
-      wallTop: '#e0b878', wallSide: '#a1743c', wallEdge: '#6b4a22',
-      crate: '#c9a05e', crateTop: '#e2bb78', crateSide: '#82632f',
+      floor: '#dcc072', floorAlt: '#d8ba65', joint: '#cfa940', fleck: '#d5b356',
+      wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
+      crate: '#be9b86', crateTop: '#d0bbaf', crateSide: '#a7775b',
       crateKind: 'sack', wallKind: 'rock',
       step: 'sand' },
 
@@ -116,30 +116,30 @@ const Art = (() => {
     // 바닥을 식은 회색 벽돌로 내리고 차양을 사프란으로 올려서 떼어놨다.
     // 상자의 청록은 그대로 둔다. 그게 이 장소의 표식이다
     { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
-      floor: '#9a918a', floorAlt: '#918880', joint: '#756d67', fleck: '#847b75',
-      wallTop: '#d8a340', wallSide: '#8f6320', wallEdge: '#583c12',
-      crate: '#5c9c93', crateTop: '#7dbcb2', crateSide: '#356862',
+      floor: '#deb9c0', floorAlt: '#dbb2ba', joint: '#d3a0aa', fleck: '#d8abb4',
+      wallTop: '#c46185', wallSide: '#9d3a5e', wallEdge: '#752b46',
+      crate: '#cd9930', crateTop: '#d8bb82', crateSide: '#a47a26',
       crateKind: 'sack', wallKind: 'brick',
       step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
-      floor: '#efdfbc', floorAlt: '#e7d6b0', joint: '#c9b78f', fleck: '#d8c69f',
-      wallTop: '#8fd4e0', wallSide: '#3d7f96', wallEdge: '#245667',
-      crate: '#e08b7a', crateTop: '#f2a795', crateSide: '#94503f',
+      floor: '#cbc395', floorAlt: '#c6be8a', joint: '#b8af70', fleck: '#c0b880',
+      wallTop: '#89843d', wallSide: '#635f2c', wallEdge: '#494721',
+      crate: '#e68599', crateTop: '#e9b0bb', crateSide: '#db516c',
       crateKind: 'barrel', wallKind: 'rock',
       step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
-      floor: '#dfeaf3', floorAlt: '#d4e2ee', joint: '#adc4d8', fleck: '#c0d4e4',
-      wallTop: '#b8e5fa', wallSide: '#5589a8', wallEdge: '#33607a',
-      crate: '#9fd2ea', crateTop: '#c8ecfc', crateSide: '#5c93b2',
+      floor: '#d2bbd2', floorAlt: '#ceb5ce', joint: '#c2a4c2', fleck: '#c9aec9',
+      wallTop: '#a76da9', wallSide: '#7e4b80', wallEdge: '#5e385f',
+      crate: '#b992db', crateTop: '#cdb6e2', crateSide: '#9f6acd',
       crateKind: 'ice', wallKind: 'rock',
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
-      floor: '#b08e63', floorAlt: '#a6845a', joint: '#8a6a45', fleck: '#997a52',
-      wallTop: '#8d9aa4', wallSide: '#414c56', wallEdge: '#262e36',
-      crate: '#7f8f5e', crateTop: '#9aab76', crateSide: '#4e5a36',
+      floor: '#c5bde5', floorAlt: '#c0b7e3', joint: '#b1a6dd', fleck: '#bab0e0',
+      wallTop: '#8873d0', wallSide: '#6347c2', wallEdge: '#4a3297',
+      crate: '#ce9758', crateTop: '#d9ba96', crateSide: '#af7533',
       crateKind: 'crate', wallKind: 'metal',
       step: 'wood' },
   ];
@@ -1318,6 +1318,83 @@ const Art = (() => {
     g.fill();
   }
 
+  // ── 도트 숫자 ────────────────────────────────────────────────
+  //
+  // HUD 숫자를 브라우저 글꼴로 찍고 있었다. 판은 픽셀 아트인데 숫자만
+  // 현대 산세리프라 **두 개가 다른 게임처럼 보였다.**
+  // 글꼴 파일을 받아오지 않는다 — 숫자 열 개와 기호 둘이면 직접 찍는 게 빠르고,
+  // 받아온 글꼴은 늦게 오면 그 사이에 다른 글꼴로 한 번 그려진다.
+  //
+  // 5x7 이다. 이보다 작으면 6 과 8 이 헷갈리고, 크면 격자가 거칠어 보인다
+  const GLYPH = {
+    '0': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+    '4': ['#..#.', '#..#.', '#..#.', '#####', '...#.', '...#.', '...#.'],
+    '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+    '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+    '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+    ':': ['.....', '..#..', '..#..', '.....', '..#..', '..#..', '.....'],
+    '/': ['....#', '...#.', '...#.', '..#..', '.#...', '.#...', '#....'],
+  };
+
+  // 글자 하나를 종이에 구워둔다.
+  //
+  // 점을 매 프레임 찍으면 숫자 하나에 fillRect 가 서른다섯 번이고,
+  // HUD 에 숫자가 여럿이라 프레임당 수백이 된다. clienttest 가 바로 잡았다.
+  // 아이템 도트와 같은 처리다 — 한 번 굽고 그다음엔 붙이기만 한다
+  const glyphCache = new Map();
+
+  function bakeGlyph(ch, P, color) {
+    const key = ch + ':' + P + ':' + color;
+    let cv = glyphCache.get(key);
+    if (cv) return cv;
+
+    const rows = GLYPH[ch];
+    cv = document.createElement('canvas');
+    cv.width = 5 * P; cv.height = 7 * P;
+
+    if (rows) {
+      const c = cv.getContext('2d');
+      c.fillStyle = color;
+      for (let r = 0; r < 7; ++r) {
+        for (let x = 0; x < 5; ++x) {
+          if (rows[r][x] === '#') c.fillRect(x * P, r * P, P, P);
+        }
+      }
+    }
+
+    glyphCache.set(key, cv);
+    if (glyphCache.size > 400) glyphCache.clear();
+    return cv;
+  }
+
+  // 숫자를 찍는다. height 는 한 점의 크기가 아니라 글자 높이다
+  function dotText(g, text, x, y, height, color, align) {
+    const P = Math.max(1, Math.round(height / 7));
+    const cw = P * 6;                       // 글자 하나 폭 + 사이 한 칸
+    const total = text.length * cw - P;
+
+    let sx = x;
+    if (align === 'center') sx = x - total / 2;
+    else if (align === 'right') sx = x - total;
+    sx = Math.round(sx / P) * P;
+    const sy = Math.round(y / P) * P;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    for (let i = 0; i < text.length; ++i) {
+      if (!GLYPH[text[i]]) continue;
+      g.drawImage(bakeGlyph(text[i], P, color), sx + i * cw, sy);
+    }
+    g.imageSmoothingEnabled = smooth;
+
+    return total;
+  }
+
   // ── 아이템 ───────────────────────────────────────────────────
   //
   // 다 똑같은 동그라미면 뭘 먹으러 갈지 고를 수가 없다.
@@ -1478,7 +1555,7 @@ const Art = (() => {
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
-    drawChar, paintChar, drawFace, drawBubble, drawItem, ITEM_ART,
+    drawChar, paintChar, drawFace, drawBubble, drawItem, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };

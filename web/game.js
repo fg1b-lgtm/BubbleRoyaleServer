@@ -653,20 +653,28 @@ function drawWorld(now, dt) {
   // 이 두 겹이 "따로 그린 것들" 을 한 장의 그림처럼 묶어준다
   // 후처리는 **판 위에만** 건다. 캔버스가 창을 다 쓰게 되면서
   // W,H 로 그리면 여백까지 덮어 화면 전체가 어두워진다
+  // 가장자리를 어둡게. **부드러운 비네트가 아니라 두 단이다.**
+  //
+  // 픽셀 아트는 값이 또렷한 게 전부인데, 부드러운 그라데이션을 덮으면
+  // 같은 색이 자리에 따라 다른 색이 된다. 판을 읽는 데 쓰는 명도 법칙이
+  // 화면 위치에 따라 흔들리는 것이라 법칙 1을 스스로 깨는 셈이다.
+  //
+  // 안쪽은 안 건드리고 테두리 두 줄만 눌러 화면 밖과의 경계를 만든다
   const cx0 = BX + BW / 2, cy0 = BY + BH / 2;
-  const vg = ctx.createRadialGradient(cx0, cy0, Math.min(BW, BH) * 0.30,
-                                      cx0, cy0, Math.max(BW, BH) * 0.72);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(1, 'rgba(0,0,0,0.38)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(BX, BY, BW, BH);
+  const edge = Math.max(6, Math.round(Art.V.TS * 0.5));
 
-  ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = th.gradeAmt;
-  ctx.fillStyle = th.grade;
-  ctx.fillRect(BX, BY, BW, BH);
-  ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.fillRect(BX, BY, BW, edge);
+  ctx.fillRect(BX, BY + BH - edge, BW, edge);
+  ctx.fillRect(BX, BY, edge, BH);
+  ctx.fillRect(BX + BW - edge, BY, edge, BH);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  const e2 = Math.round(edge / 2);
+  ctx.fillRect(BX, BY, BW, e2);
+  ctx.fillRect(BX, BY + BH - e2, BW, e2);
+  ctx.fillRect(BX, BY, e2, BH);
+  ctx.fillRect(BX + BW - e2, BY, e2, BH);
 
   // 내가 위험하다. 화면 가장자리가 붉어진다.
   // 숫자나 글자로 알리면 싸우는 중에 못 본다
@@ -894,16 +902,43 @@ function farOf(cx, cy) {
 //
 // 브라우저 기본 글꼴로 왼쪽 위에 늘어놓으면 그건 개발자 도구지 게임이 아니다.
 // 판때기를 깔고, 크기로 위아래를 나누고, 숫자는 크게, 이름표는 작고 넓게 쓴다
-function panel(x, y, w, h, r) {
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  Art.rr(ctx, x + 1, y + 2, w, h, r); ctx.fill();
+// 판때기. **판과 같은 재료로 만든다.**
+//
+// 9/2 까지 둥근 모서리에 반투명 검정에 그림자에 흐린 테두리였다.
+// 판은 픽셀 아트인데 그 위에 웹 대시보드가 떠 있는 꼴이었다.
+// 두 개가 다른 게임처럼 보이면 어느 쪽이 잘 만들어졌든 싸구려로 보인다.
+//
+// 규칙은 상자를 그릴 때와 같다 — 모서리는 곡선이 아니라 한 칸씩 깎고,
+// 반투명 대신 단색이고, 테두리는 1픽셀이고, 좌표는 격자에 맞는다.
+// 그림자도 흐리지 않고 한 단 어긋난 실루엣이다
+function panel(x, y, w, h) {
+  const P = Art.V.P;
+  const q = (v) => Math.round(v / P) * P;
 
-  ctx.fillStyle = 'rgba(10,15,22,0.72)';
-  Art.rr(ctx, x, y, w, h, r); ctx.fill();
+  const x0 = q(x), y0 = q(y), w0 = q(w), h0 = q(h);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-  ctx.lineWidth = 1;
-  Art.rr(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r); ctx.stroke();
+  // 그림자. 흐리지 않고 한 칸 어긋난 같은 모양이다
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  pxBox(x0 + P, y0 + P, w0, h0, P);
+
+  // 몸통. 반투명이 아니라 단색이다 — 뒤가 비치면 글자가 배경과 싸운다
+  ctx.fillStyle = '#141a24';
+  pxBox(x0, y0, w0, h0, P);
+
+  // 위쪽 한 줄만 밝게. 빛은 판 전체와 같은 왼쪽 위에서 온다
+  ctx.fillStyle = '#2b3546';
+  ctx.fillRect(x0 + P, y0, w0 - P * 2, P);
+  ctx.fillRect(x0, y0 + P, P, h0 - P * 2);
+
+  ctx.fillStyle = '#0a0e15';
+  ctx.fillRect(x0 + P, y0 + h0 - P, w0 - P * 2, P);
+  ctx.fillRect(x0 + w0 - P, y0 + P, P, h0 - P * 2);
+}
+
+// 모서리를 한 칸씩 깎은 네모. 곡선을 쓰면 아무리 작아도 흐려진다
+function pxBox(x, y, w, h, P) {
+  ctx.fillRect(x + P, y,     w - P * 2, h);
+  ctx.fillRect(x,     y + P, w,         h - P * 2);
 }
 
 function label(text, x, y, size, color, align, spacing) {
@@ -917,15 +952,21 @@ function label(text, x, y, size, color, align, spacing) {
   ctx.restore();
 }
 
+// 큰 숫자는 **도트로 찍는다.**
+//
+// 브라우저 글꼴로 찍으면 판은 픽셀인데 숫자만 매끈해서 두 개가 다른 게임처럼 보인다.
+// 흐린 그림자도 뺐다 — 픽셀 아트의 그림자는 번지지 않고 한 칸 어긋난다.
+//
+// y 는 글자의 **아래쪽**이었다(alphabetic 기준). 도트는 위쪽이 기준이라
+// 여기서 맞춰준다. 부르는 쪽을 다 고치면 실수하기 쉽다
 function bigNum(text, x, y, size, color, align) {
+  const h = Math.round(size * 0.78);
+  const P = Math.max(1, Math.round(h / 7));
+  const top = y - h;
+
   ctx.save();
-  ctx.font = '800 ' + size + 'px "Pretendard", "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = color;
-  ctx.textAlign = align || 'left';
-  ctx.shadowColor = 'rgba(0,0,0,0.6)';
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetY = 2;
-  ctx.fillText(text, x, y);
+  Art.dotText(ctx, String(text), x + P, top + P, h, 'rgba(0,0,0,0.55)', align);
+  Art.dotText(ctx, String(text), x, top, h, color, align);
   ctx.restore();
 }
 
@@ -941,7 +982,7 @@ function drawHUD(now) {
   //   자명한 것은 라벨을 뺀다   0:07 은 시간 말고 읽을 게 없다
   //   숫자에 붙는 것은 단위로   '2 판', '3 처치' 처럼 숫자 뒤에 붙인다
   //   뜻이 없는 것은 지운다     칸 스물넷 위의 SLOT 은 아무 말도 안 하고 있었다
-  panel(10, 10, 132, 44, 8);
+  panel(10, 10, 132, 44);
   // 숫자 폭을 measureText 로 재면 그 순간 걸린 글꼴에 따라 달라진다.
   // bigNum 이 save/restore 안에서 글꼴을 바꾸므로 밖에서 잰 값은 못 믿는다.
   // 자릿수로 자리를 잡는다. 판 번호는 한두 자리다
@@ -956,7 +997,7 @@ function drawHUD(now) {
   // 남은 사람. 숫자 하나가 제일 크다. 이 게임에서 제일 중요한 숫자다
   // 패널을 넓혔다. 칸 스물넷이 오른쪽 절반을 통째로 쓰므로
   // 좁게 두면 숫자와 칸이 겹친다
-  panel(W / 2 - 110, 10, 220, 44, 8);
+  panel(W / 2 - 110, 10, 220, 44);
 
   // 누가 죽으면 남은 수가 한 번 튀어오른다.
   // 이 숫자가 이 게임에서 제일 중요한 숫자인데 조용히 바뀌면 바뀐 줄 모른다
@@ -998,7 +1039,7 @@ function drawHUD(now) {
     const kills = statOf(G.myId).kills;
     const pop = Math.max(0, 1 - (now - killPop) / 450);
 
-    panel(W / 2 - 110 - 72, 10, 66, 44, 8);
+    panel(W / 2 - 110 - 72, 10, 66, 44);
     label('처치', W / 2 - 110 - 60, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
 
     ctx.save();
@@ -1016,7 +1057,7 @@ function drawHUD(now) {
     const ss = String(sec % 60).padStart(2, '0');
     // 시간은 라벨이 없다. mm:ss 를 시간 말고 다르게 읽을 방법이 없다.
     // 라벨이 빠진 만큼 숫자를 패널 가운데에 놓는다
-    panel(W - 106, 10, 96, 44, 8);
+    panel(W - 106, 10, 96, 44);
     bigNum(mm + ':' + ss, W - 20, 42, 22, '#fff', 'right');
   }
 
@@ -1042,7 +1083,7 @@ function drawHUD(now) {
     const roomy = BX >= bw + 20;
     const bx = roomy ? (BX - bw) / 2 : (W - bw) / 2;
     const by = roomy ? H / 2 - bh / 2 : H - bh - 10;
-    panel(bx, by, bw, bh, 10);
+    panel(bx, by, bw, bh);
 
     // 시작값도 상한도 서버가 준 것을 쓴다. 여기 숫자를 적어두면
     // 상수를 바꾼 날 화면만 거짓말을 하게 된다
@@ -1101,7 +1142,7 @@ function drawHUD(now) {
     const mx = roomyR ? BX + BW + (W - BX - BW - mw) / 2 : W - mw - pad - 10;
     const my = roomyR ? H / 2 - mw / 2 : H - mw - pad - 10;
 
-    panel(mx - pad, my - pad, mw + pad * 2, mw + pad * 2, 8);
+    panel(mx - pad, my - pad, mw + pad * 2, mw + pad * 2);
 
     for (let s = 0; s < 9; ++s) {
       const gx = mx + (s % 3) * (cell + gap);
@@ -1142,7 +1183,7 @@ function drawHUD(now) {
     const y = 66 + i * 30;
     const x = W - 10 - 150 + (1 - slide) * 40;
 
-    panel(x, y, 150, 26, 5);
+    panel(x, y, 150, 26);
     Art.drawFace(ctx, x + 18, y + 14, 7, colorOf(k.killer), animalOf(k.killer));
     label('P' + k.killer, x + 30, y + 18, 11, '#fff');
     label('▸', x + 66, y + 18, 12, 'rgba(255,255,255,0.4)');
@@ -1275,7 +1316,7 @@ function drawResults(now) {
   const px = (W - pw) / 2;
   const py = H * 0.28;
 
-  panel(px, py, pw, 26 + show * rowH + 10, 10);
+  panel(px, py, pw, 26 + show * rowH + 10);
 
   label('순위', px + 16,  py + 18, 10, 'rgba(255,255,255,0.40)', 'left', 1);
   label('킬',   px + 210, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);

@@ -17,7 +17,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
-const { colorDist } = require('./colorlib');
+const { colorDist, luminance } = require('./colorlib');
 
 let pass = 0, fail = 0;
 const check = (ok, what) => {
@@ -142,6 +142,97 @@ check(worst.d >= 12,
 //
 // 색만 다르고 모양이 같으면 같은 판에 페인트를 열 번 칠한 것이다.
 // 벽 무늬와 상자 무늬를 종류별로 세어, 열 곳이 몇 가지 모양을 쓰는지 본다
+// ── 읽힘의 법칙 ─────────────────────────────────────────────
+//
+// 세계관을 말로 짓는 대신 **읽는 법칙**을 세운다. 이 게임은 0.3초 안에
+// '어디가 막혔나 · 어디가 위험한가' 를 읽어야 사는 게임이고, 그게 안 되면
+// 아무리 예뻐도 못 만든 게임이다.
+//
+//   법칙 1  색은 장소가 갖고, **명도는 게임이 갖는다**
+//           장소는 색조로만 다르다. 바닥이 밝고 상자가 중간이고 벽이 어둡다 —
+//           이 순서와 간격이 열 곳에서 같아야 어디서나 같은 방식으로 읽힌다
+//
+//   법칙 2  **위험색은 독점한다**
+//           물줄기의 밝은 청록은 판의 어떤 것도 쓰지 않는다.
+//           얼음골이 그 색을 쓰면 위험이 배경에 묻힌다
+//
+//   법칙 3  UI 는 판과 같은 재료로 만든다 (아래 별도)
+console.log('');
+console.log('=== 법칙 1: 명도 순서가 어디서나 같은가 ===');
+console.log('');
+
+// 상대휘도. 0 이 검정, 1 이 흰색
+const lum = (hex) => luminance(hex);
+
+console.log('  장소        바닥   상자   벽위   벽옆   바닥-상자');
+
+let orderBad = [], gapBad = [];
+const gaps = [];
+
+for (const pl of Art.PLACES) {
+    const f = lum(pl.floor), c = lum(pl.crate);
+    const wt = lum(pl.wallTop), ws = lum(pl.wallSide);
+    const g1 = f - c;
+    gaps.push([pl.name, g1, c - wt]);
+
+    console.log('  ' + pl.name.padEnd(10)
+                + f.toFixed(2).padStart(5) + c.toFixed(2).padStart(7)
+                + wt.toFixed(2).padStart(7) + ws.toFixed(2).padStart(7)
+                + g1.toFixed(2).padStart(11));
+
+    // **바닥 > 부술 수 있는 것 > 못 부수는 것.** 이 순서가 곧 게임의 위계다.
+    // 벽이 상자보다 밝으면 '못 부수는 것' 이 더 가벼워 보인다. 거꾸로다
+    if (!(f > c && c > wt && wt > ws)) orderBad.push(pl.name);
+}
+
+check(orderBad.length === 0,
+      '어디서나 바닥 > 상자 > 벽 순으로 어두워진다 (부술 수 있는 것이 더 밝다)'
+      + (orderBad.length ? ' — 뒤집힌 곳: ' + orderBad.join(', ') : ''));
+
+// 간격이 들쭉날쭉하면 어떤 장소는 막힌 데가 잘 보이고 어떤 장소는 안 보인다.
+// 제일 큰 곳과 제일 작은 곳의 차이를 본다
+{
+    const g1s = gaps.map(g => g[1]);
+    const spread = Math.max(...g1s) - Math.min(...g1s);
+    console.log('');
+    console.log('  바닥-상자 간격이 ' + Math.min(...g1s).toFixed(2)
+                + ' ~ ' + Math.max(...g1s).toFixed(2) + ' 로 벌어져 있다 (차이 '
+                + spread.toFixed(2) + ')');
+    check(spread <= 0.22,
+          '막힌 데가 어느 장소에서나 비슷하게 눈에 띈다 (간격 차이 '
+          + spread.toFixed(2) + ')');
+}
+
+console.log('');
+console.log('=== 법칙 2: 위험색을 아무도 안 쓰는가 ===');
+console.log('');
+
+// 물줄기가 쓰는 색. game.js 의 폭발 그라데이션에서 뽑았다.
+// 이 대역은 위험만 쓴다 — 이걸 배경이 쓰면 위험이 배경에 묻힌다.
+//
+// 물줄기 테두리의 흰색(#ebfaff)은 기준에서 뺐다.
+// **흰색은 어떤 밝은 색과도 가깝다.** 그걸 기준에 넣으면 밝은 바닥을 아예 못 쓴다.
+// 테두리는 색이 아니라 밝기 대비로 읽히므로 색 충돌의 문제가 아니다
+const DANGER = ['#96d7ff', '#3c96eb'];
+
+let clash = [];
+for (const pl of Art.PLACES) {
+    for (const key of ['floor', 'crate', 'crateTop', 'wallTop', 'wallSide']) {
+        for (const d of DANGER) {
+            const dist = colorDist(pl[key], d);
+            if (dist < 22) clash.push(pl.name + '.' + key + ' ' + pl[key]
+                                      + ' <-> ' + d + ' (' + dist.toFixed(1) + ')');
+        }
+    }
+}
+
+if (clash.length) { for (const c of clash.slice(0, 8)) console.log('  ' + c); }
+else console.log('  겹치는 색이 없다');
+
+check(clash.length === 0,
+      '판의 어떤 것도 위험색 대역을 안 쓴다'
+      + (clash.length ? ' — ' + clash.length + ' 군데' : ''));
+
 console.log('');
 console.log('=== 아트 디렉션: 장소마다 물건이 다른가 ===');
 console.log('');
