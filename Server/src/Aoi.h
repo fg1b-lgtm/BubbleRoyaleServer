@@ -234,17 +234,35 @@ inline void RouteEvent(uint8_t type, int x, int y, int who, const char* data, in
             SendToOne(who, data, len);
             return;
 
-        // 위험과 지형은 가장자리 밖 세 칸까지.
+        // **판을 바꾸는 것은 전부 전역이다.**
+        //
+        // 여기가 9/2 에 고친 자리다. 부서짐과 밀기를 '보이는 사람에게만' 보냈었다.
+        // 판은 접속할 때 한 번만 받는다. 다른 구역에서 벽이 부서진 소식이 안 오면
+        // **내 판 사본이 영영 낡은 채로 남는다.** 나중에 그 구역에 걸어 들어가면
+        // 없는 벽이 그려져 있고, 있는 길이 막혀 보인다.
+        //
+        // 가르는 기준은 거리가 아니라 **오래 남는 것인가**다.
+        //   판을 바꾼다  -> 한 번 놓치면 영구히 어긋난다. 전원에게
+        //   그때뿐이다   -> 놓쳐도 다음 스냅샷이 덮는다. 보이는 사람에게만
+        //
+        // 비용은 작다. 한 판에 부서지는 블록이 400개쯤이고 초당 두어 개다.
+        // AOI 가 아끼는 것은 초당 30번 나가는 스냅샷이지 이런 게 아니다
+        case EVT_BLOCK:
+        case EVT_PUSH:
+        case EVT_DROP:
+        case EVT_ITEM:
+            SendToAll(data, len);
+            return;
+
+        // 위험은 가장자리 밖 세 칸까지. 그때뿐인 것이라 놓쳐도 안 어긋난다.
         // 구역을 넘어가자마자 죽으면 그건 실력이 아니라 정보가 없어서 죽은 것이다
         case EVT_BUBBLE:
         case EVT_BLAST:
         case EVT_CHAIN:
-        case EVT_BLOCK:
-        case EVT_PUSH:
             SendToWatchers(x, y, PEEK_TILES, data, len);
             return;
 
-        // 나머지는 그 구역만. 아이템 위치를 남이 알면 파밍 정보 우위가 생긴다
+        // 나머지는 그 구역만. 그때뿐인 연출과 소리다
         default:
             SendToWatchers(x, y, 0, data, len);
             return;

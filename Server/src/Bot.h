@@ -217,7 +217,27 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
 }
 
 // 여기 놓고 살아나갈 수 있나. 놓기 전에 확인한다
-inline bool SafeToPlace(int tx, int ty, int range)
+// 퓨즈가 터지기 전에 몇 칸이나 갈 수 있나.
+//
+// 전에는 '8칸 안에 안전한 칸이 있으면 놓는다' 였다. 8 은 그냥 적어둔 수였다.
+// 실제로는 퓨즈가 2.5초(75틱)이고 기본 속도로 한 칸 가는 데 14틱이 걸린다.
+// **5칸밖에 못 간다.** 그래서 봇이 놓고 나서 사거리 끝까지 걸어갔다가 거기서 맞았다.
+// 관전하면 한계거리에서 왔다갔다하다 자기 물풍선에 죽는 것처럼 보인다.
+//
+// 롤러를 먹으면 더 갈 수 있으므로 그 사람 속도로 계산한다.
+// 한 칸은 빼둔다. 칸 경계에서 놓으면 첫 칸을 반만 가고 시작한다
+inline int EscapeReach(const Player& p)
+{
+    int speed = MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP;
+    int ticks_per_tile = TILE_UNITS / speed;
+    if (ticks_per_tile < 1) ticks_per_tile = 1;
+
+    int reach = BUBBLE_FUSE_TICKS / ticks_per_tile - 1;
+    if (reach < 1) reach = 1;
+    return reach;
+}
+
+inline bool SafeToPlace(int tx, int ty, int range, int reach)
 {
     uint8_t saved = g_game.map.tile[ty][tx];
     g_game.map.tile[ty][tx] = TILE_BUBBLE;
@@ -239,7 +259,7 @@ inline bool SafeToPlace(int tx, int ty, int range)
     }
 
     int dx, dy;
-    bool ok = FindStep(tx, ty, Goal::Safe, 8, &dx, &dy);
+    bool ok = FindStep(tx, ty, Goal::Safe, reach, &dx, &dy);
 
     memcpy(g_danger, danger_backup, sizeof(g_danger));
     g_game.map.tile[ty][tx] = saved;
@@ -253,9 +273,32 @@ inline bool SafeToPlace(int tx, int ty, int range)
 // 그러다 자기 폭탄에 죽는다. 사람은 한번 정한 데로 간다
 inline int g_flee_x[PLAYER_MAX], g_flee_y[PLAYER_MAX];
 
+// 정한 방향을 몇 틱 붙잡는다.
+//
+// 봇이 판 경계나 구역 경계에서 좌우로 덜덜 떠는 게 보였다. 관전할 때 제일 눈에 걸린다.
+// 원인은 **매 틱 처음부터 다시 정하기 때문**이다.
+// 칸 경계를 넘는 순간 기준 칸이 바뀌고, 그러면 가운데로 가는 방향이 뒤집힌다.
+// 다음 틱에 되돌아오고, 또 뒤집힌다.
+//
+// 사람은 한번 정하면 몇 걸음은 그 방향으로 간다. 그걸 흉내 낸다.
+// 위험해지면 즉시 푼다. 붙잡고 있다가 맞으면 그게 더 나쁘다
+inline int g_hold[PLAYER_MAX];
+inline int g_hold_dx[PLAYER_MAX], g_hold_dy[PLAYER_MAX];
+
+// 한 칸 가는 데 걸리는 틱만큼 붙잡는다. 한 칸은 끝까지 간다는 뜻이다
+inline int HoldTicks(const Player& p)
+{
+    int speed = MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP;
+    int t = TILE_UNITS / speed;
+    return t < 2 ? 2 : t;
+}
+
 inline void ClearFleeTargets()
 {
-    for (int i = 0; i < PLAYER_MAX; ++i) { g_flee_x[i] = -1; g_flee_y[i] = -1; }
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        g_flee_x[i] = -1; g_flee_y[i] = -1;
+        g_hold[i] = 0;
+    }
 }
 
 // 정해둔 칸으로 가는 첫 걸음
@@ -308,6 +351,36 @@ inline void ThinkBot(int slot)
     int tx = p.judge_tx, ty = p.judge_ty;
     int dx = 0, dy = 0;
 
+    // 붙잡아 둔 방향이 아직 살아 있으면 그대로 간다.
+    // 위험해졌거나 그 방향이 막혔으면 푼다
+    if (g_hold[slot] > 0) {
+        --g_hold[slot];
+
+        int nx = tx + g_hold_dx[slot], ny = ty + g_hold_dy[slot];
+        bool blocked = !Passable(nx, ny);
+
+        if (!g_danger[ty][tx] && !blocked && !(g_hold_dx[slot] == 0 && g_hold_dy[slot] == 0)) {
+            p.dir_x = g_hold_dx[slot];
+            p.dir_y = g_hold_dy[slot];
+            return;
+        }
+        g_hold[slot] = 0;
+    }
+
+    // 이 아래에서 정한 방향은 붙잡는다.
+    // 도망은 이미 목표 칸을 기억해 두는 방식으로 안 떨게 해뒀지만,
+    // 나머지 다섯 갈래는 매 틱 새로 정하고 있었다. 거기서 떨렸다
+    struct Keep {
+        int slot; Player* p;
+        ~Keep() {
+            if (p->dir_x != 0 || p->dir_y != 0) {
+                g_hold[slot]    = HoldTicks(*p);
+                g_hold_dx[slot] = p->dir_x;
+                g_hold_dy[slot] = p->dir_y;
+            }
+        }
+    } keep{ slot, &p };
+
     // 1) 위험하면 무조건 도망.
     //    한번 정한 목표가 아직 안전하면 그대로 밀고 간다
     if (g_danger[ty][tx]) {
@@ -358,8 +431,9 @@ inline void ThinkBot(int slot)
 
     // 3) 사거리 안에 적이 있으면 놓는다. 이게 없으면 아무도 안 죽어서 판이 안 끝난다
     int enemy_dist = 0;
+    int reach = EscapeReach(p);
     bool enemy_near = FindStep(tx, ty, Goal::Enemy, range, &dx, &dy, slot, &enemy_dist);
-    if (enemy_near && SafeToPlace(tx, ty, range)) {
+    if (enemy_near && SafeToPlace(tx, ty, range, reach)) {
         if (PlaceBubble(slot)) {
             p.dir_x = 0; p.dir_y = 0;
             return;
@@ -385,7 +459,7 @@ inline void ThinkBot(int slot)
     for (int d = 0; d < 4; ++d) {
         if (g_game.map.IsBlock(tx + DX[d], ty + DY[d])) near_block = true;
     }
-    if (near_block && SafeToPlace(tx, ty, range)) {
+    if (near_block && SafeToPlace(tx, ty, range, reach)) {
         if (PlaceBubble(slot)) {
             p.dir_x = 0; p.dir_y = 0;
             return;
