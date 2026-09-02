@@ -314,8 +314,18 @@ static void Test7_NoSlide()
     // 줄 맞춤은 "좁은 데로 들어가려 할 때" 만 일한다.
     // 가려는 칸 자체가 벽이면 맞춰봐야 못 지나가므로 아무것도 안 한다.
     // 못 가는 방향을 누르고 있는데 몸이 옆으로 흐르면 그건 조작이 아니라 미끄러짐이다
-    printf("  막힌 방향을 누르는 동안 세로 %d -> %d\n", start_y, p.py);
-    Check(p.py == start_y, "막혔으면 옆으로 한 점도 안 밀린다");
+    // **벽에 닿고 나서** 한 점도 안 움직여야 한다.
+    //
+    // 벽에 닿기 전까지는 줄 가운데로 당겨진다. 그건 맞는 동작이다 —
+    // 한 축으로 걷는 동안 줄에 맞춰주지 않으면 기둥을 지날 때마다 들썩인다.
+    // 여기서 보는 것은 **막힌 뒤에도 계속 흐르나** 다.
+    // 못 가는 방향을 누르고 있는데 몸이 흐르면 그건 조작이 아니라 미끄러짐이다
+    printf("  벽에 닿기까지 세로 %d -> %d (줄 가운데로 붙었다)\n", start_y, p.py);
+
+    int stuck_y = p.py;
+    for (int t = 0; t < 60; ++t) MovePlayer(m, p);
+    printf("  벽에 닿은 뒤 60틱 더: 세로 %d -> %d\n", stuck_y, p.py);
+    Check(p.py == stuck_y, "막힌 뒤에는 옆으로 한 점도 안 밀린다");
 
     // **걷는 동안 옆으로 안 밀린다.** 9/2 에 들어온 신고 그대로다.
     //
@@ -344,8 +354,24 @@ static void Test7_NoSlide()
             if (drift < 0) drift = -drift;
             if (drift > worst) worst = drift;
         }
-        printf("  좁은 통로를 40틱 걸었을 때 세로로 밀린 최대량 %d\n", worst);
-        Check(worst == 0, "들어가는 자리면 걷는 동안 옆으로 안 밀린다");
+        // 줄에 붙고 나면 **멈춘다.** 얼마나 당겨졌나가 아니라
+        // 다 당겨진 다음에도 계속 움직이나를 본다.
+        // 계속 움직이면 그건 맞춰주는 게 아니라 흔드는 것이다
+        printf("  좁은 통로를 40틱 걸었을 때 세로로 움직인 최대량 %d\n", worst);
+
+        int still = 0;
+        for (int off = -25; off <= 25; off += 5) {
+            Player w = MakePlayer(2, 6);
+            w.py     = 6 * TILE_UNITS + TILE_UNITS / 2 + off;
+            w.dir_x = 1; w.dir_y = 0;
+
+            for (int t = 0; t < 20; ++t) MovePlayer(om, w);   // 붙을 시간을 준다
+            int settled = w.py;
+            for (int t = 0; t < 20; ++t) MovePlayer(om, w);
+            if (w.py != settled) ++still;
+        }
+        printf("  붙고 나서도 계속 움직인 경우 %d / 11\n", still);
+        Check(still == 0, "줄에 붙고 나면 옆으로 안 움직인다");
 
         // 도움을 없앤 게 아니라 조건을 좁힌 것이다. 정말 안 들어갈 때는 여전히 맞춰준다
         Player w2 = MakePlayer(2, 6);
@@ -454,6 +480,112 @@ static void Test8_NeverInsideWall()
     }
 }
 
+// ── 시험 10 : 진짜 판에서 옆으로 밀리나 ──────────────────────
+//
+// 앞의 시험들은 손으로 만든 통로에서 잰다. 그런데 신고는 **진짜 판에서**
+// 밀린다는 것이었다. 손으로 만든 판은 내가 예상한 모양만 담고 있어서,
+// 예상 못 한 모양에서 나는 문제를 못 잡는다.
+//
+// 판을 스무 개 만들고, 빈 칸마다 사람을 세워서 네 방향으로 걸어본다.
+// 한 방향만 누르는 동안 **다른 축이 한 점이라도 움직이면** 그게 밀린 것이다.
+//
+// 처음엔 늘 칸 한가운데에서 출발시켰다. 그래서 0 번이 나왔고 다 고친 줄 알았다.
+// **사람은 한가운데에 서 있지 않는다.** 아래로 걷다 오른쪽으로 꺾으면
+// 꺾은 그 자리에 서 있고, 그 자리는 대개 치우쳐 있다.
+// 옆으로 치우친 자리에서도 걸어봐야 신고받은 그 느낌이 재현된다
+static void Test10_NoDriftOnRealMaps()
+{
+    printf("\n=== 시험 10: 진짜 판에서 옆으로 안 밀린다 ===\n");
+
+    const int DX[4] = { 1, -1, 0, 0 };
+    const int DY[4] = { 0, 0, 1, -1 };
+
+    long long tried = 0, drifted = 0;
+    int worst = 0, worst_x = 0, worst_y = 0, worst_d = 0;
+
+    // **총량보다 이게 중요하다.**
+    //
+    // 한 방향으로 쭉 당겨져서 줄에 맞는 것은 손에 '도와줬다' 로 느껴진다.
+    // 당기다 멈추고 또 당기는 것이 '밀린다' 로 느껴진다.
+    // 걷다가 기둥을 지날 때마다 켜졌다 꺼지면 그게 딱 그 느낌이다.
+    //
+    //   episodes  안 움직이다가 다시 움직이기 시작한 횟수
+    //   flips     옆으로 가던 쪽이 반대로 뒤집힌 횟수
+    long long episodes = 0, flips = 0;
+
+    for (int seed = 1; seed <= 20; ++seed) {
+        GameMap m{};
+        m.Generate((uint32_t)seed);
+
+        for (int ty = 1; ty < MAP_H - 1; ++ty) {
+            for (int tx = 1; tx < MAP_W - 1; ++tx) {
+                if (m.tile[ty][tx] != TILE_EMPTY) continue;
+
+                for (int d = 0; d < 4; ++d) {
+                for (int off = -90; off <= 90; off += 30) {
+                    Player p = MakePlayer(tx, ty);
+                    p.dir_x = DX[d];
+                    p.dir_y = DY[d];
+                    if (DX[d] != 0) p.py += off; else p.px += off;
+                    p.judge_tx = JudgeAxis(p.px);
+                    p.judge_ty = JudgeAxis(p.py);
+
+                    int side0 = (DX[d] != 0) ? p.py : p.px;
+
+                    int prev = side0, last_dir = 0;
+                    bool was_moving = false;
+                    for (int t = 0; t < 20; ++t) {
+                        MovePlayer(m, p);
+                        int cur = (DX[d] != 0) ? p.py : p.px;
+                        int dd  = cur - prev;
+                        prev = cur;
+
+                        bool moving = (dd != 0);
+                        if (moving && !was_moving && t > 0) ++episodes;
+                        was_moving = moving;
+
+                        if (dd != 0) {
+                            int dir = dd > 0 ? 1 : -1;
+                            if (last_dir != 0 && dir != last_dir) ++flips;
+                            last_dir = dir;
+                        }
+                    }
+
+                    int side1 = (DX[d] != 0) ? p.py : p.px;
+                    int drift = side1 - side0;
+                    if (drift < 0) drift = -drift;
+
+                    ++tried;
+                    if (drift > 0) {
+                        ++drifted;
+                        if (drift > worst) {
+                            worst = drift; worst_x = tx; worst_y = ty; worst_d = d;
+                        }
+                    }
+                }
+                }
+            }
+        }
+    }
+
+    printf("  판 20개 x 빈 칸 x 네 방향 x 치우침 일곱 = %lld 번 걸어봤다\n", tried);
+    printf("  옆으로 밀린 경우 %lld 번 (%lld%%),  제일 많이 밀린 양 %d units\n",
+           drifted, tried ? drifted * 100 / tried : 0, worst);
+    if (worst > 0) {
+        printf("  제일 심한 자리 (%d,%d) 방향 %d\n", worst_x, worst_y, worst_d);
+    }
+
+    // 한 점도 안 밀려야 한다. '조금 밀린다' 는 없다 —
+    // 사람은 캐릭터가 자기 손과 다르게 움직이는 걸 아주 작아도 알아챈다
+    // 얼마나 밀렸나가 아니라 **몇 번 밀렸나**를 본다.
+    // 한 번이라도 밀리면 사람은 그 한 번을 기억한다
+    printf("  끊겼다 다시 밀린 횟수 %lld,  방향이 뒤집힌 횟수 %lld\n", episodes, flips);
+
+    // 옆으로 당기는 것 자체는 있어야 한다. 몸이 0.8칸이라 안 당기면 벽에 파묻힌다.
+    // 문제는 **끊겼다 다시 당기는 것**이다. 그건 도움이 아니라 손을 뺏는 느낌이다
+    Check(episodes == 0, "당기기 시작하면 끊기지 않는다");
+    Check(flips == 0, "당기는 쪽이 도중에 안 뒤집힌다");
+}
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -467,6 +599,7 @@ int main(int argc, char** argv)
     Test6_MapDeterminism();
     Test7_NoSlide();
     Test8_NeverInsideWall();
+    Test10_NoDriftOnRealMaps();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
 

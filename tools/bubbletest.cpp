@@ -363,6 +363,59 @@ static void Test5_Trap()
 }
 
 // ── 시험 6 : 몸으로 부딪쳐야 터진다 ──────────────────────────
+// ── 시험 14 : 아이템이 물줄기에 쓸려간다 ─────────────────────
+//
+// 아이템이 깔린 자리가 안전한 창고면 안 된다. 물풍선을 놓아도 잃을 게 없으니
+// 아무나 먼저 터뜨리고 천천히 주우면 되기 때문이다.
+//
+// 그런데 **부숴서 나온 것까지 쓸려가면 블록을 부술 이유가 없어진다.**
+// 이 둘을 가르는 게 이 시험의 전부다.
+static void Test14_ItemSweptByBlast()
+{
+    printf("\n=== 시험 14: 아이템이 물줄기에 쓸려간다 ===\n");
+
+    OpenBoard();
+    int a = Join(5, 10);
+
+    // 바닥에 놓여 있던 아이템
+    g_game.item[10][7] = ITEM_POWER;
+    SetBlast(7, 10, a, 77);
+    printf("  바닥에 있던 아이템: %d\n", g_game.item[10][7]);
+    Check(g_game.item[10][7] == ITEM_NONE, "바닥에 있던 아이템은 쓸려간다");
+    Check(CountEvent(EVT_ITEM_GONE) == 1, "쓸려간 걸 화면에 알린다");
+
+    // 아무것도 없는 칸에서는 알리지 않는다. 빈 칸마다 이벤트가 나가면
+    // 물줄기 하나에 이벤트가 열 개씩 붙는다
+    g_game.event_count = 0;
+    SetBlast(8, 10, a, 77);
+    Check(CountEvent(EVT_ITEM_GONE) == 0, "빈 칸에서는 안 알린다");
+
+    // **부숴서 나온 것은 살아남는다.** 여기가 이 시험의 요지다
+    {
+        OpenBoard();
+        int b = Join(5, 10);
+        Player& p = g_game.players[b];
+        p.power_lv = 4;
+
+        // 드롭이 반드시 나오게 확률을 올려놓고 본다
+        int keep = g_drop_percent;
+        g_drop_percent = 100;
+
+        for (int x = 7; x <= 9; ++x) g_game.map.tile[10][x] = TILE_BLOCK;
+
+        PlaceBubble(b);
+        for (int t = 0; t < BUBBLE_FUSE_TICKS + 4; ++t) Tick();
+
+        int dropped = 0;
+        for (int y = 0; y < MAP_H; ++y)
+            for (int x = 0; x < MAP_W; ++x)
+                if (g_game.item[y][x] != ITEM_NONE) ++dropped;
+
+        g_drop_percent = keep;
+        printf("  블록을 부수고 남은 아이템 %d개\n", dropped);
+        Check(dropped > 0, "부숴서 나온 아이템은 안 쓸려간다");
+    }
+}
 // ── 시험 13 : 대쉬 ───────────────────────────────────────────
 //
 // 대쉬는 이 게임에서 유일하게 **한 틱에 크게 움직이는** 동작이다.
@@ -728,7 +781,7 @@ static void Test12_PushBox()
 {
     printf("\n=== 시험 13: 상자 밀기 ===\n");
 
-    // ① 그냥 밀린다
+    // ① 버텨야 밀린다. 스치기만 해서는 안 움직인다
     OpenBoard();
     g_game.map.tile[10][11] = TILE_BOX;
 
@@ -737,19 +790,56 @@ static void Test12_PushBox()
     p.dir_x = 1;
 
     Tick();
-    printf("  민 뒤: (11,10)=%d  (12,10)=%d\n",
+    printf("  한 틱 대고 있었을 때: (11,10)=%d  (12,10)=%d\n",
+           g_game.map.tile[10][11], g_game.map.tile[10][12]);
+    Check(g_game.map.tile[10][12] != TILE_BOX, "한 틱 대는 걸로는 안 밀린다");
+
+    // 0.5초를 버틴다
+    for (int t = 0; t < PUSH_CHARGE_TICKS; ++t) Tick();
+    printf("  %d틱 버틴 뒤: (11,10)=%d  (12,10)=%d\n", PUSH_CHARGE_TICKS,
            g_game.map.tile[10][11], g_game.map.tile[10][12]);
 
-    Check(g_game.map.tile[10][11] == TILE_EMPTY, "있던 자리가 비었다");
+    // 밀리기 시작하면 **두 칸을 다 막는다.** 실제로는 그 사이 어딘가에 있는데,
+    // 판은 칸 단위라 한 칸만 막으면 상자가 사람 몸을 통과하는 순간이 생긴다
+    Check(g_game.map.tile[10][11] == TILE_BOX, "밀리는 동안은 떠난 칸도 막혀 있다");
+    Check(g_game.map.tile[10][12] == TILE_BOX, "갈 칸도 같이 막힌다");
+
+    // 다 밀리면 떠난 칸이 비고 그때부터 지나갈 수 있다
+    for (int t = 0; t < PUSH_SLIDE_TICKS + 1; ++t) Tick();
+    printf("  %d틱 더 지난 뒤: (11,10)=%d  (12,10)=%d\n", PUSH_SLIDE_TICKS,
+           g_game.map.tile[10][11], g_game.map.tile[10][12]);
+    Check(g_game.map.tile[10][11] == TILE_EMPTY, "다 밀리면 있던 자리가 빈다");
     Check(g_game.map.tile[10][12] == TILE_BOX,   "한 칸 밀렸다");
 
-    // ③ 쿨다운. 계속 누르고 있어도 바로 또 안 밀린다
-    Tick();
-    Check(g_game.map.tile[10][13] != TILE_BOX, "붙어서 눌러도 연달아 안 밀린다");
+    // 밀려가는 데 걸리는 시간이 사람 최저 속도로 한 칸 가는 시간과 같아야 한다.
+    // 상자가 사람보다 빠르면 앞질러 가서 뭘 미는 건지 안 보인다
+    printf("  밀리는 데 %d틱 (사람 최저 속도로 한 칸 %d틱)\n",
+           PUSH_SLIDE_TICKS, (TILE_UNITS + MOVE_SPEED_BASE - 1) / MOVE_SPEED_BASE);
+    Check(PUSH_SLIDE_TICKS >= TILE_UNITS / MOVE_SPEED_BASE,
+          "상자가 사람보다 빠르지 않다");
 
-    for (int t = 0; t < PUSH_COOLDOWN_TICKS + 2; ++t) Tick();
-    printf("  쿨다운 뒤: (13,10)=%d\n", g_game.map.tile[10][13]);
-    Check(g_game.map.tile[10][13] == TILE_BOX, "쿨다운이 지나면 또 밀린다");
+    // ③ 다른 상자로 옮겨 대면 버틴 시간이 안 이어진다.
+    //    안 그러면 상자 앞을 훑고 지나가기만 해도 마지막 상자가 갑자기 밀린다
+    {
+        OpenBoard();
+        g_game.map.tile[10][11] = TILE_BOX;
+        g_game.map.tile[8][11]  = TILE_BOX;
+
+        int r = Join(10, 10);
+        Player& q2 = g_game.players[r];
+
+        q2.dir_x = 1;
+        for (int t = 0; t < PUSH_CHARGE_TICKS - 2; ++t) Tick();   // 거의 다 찼다
+
+        // 위쪽 상자로 옮겨 댄다
+        q2.px = TileCenter(10); q2.py = TileCenter(8);
+        q2.judge_tx = 10; q2.judge_ty = 8;
+        q2.dir_x = 1;
+        Tick(); Tick();
+
+        printf("  옮겨 대고 두 틱: (11,8)=%d\n", g_game.map.tile[8][11]);
+        Check(g_game.map.tile[8][12] != TILE_BOX, "옮겨 대면 처음부터 다시 센다");
+    }
 
     // ② 뒤가 막혀 있으면 안 밀린다
     OpenBoard();
@@ -758,7 +848,7 @@ static void Test12_PushBox()
 
     int q = Join(10, 10);
     g_game.players[q].dir_x = 1;
-    Tick();
+    for (int t = 0; t < PUSH_CHARGE_TICKS + PUSH_SLIDE_TICKS + 2; ++t) Tick();
 
     Check(g_game.map.tile[10][11] == TILE_BOX, "뒤가 막혔으면 안 밀린다");
 
@@ -770,7 +860,7 @@ static void Test12_PushBox()
     int b = Join(12, 10);
     g_game.players[a].dir_x = 1;
     g_game.players[b].dir_x = 0;
-    Tick();
+    for (int t = 0; t < PUSH_CHARGE_TICKS + PUSH_SLIDE_TICKS + 2; ++t) Tick();
 
     printf("  사람이 뒤에 서 있을 때: (11,10)=%d\n", g_game.map.tile[10][11]);
     Check(g_game.map.tile[10][11] == TILE_BOX, "사람 위로는 안 밀린다");
@@ -801,6 +891,7 @@ int main()
     Test7_OwnBubble();
     Test12_PushBox();
     Test13_Dash();
+    Test14_ItemSweptByBlast();
     Test8_Count();
     Test9_Drop();
     Test10_Pickup();

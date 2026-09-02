@@ -254,7 +254,11 @@ const feed = (v) => api.onPacket(v);
 
 // WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
 // (23 + 조각 9 + 시작값·상한 5 + 이동 규칙 4 = 41 바이트)
-feed(pkt(5, 41, (v, o) => {
+// WELCOME 몸통이 몇 바이트인가. Protocol.h 의 WelcomeBody 와 같아야 한다.
+// 필드를 붙일 때마다 여기도 늘려야 하는데, 안 늘리면 화면이 없는 바이트를 읽는다
+const WELCOME_BODY = 42;
+
+feed(pkt(5, WELCOME_BODY, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -287,6 +291,7 @@ feed(pkt(5, 41, (v, o) => {
     v.setUint8(o + 38, 4);   // move_step
     v.setUint8(o + 39, 6);   // trap_speed
     v.setUint8(o + 40, 50);  // lane_snap
+    v.setUint8(o + 41, 15);  // push_slide — 상자가 밀려가는 데 걸리는 틱
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
@@ -435,6 +440,62 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
   check(fetched.every(u => u.endsWith('.ogg')), '받는 것이 전부 소리 파일이다');
 
   let crashed = null;
+// ── 화면 예측이 옆으로 미나 ─────────────────────────────────
+//
+// 서버는 진짜 판 46,592 자리에서 한 점도 안 민다 (movetest 시험 10).
+// 그런데 화면은 예측을 따로 돌리므로, 여기가 다르면 사람은 밀린다고 느낀다 —
+// 예측이 옆으로 밀고, 다음 스냅샷이 그걸 되돌리는 게 매 틱 반복되기 때문이다.
+//
+// predict.js 의 centerAxis 가 Movement.h 와 같은 규칙인지를 실제로 걸어서 본다
+{
+    const DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
+    const TU = api.G.C.tileUnits;
+
+    // 총량이 아니라 **끊겼다 다시 미는 횟수**를 센다.
+    // 한 번 쭉 당겨 줄에 맞추는 건 도움이고, 켜졌다 꺼지는 건 밀리는 느낌이다.
+    // 서버 쪽 movetest 가 같은 것을 센다 — 둘이 같은 답을 내야 예측이 안 되돌아간다
+    let tried = 0, episodes = 0, worst = 0;
+
+    for (let ty = 1; ty < MAP_H - 1; ++ty) {
+        for (let tx = 1; tx < MAP_W - 1; ++tx) {
+            if (api.G.tiles[ty][tx] !== 0) continue;
+
+            for (let d = 0; d < 4; ++d) {
+                // 치우친 자리에서 출발한다. 늘 한가운데에서 걸어보면
+                // 당길 일이 없어서 아무 문제도 안 나온다 (서버 쪽에서 겪은 일이다)
+                const off = ((tx * 7 + ty * 5) % 7 - 3) * 30;
+                api.Predict.stop();
+                api.Predict.reconcile(
+                    tx * TU + (TU >> 1) + (DX[d] !== 0 ? 0 : off),
+                    ty * TU + (TU >> 1) + (DX[d] !== 0 ? off : 0));
+
+                const v0 = api.Predict.view();
+                let prev = DX[d] !== 0 ? v0.y : v0.x;
+                let wasMoving = false;
+
+                for (let t = 0; t < 20; ++t) {
+                    api.Predict.tick(api.G.tiles, DX[d], DY[d], 0, false);
+                    const v = api.Predict.view();
+                    const cur = DX[d] !== 0 ? v.y : v.x;
+                    const dd = Math.abs(cur - prev);
+                    prev = cur;
+
+                    const moving = dd > 0.5;
+                    if (moving && !wasMoving && t > 0) ++episodes;
+                    wasMoving = moving;
+                    if (dd > worst) worst = dd;
+                }
+                ++tried;
+            }
+        }
+    }
+    api.Predict.stop();
+
+    console.log('  화면 예측으로 ' + tried + ' 번 걸어봤다,  끊겼다 다시 민 횟수 '
+                + episodes + ' 번');
+    check(episodes === 0, '화면 예측도 당기다 끊기지 않는다');
+}
+
 let pushOk = false, pushFrom = null;
   try {
       for (let t = 0; t < 4; ++t) {
@@ -449,15 +510,27 @@ let pushOk = false, pushFrom = null;
       }
 
       // 상자 밀기는 안 터지는 것만으로 부족하다. **판이 실제로 바뀌어야 한다.**
-      // 서버는 밀리기 전 자리와 방향만 보낸다. 화면이 그걸로 두 칸을 고쳐야
-      // 다음 프레임에 상자가 옮겨 그려진다.
-      // 안 고치면 상자가 원래 자리에 남고, 그리로 들어간 사람이 상자에 겹친다
+      //
+      // 9/3 부터 상자가 순간이동하지 않고 0.5초 동안 미끄러진다.
+      // 그동안은 **두 칸이 다 막혀 있어야** 한다 — 한쪽을 먼저 비우면
+      // 예측이 서버보다 먼저 그 칸으로 들어가서 되돌아간다.
+      // 다 밀린 뒤에야 떠난 칸이 빈다
       pushFrom = [14, 12];
       api.G.tiles[12][14] = 4;   // TILE_BOX
       api.G.tiles[12][15] = 0;   // 갈 자리는 비어 있다
       feed(event(16, 14, 12, 0, 0));   // 0 = 오른쪽으로 밀었다
-      pushOk = (api.G.tiles[12][14] === 0) && (api.G.tiles[12][15] === 4);
+
+      const bothBlocked = (api.G.tiles[12][14] === 4) && (api.G.tiles[12][15] === 4);
       now += 16; api.frame(now);
+
+      // 밀리는 시간이 지나면 떠난 칸이 빈다. 프레임을 그려야 정리된다 —
+      // 다음 프레임이 안 오면 영영 막힌 채로 남는 것이라 이것도 같이 본다
+      const slideMs = 15 * (1000 / 30);
+      now += slideMs + 40; api.frame(now);
+
+      pushOk = bothBlocked
+            && (api.G.tiles[12][14] === 0) && (api.G.tiles[12][15] === 4);
+      pushFrom = bothBlocked ? '미는 동안 두 칸 다 막힘' : '미는 동안 한 칸만 막힘';
 
       // 최종 구역 물 + 단계별 화면
       feed(snapshot(9, 2, true));
@@ -493,7 +566,9 @@ let pushOk = false, pushFrom = null;
   } else {
       check(true, '패킷을 먹이고 여러 프레임을 그려도 안 터진다');
 
-      check(pushOk, '상자를 밀었다는 이벤트로 판의 두 칸이 바뀐다 (밀기 전 ' + pushFrom + ')');
+      check(pushOk,
+            '상자가 미끄러지는 동안 두 칸을 막고, 다 밀리면 떠난 칸이 빈다 ('
+            + pushFrom + ')');
   }
 
   // ── 무엇을 그렸나 ────────────────────────────────────────────

@@ -33,6 +33,16 @@ let rowCv = [];            // 줄마다 한 장. 벽과 상자와 그림자가 �
 let floorDirty = true;
 const dirtyRows = new Set();
 
+// 지금 밀려가고 있는 상자들.
+//
+// 서버는 밀리는 동안 두 칸을 다 막고, 다 밀리면 떠난 칸을 비운다.
+// 화면도 같은 시계로 똑같이 한다 — 서버가 준 push_slide 틱을 쓰므로
+// 상수를 바꿔도 둘이 안 어긋난다.
+//
+// 미끄러지는 그림은 줄 단위 종이에 못 굽는다. 두 줄에 걸치기 때문이다.
+// 그래서 종이에는 아예 안 그리고, 매 프레임 사람과 같은 층에 그린다
+let slides = [];
+
 let foamSegs = [];         // 물가 선분 [ax,ay,bx,by, ...]
 let foamKey = '';          // 구역 상태가 바뀔 때만 다시 계산한다
 
@@ -436,6 +446,21 @@ function frame(ts) {
   const dt = Math.min(64, ts - lastFrame);
   lastFrame = ts;
 
+  // 다 밀린 상자는 떠난 칸을 비운다. 서버도 같은 틱에 같은 일을 한다.
+  // 여기서 안 비우면 상자가 있던 자리가 영영 막힌 채로 남는다
+  for (let i = slides.length - 1; i >= 0; --i) {
+    const sl = slides[i];
+    if (ts - sl.t0 < sl.ms) continue;
+    if (G.tiles[sl.fy] && G.tiles[sl.fy][sl.fx] === TILE.BOX) {
+      G.tiles[sl.fy][sl.fx] = TILE.EMPTY;
+      dirtyRows.add(sl.fy);
+    }
+    slides.splice(i, 1);
+  }
+
+  // 판 정리는 **그리는 것과 상관없이** 한다. 전에는 세상을 그리는 함수 안에 뒀는데,
+  // 결과 화면처럼 판을 안 그리는 동안에는 상자가 있던 자리가 영영 안 치워졌다
+
   // 멈춤. 사람을 잡은 순간 아주 잠깐 시간이 안 흐른다.
   // 맞은 게 아니라 맞혔다는 걸 몸으로 알리는 장치다
   if (!FX.frozen(ts)) gameTime += dt;
@@ -630,6 +655,20 @@ function drawWorld(now, dt) {
     for (let x = 0; x < G.C.mapW; ++x) {
       const it = G.items[y][x];
       if (it !== ITEM.NONE) Art.drawItem(ctx, x * T + T / 2, y * T + T / 2, T, it, now);
+    }
+
+    // 밀려가는 상자. 도착할 줄에서 그린다 —
+    // 아래로 밀리는 상자를 떠난 줄에서 그리면 아래 줄 물건에 가려진다
+    for (const sl of slides) {
+      if (sl.ty !== y) continue;
+      const k = Math.min(1, (now - sl.t0) / sl.ms);
+
+      // 처음에 살짝 빠르고 끝에서 느려진다. 무거운 것이 밀려서 서는 모양이다.
+      // 일정한 속도로 가면 밀리는 게 아니라 실려 가는 것처럼 보인다
+      const e = 1 - (1 - k) * (1 - k);
+      const sx = (sl.fx + (sl.tx - sl.fx) * e) * T;
+      const sy = (sl.fy + (sl.ty - sl.fy) * e) * T;
+      Art.drawCrate(ctx, sx, sy, T, sl.fx, sl.fy, true);
     }
 
     const bs = bucketB[y];
@@ -1662,6 +1701,10 @@ function scrim(a) {
 
 // ── 서버가 알려주는 것들 ─────────────────────────────────────
 Hooks.welcome = function () {
+  // 판이 새로 깔린다. 밀려가던 상자는 지난 판의 것이라 버린다 —
+  // 안 버리면 새 판의 엉뚱한 칸이 비워진다
+  slides = [];
+
   // 이동 규칙을 서버가 준 값으로 세운다. 화면이 자기 값을 갖고 있으면
   // 상수를 바꾼 날 예측과 서버가 갈린다
   Predict.setup(G.C);
@@ -1836,16 +1879,35 @@ Hooks.event = function (type, x, y, who, val) {
       const PX = [1, -1, 0, 0], PY = [0, 0, 1, -1];
       const nx = x + PX[val], ny = y + PY[val];
 
+      // **떠난 칸을 아직 안 비운다.**
+      //
+      // 전에는 여기서 바로 옆 칸으로 옮겨 그렸다. 그래서 상자가 순간이동했다.
+      // 서버도 밀리는 동안은 두 칸을 다 막으므로 화면도 그렇게 둔다 —
+      // 한쪽만 비우면 예측이 서버보다 먼저 그 칸으로 들어가서 되돌아간다.
+      //
+      // 미끄러지는 그림은 slides 가 그리고, 다 밀리면 그때 떠난 칸을 비운다
       if (G.tiles[y] && G.tiles[ny]) {
-        G.tiles[y][x]   = TILE.EMPTY;
         G.tiles[ny][nx] = TILE.BOX;
         dirtyRows.add(y);
         dirtyRows.add(ny);
       }
 
+      slides.push({ fx: x, fy: y, tx: nx, ty: ny, t0: now,
+                    ms: (G.C.pushSlide || 15) * G.snapInterval });
+
       // 밀린 방향으로 먼지가 인다. 밀었다는 게 보여야 다음에도 민다
       FX.push(cx, cy, PX[val], PY[val], T, now, Art.placeAt(x, y).crate);
       Sound.push(pan, far);
+      break;
+    }
+
+    // 바닥의 아이템이 물줄기에 쓸려갔다.
+    //
+    // 먹은 것과 나눠 그린다. 먹은 건 누가 가져간 것이라 위로 튀어오르고,
+    // 이건 아무도 못 갖는 것이라 그 자리에서 흩어져 사라진다
+    case EVT.ITEM_GONE: {
+      if (G.items[y]) { G.items[y][x] = 0; dirtyRows.add(y); }
+      FX.gone(cx, cy, T, now);
       break;
     }
 

@@ -46,6 +46,14 @@ struct Player
     // 상자를 민 뒤 쉬는 시간. 없으면 붙어서 누르는 동안 상자가 주르륵 밀려간다
     int  push_cool;
 
+    // 상자를 미는 중이다. 방향을 대고 몇 틱째 버티고 있나,
+    // 그리고 지금 밀고 있는 칸이 어디인가.
+    //
+    // 칸을 같이 들고 있어야 한다. 안 그러면 옆 상자로 옮겨 대도 버틴 시간이 이어져서,
+    // 상자 앞을 스치듯 지나가기만 해도 마지막 상자가 밀린다
+    int  push_charge;
+    int  push_tx, push_ty;
+
     // 이번 틱에 자리가 실제로 바뀌었나.
     // 벽에 대고 누르고 있으면 dir 은 있는데 이건 꺼져 있다. 그때는 걷는 그림을 안 쓴다
     bool moving;
@@ -86,6 +94,24 @@ struct Bubble
     int  chain;    // 연쇄 몇 번째 단계인가. 직접 놓은 것은 0
 };
 
+// 밀려가고 있는 상자.
+//
+// 밀리는 동안 상자는 **두 칸을 다 막는다.** 떠난 칸과 갈 칸 둘 다.
+// 실제로는 그 사이 어딘가에 있는데 판은 칸 단위라, 어느 한 칸만 막으면
+// 상자 그림이 사람 몸을 통과해 지나가는 순간이 생긴다.
+// 둘 다 막으면 손해 보는 쪽이 미는 사람이라 억울하지 않다.
+//
+// 여덟 개면 넉넉하다. 미는 데 0.5초를 버텨야 하므로 스물넷이 동시에 밀 수는 없다
+constexpr int MAX_SLIDING_BOX = 8;
+
+struct SlidingBox
+{
+    bool used;
+    int  fx, fy;   // 떠난 칸
+    int  tx, ty;   // 갈 칸
+    int  left;     // 남은 틱. 0 이 되면 떠난 칸이 비워진다
+};
+
 // 한 틱에 생긴 일. 틱 끝에서 한꺼번에 내보낸다.
 //
 // 여기 모아두는 이유는 Bubble.h 가 소켓을 모르게 하기 위해서다.
@@ -105,6 +131,7 @@ struct GameState
     GameMap map;
     Player  players[PLAYER_MAX];
     Bubble  bubbles[MAX_BUBBLE];
+    SlidingBox slides[MAX_SLIDING_BOX];
 
     // 물줄기가 덮고 있는 칸. 남은 틱 수를 그대로 담는다
     uint8_t  blast[MAP_H][MAP_W];
@@ -285,6 +312,9 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     }
     for (int i = 0; i < MAX_BUBBLE; ++i) {
         g_game.bubbles[i].used = false;
+    }
+    for (int i = 0; i < MAX_SLIDING_BOX; ++i) {
+        g_game.slides[i].used = false;
     }
     for (int i = 0; i < SPAWN_TOTAL; ++i) {
         g_game.spawn_used[i] = false;
@@ -469,6 +499,9 @@ inline int AddPlayer(Session* s, bool bot = false)
     p.dir_y        = 0;
     p.is_bot       = bot;
     p.push_cool    = 0;
+    p.push_charge  = 0;
+    p.push_tx      = -1;
+    p.push_ty      = -1;
     p.face         = FACE_DOWN;   // 들어오면 화면 앞쪽을 본다
     p.moving       = false;
     p.bubble_lv    = 0;
@@ -663,6 +696,41 @@ inline void SetInput(Session* s, int dx, int dy)
 // 판정 칸 기준이라 몸이 조금 어긋나 있어도 밀린다.
 // 밀기까지 칸에 맞추라고 하면 그건 짜증이지 난이도가 아니다
 
+// 밀려가는 상자를 한 틱 진행시킨다.
+//
+// 다 밀리면 떠난 칸을 비운다. 밀리는 동안 두 칸을 다 막고 있었으므로,
+// 이 순간이 그 칸이 지나갈 수 있게 되는 순간이다.
+//
+// 도중에 물줄기가 와서 상자가 부서질 수 있다. 그러면 갈 칸이 이미 비어 있으니,
+// 떠난 칸만 정리하고 조용히 접는다 — 부서진 상자를 다시 놓으면 안 된다.
+//
+// 소유 스레드 : tick
+inline void StepSlidingBoxes(GameMap& map)
+{
+    for (int i = 0; i < MAX_SLIDING_BOX; ++i) {
+        SlidingBox& sb = g_game.slides[i];
+        if (!sb.used) continue;
+
+        if (--sb.left > 0) continue;
+
+        sb.used = false;
+        if (map.tile[sb.fy][sb.fx] == TILE_BOX) {
+            map.tile[sb.fy][sb.fx] = TILE_EMPTY;
+        }
+    }
+}
+
+// 이 칸이 지금 밀려가는 중인가. 밀리는 상자를 또 밀지 않으려고 본다
+inline bool IsSliding(int tx, int ty)
+{
+    for (int i = 0; i < MAX_SLIDING_BOX; ++i) {
+        const SlidingBox& sb = g_game.slides[i];
+        if (!sb.used) continue;
+        if ((sb.fx == tx && sb.fy == ty) || (sb.tx == tx && sb.ty == ty)) return true;
+    }
+    return false;
+}
+
 inline void TryPushBox(GameMap& map, Player& p)
 {
     if (!p.alive || p.trap_ticks > 0) {
@@ -676,6 +744,7 @@ inline void TryPushBox(GameMap& map, Player& p)
     int dx = (p.dir_y == 0) ? p.dir_x : 0;
     int dy = (p.dir_x == 0) ? p.dir_y : 0;
     if (dx == 0 && dy == 0) {
+        p.push_charge = 0;
         return;
     }
 
@@ -684,28 +753,77 @@ inline void TryPushBox(GameMap& map, Player& p)
     if (bx < 0 || by < 0 || bx >= MAP_W || by >= MAP_H) {
         return;
     }
-    if (map.tile[by][bx] != TILE_BOX) {
+    if (map.tile[by][bx] != TILE_BOX || IsSliding(bx, by)) {
+        p.push_charge = 0;
         return;
     }
+
+    // **0.5초를 버텨야 움직이기 시작한다.**
+    //
+    // 전에는 방향을 대는 순간 옆 칸으로 순간이동했다. 미는 것처럼 안 보였고,
+    // 지나가다 스치기만 해도 상자가 튀어서 판이 제멋대로 바뀌었다.
+    //
+    // 대고 있는 칸이 바뀌면 처음부터 다시 센다. 안 그러면 상자 앞을 훑고 지나가는
+    // 동안 시간이 이어져서, 마지막에 닿은 상자가 갑자기 밀린다
+    if (p.push_tx != bx || p.push_ty != by) {
+        p.push_tx = bx;
+        p.push_ty = by;
+        p.push_charge = 0;
+    }
+    if (++p.push_charge < PUSH_CHARGE_TICKS) {
+        return;
+    }
+    p.push_charge = 0;
 
     int nx = bx + dx;
     int ny = by + dy;
     if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) {
         return;
     }
-    if (map.tile[ny][nx] != TILE_EMPTY) {
+    if (map.tile[ny][nx] != TILE_EMPTY || IsSliding(nx, ny)) {
         return;   // 뒤가 막혔다. 밀 데가 없으면 부수는 수밖에 없다
     }
 
-    // 사람이 서 있는 칸으로는 못 민다. 밀어서 깔아뭉개면 그건 다른 게임이다
+    // 사람이 있는 칸으로는 못 민다. 밀어서 깔아뭉개면 그건 다른 게임이다.
+    //
+    // **판정 칸이 아니라 몸이 닿는 칸을 다 본다.**
+    //
+    // 전에는 판정 칸(몸 중심이 있는 칸)만 봤다. 몸은 0.8칸이라 중심이 옆 칸에
+    // 있어도 몸의 4/10 은 이 칸에 걸쳐 있는데, 그리로 상자가 들어오면
+    // 벽 밀어내기가 사람을 옆으로 밀어낸다. 걷다가 갑자기 옆으로 밀리는
+    // 그 느낌이 여기서 나왔다.
+    //
+    // 미는 쪽이 손해 보는 게 맞다. 상자에 밀려 몸이 튕기는 쪽이 훨씬 나쁘다
     for (int i = 0; i < PLAYER_MAX; ++i) {
         const Player& o = g_game.players[i];
         if (!Occupied(o) || !o.alive) continue;
-        if (o.judge_tx == nx && o.judge_ty == ny) return;
+
+        int x0, x1, y0, y1;
+        BodySpanAxis(o.px, &x0, &x1);
+        BodySpanAxis(o.py, &y0, &y1);
+        if (nx >= x0 && nx <= x1 && ny >= y0 && ny <= y1) return;
     }
 
-    map.tile[by][bx] = TILE_EMPTY;
+    // 자리를 하나 잡는다. 없으면 안 민 것으로 한다 —
+    // 여덟 개가 동시에 밀리는 일은 없고, 없는데 억지로 밀면 어느 칸이
+    // 언제 비는지 아무도 모르게 된다
+    int si = -1;
+    for (int i = 0; i < MAX_SLIDING_BOX; ++i) {
+        if (!g_game.slides[i].used) { si = i; break; }
+    }
+    if (si < 0) {
+        return;
+    }
+
+    // 떠난 칸은 아직 안 비운다. 밀리는 동안 상자는 두 칸을 다 막는다
     map.tile[ny][nx] = TILE_BOX;
+
+    SlidingBox& sb = g_game.slides[si];
+    sb.used = true;
+    sb.fx = bx; sb.fy = by;
+    sb.tx = nx; sb.ty = ny;
+    sb.left = PUSH_SLIDE_TICKS;
+
     p.push_cool = PUSH_COOLDOWN_TICKS;
 
     ++g_push_count;

@@ -113,6 +113,7 @@ constexpr int BOX_PERCENT = 20;
 // 없으면 붙어서 계속 누르는 동안 상자가 주르륵 밀려간다. 한 번에 한 칸이어야 판단이 된다
 constexpr int PUSH_COOLDOWN_TICKS = TICK_RATE / 3;
 
+
 // 스폰 자리 주변 몇 칸을 비워두는가.
 //
 // 1 이면 3x3 이다. 이 크기여야 한다.
@@ -142,6 +143,20 @@ constexpr int SPAWN_BLOCK_TOLERANCE = 3;
 // 봄버맨류에서 속도는 빠를수록 좋은 게 아니라, 칸에 맞춰 설 수 있어야 좋은 것이다.
 //   18 -> 2.1 타일/초.  롤러 상한까지 먹으면 34 -> 4.0 타일/초
 constexpr int MOVE_SPEED_BASE = 18;
+
+// 상자가 밀리기까지 버텨야 하는 시간, 그리고 밀려가는 데 걸리는 시간.
+//
+// 전에는 방향을 대는 순간 상자가 옆 칸으로 순간이동했다. 미는 것처럼 안 보였고,
+// 지나가다 살짝 스치기만 해도 상자가 튀어서 판이 제멋대로 바뀌었다.
+//
+// 0.5초를 버텨야 움직이기 시작한다. 그만큼 서 있어야 하므로 미는 것이
+// **의도한 행동**이 되고, 그 0.5초 동안 옆에서 오는 사람에게는 표적이 된다.
+//
+// 밀려가는 속도는 사람의 최저 이동 속도와 같다. 상자보다 사람이 느릴 수는 없고,
+// 빠르면 상자가 사람을 앞질러서 뭘 미는 건지 안 보인다
+constexpr int PUSH_CHARGE_TICKS = TICK_RATE / 2;
+constexpr int PUSH_SLIDE_TICKS  = (TILE_UNITS + MOVE_SPEED_BASE - 1) / MOVE_SPEED_BASE;
+
 constexpr int MOVE_SPEED_STEP = 4;    // 롤러 하나당 붙는 양
 
 // 갇혔을 때의 속도.

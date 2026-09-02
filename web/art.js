@@ -1456,47 +1456,60 @@ const Art = (() => {
         if (!isWall(x, y + 1)) g.fillRect(px, Y + T - 1, T, 1);
       }
       else if (t === 2 || t === 4) {
-        // 상자도 도트 지도다.
-        //
-        // 밀 수 있는 상자는 **모양이 아니라 덧그린 쇠테로** 구분한다.
-        // 실루엣까지 바꾸면 어느 것이 밀리는지 외워야 하는데, 그건 규칙이 아니라 암기다.
-        // 쇠테는 한눈에 '이건 다르다' 를 말하면서 칸을 채우는 면은 그대로 둔다
-        const dp = Math.max(1, Math.round(T / 16));
-        const box = (t === 4);
-
-        // 그림자. 물건에 붙어 있어야 그 물건의 그림자로 읽힌다
-        g.fillStyle = 'rgba(0,0,0,0.30)';
-        pr(g, px + T * 0.14, Y + T * 0.80, T * 0.74, T * 0.10);
-
-        const kinds = th.crateKinds || [th.crateKind || 'crate'];
-        const ck = kinds[tileHash(x, y) % kinds.length];
-        const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
-        const cv = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
-                            rolePal(th.crate, th.crateTop, th.crateSide), dp);
-        blitTile(g, cv, px, Y - V.CH, dp);
-
-        if (box) {
-          // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
-          const bx = Math.round((px + dp) / dp) * dp;
-          const by = Math.round((Y - V.CH + dp * 4) / dp) * dp;
-          const bw = dp * 14;
-
-          g.fillStyle = 'rgba(84,94,110,0.95)';
-          g.fillRect(bx, by, bw, dp);
-          g.fillRect(bx, by + dp * 5, bw, dp);
-          g.fillStyle = 'rgba(150,162,182,0.95)';
-          g.fillRect(bx, by - dp, bw, dp);
-          g.fillRect(bx, by + dp * 4, bw, dp);
-
-          g.fillStyle = 'rgba(228,236,248,0.95)';
-          for (let i = 0; i < 4; ++i) {
-            g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
-          }
-        }
+        paintCrate(g, px, Y, T, x, y, t === 4);
       }
     }
   }
 
+  // 상자 하나를 그린다.
+  //
+  // 줄 단위 종이에 굽는 쪽과 **밀려가는 상자를 매 프레임 그리는 쪽**이 같은 그림을
+  // 써야 한다. 두 군데에 따로 그리면 밀리기 시작하는 순간 상자가 다른 물건으로 바뀐다.
+  //
+  // 밀 수 있는 상자는 모양이 아니라 덧그린 쇠테로 구분한다. 실루엣까지 바꾸면
+  // 어느 것이 밀리는지 외워야 하는데, 그건 규칙이 아니라 암기다.
+  //
+  // gx, gy 는 무늬를 고르는 데 쓰는 원래 칸이다. 밀려가는 동안에도 무늬가 안 바뀌게
+  // 화면 자리와 따로 받는다 — 지나가면서 상자가 나무통에서 자루로 변하면 안 된다
+  function paintCrate(g, px, py, T, gx, gy, box) {
+    const th = placeAt(gx, gy);
+    const dp = Math.max(1, Math.round(T / 16));
+
+    // 그림자. 물건에 붙어 있어야 그 물건의 그림자로 읽힌다
+    g.fillStyle = 'rgba(0,0,0,0.30)';
+    pr(g, px + T * 0.14, py + T * 0.80, T * 0.74, T * 0.10);
+
+    const kinds = th.crateKinds || [th.crateKind || 'crate'];
+    const ck = kinds[tileHash(gx, gy) % kinds.length];
+    const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
+    const cv = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
+                        rolePal(th.crate, th.crateTop, th.crateSide), dp);
+    blitTile(g, cv, px, py - V.CH, dp);
+
+    if (!box) return;
+
+    // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
+    const bx = Math.round((px + dp) / dp) * dp;
+    const by = Math.round((py - V.CH + dp * 4) / dp) * dp;
+    const bw = dp * 14;
+
+    g.fillStyle = 'rgba(84,94,110,0.95)';
+    g.fillRect(bx, by, bw, dp);
+    g.fillRect(bx, by + dp * 5, bw, dp);
+    g.fillStyle = 'rgba(150,162,182,0.95)';
+    g.fillRect(bx, by - dp, bw, dp);
+    g.fillRect(bx, by + dp * 4, bw, dp);
+
+    g.fillStyle = 'rgba(228,236,248,0.95)';
+    for (let i = 0; i < 4; ++i) {
+      g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
+    }
+  }
+
+  // 밀려가는 상자. 화면 자리는 칸 사이 어디든 될 수 있다
+  function drawCrate(g, sx, sy, T, gx, gy, box) {
+    paintCrate(g, sx, sy, T, gx, gy, box);
+  }
   // ── 물 ───────────────────────────────────────────────────────
   //
   // 이 게임의 이름이 물이다. 그래서 물이 제일 잘 만들어져 있어야 한다.
@@ -2677,7 +2690,7 @@ const Art = (() => {
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
-    drawChar, paintChar, drawFace, drawBubble, drawItem, ITEM_ART, dotText,
+    drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };

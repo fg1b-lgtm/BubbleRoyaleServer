@@ -11,7 +11,7 @@ const PKT  = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7
                RESTART:8, DASH:9 };
 const EVT  = { GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
                FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15, PUSH:16,
-               DASH:17 };
+               DASH:17, ITEM_GONE:18 };
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3, BOX:4 };
 const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4, DASH:5 };
 const SECT = { OPEN:0, WARNING:1, FLOODED:2 };
@@ -93,6 +93,7 @@ function onWelcome(v) {
   G.C.moveStep  = u8();
   G.C.trapSpeed = u8();
   G.C.laneSnap  = u8();
+  G.C.pushSlide = u8();   // 상자가 밀려가는 데 걸리는 틱
   G.myId = G.C.myId;
   G.snapInterval = 1000 / G.C.tickRate;
 

@@ -261,6 +261,7 @@ inline void RouteEvent(uint8_t type, int x, int y, int who, const char* data, in
         case EVT_PUSH:
         case EVT_DROP:
         case EVT_ITEM:
+        case EVT_ITEM_GONE:
             SendToAll(data, len);
             return;
 

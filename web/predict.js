@@ -132,20 +132,16 @@ const Predict = (() => {
     if (!narrow) return sidePos;
 
     // 몸이 실제로 안 들어갈 때만 당긴다. Movement.h 와 같은 규칙이다 —
-    // 여기가 다르면 예측이 서버와 갈려서 매 틱 되돌아간다
-    const slack = (C.tileUnits >> 1) - HALF - 1;
-
+    // 여기가 다르면 예측이 서버와 갈려서 매 틱 되돌아간다.
+    //
+    // 9/3 에 조건을 통째로 없앴다. 좁은 데인지 · 몸이 들어가는지를 따지면
+    // 기둥을 지날 때마다 켜졌다 꺼져서 손에 '밀린다' 로 느껴진다.
+    // 한 축으로 걷는 동안에는 늘 줄 가운데로, 걷는 속도만큼 당긴다
     const center = st * C.tileUnits + (C.tileUnits >> 1);
-    const off = sidePos - center;
-    if (off >= -slack && off <= slack) return sidePos;
+    let d = center - sidePos;
 
-    const want = center + (off > 0 ? slack : -slack);
-    let d = want - sidePos;
-
-    let pull = Math.floor(speed * C.laneSnap / 100);
-    if (pull < 1) pull = 1;
-    if (d >  pull) d =  pull;
-    if (d < -pull) d = -pull;
+    if (d >  speed) d =  speed;
+    if (d < -speed) d = -speed;
     return sidePos + d;
   }
 

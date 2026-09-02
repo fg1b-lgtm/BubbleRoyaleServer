@@ -93,6 +93,21 @@ inline void SetBlast(int tx, int ty, int owner, uint16_t gen)
     g_game.blast[ty][tx]       = BLAST_DURATION_TICKS;
     g_game.blast_gen[ty][tx]   = gen;
     g_game.blast_owner[ty][tx] = (int8_t)owner;
+
+    // 바닥에 있던 아이템은 물줄기에 쓸려간다.
+    //
+    // 이게 없으면 아이템이 깔린 자리가 그냥 안전한 창고가 된다. 물풍선을
+    // 놓아도 잃을 게 없으니 아무나 먼저 터뜨리고 천천히 주우면 된다.
+    // 쓸려가게 하면 남의 아이템을 **없애는 것**도 한 수가 되고,
+    // 내 아이템 위에서 싸울 때는 어디에 놓을지를 한 번 더 생각하게 된다.
+    //
+    // 블록을 부순 자리에서 나오는 아이템은 이 뒤에 놓이므로 안 쓸려간다.
+    // 부순 보상이 같은 물줄기에 사라지면 부술 이유가 없어진다
+    if (g_game.item[ty][tx] != ITEM_NONE) {
+        g_game.item[ty][tx] = ITEM_NONE;
+        PushEvent(EVT_ITEM_GONE, tx, ty, 0xFF, 0);
+    }
+
     PushEvent(EVT_BLAST, tx, ty, owner, 0);
 }
 
@@ -161,8 +176,15 @@ inline void Explode(int index)
             }
 
             if (IsBreakableTile(t)) {
-                BreakBlock(x, y);
+                // **물줄기를 먼저 깔고 그다음에 부순다.**
+                //
+                // 순서가 뒤바뀌어 있었다. SetBlast 가 그 칸의 아이템을 쓸어가게
+                // 만든 순간, 부숴서 나온 아이템이 같은 물줄기에 바로 사라졌다.
+                // 부순 보상이 부순 물줄기에 없어지면 블록을 부술 이유가 없다.
+                //
+                // 쓸려가야 하는 건 **이미 바닥에 있던** 아이템이지 방금 나온 것이 아니다
                 SetBlast(x, y, b.owner, gen);
+                BreakBlock(x, y);
                 break;   // 블록을 부수고 거기서 멈춘다
             }
 

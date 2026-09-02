@@ -27,7 +27,12 @@ inline void PlayTick()
     //    움직이기 전에 터뜨린다. 나중에 터뜨리면 이미 지나간 자리에 물이 깔린다
     UpdateBubbles();
 
-    // 2) 사람을 움직인다.
+    // 2) 밀려가던 상자를 한 칸 마저 보낸다.
+    //    사람보다 먼저 한다. 상자가 다 밀려서 칸이 비면 그 틱에 바로 들어갈 수 있어야
+    //    미는 맛이 난다. 사람을 먼저 움직이면 한 틱 늦게 들어가진다
+    StepSlidingBoxes(g_game.map);
+
+    // 3) 사람을 움직인다.
     //    미는 것이 먼저다. 밀고 나서 그 자리로 들어가야 한 틱에 이어진다
     for (int i = 0; i < PLAYER_MAX; ++i) {
         if (Occupied(g_game.players[i])) {
