@@ -157,7 +157,7 @@ const Art = (() => {
   // world 는 판 하나에 하나, place[] 는 아홉 자리마다 하나.
   // sectorW/H 는 어느 칸이 어느 자리에 속하는지 계산하는 데 쓴다
   const V = {
-    TS: 24, WH: 11, CH: 7, TOP: 14, BOT: 10,
+    TS: 24, P: 2, WH: 11, CH: 7, TOP: 14, BOT: 10,
     world: WORLDS[0],
     place: new Array(9).fill(PLACES[0]),
     sw: 15, sh: 13,
@@ -169,8 +169,35 @@ const Art = (() => {
     return V.place[s];
   }
 
+  // 픽셀 한 칸이 화면에서 몇 픽셀인가.
+  //
+  // 9/2 까지 전부 그라데이션과 둥근 모서리로 그렸다. 매끈해서 '요즘 웹' 처럼 보이지
+  // 크아처럼 보이지 않는다. 크아의 맛은 **한 점 한 점이 자리를 갖는 것**에서 온다.
+  //
+  // 진짜 픽셀 아트로 가려면 좌표가 격자에 딱 떨어져야 한다.
+  // 타일 하나를 16 등분해서 그 격자에 전부 맞춘다. 반 픽셀이 없어지고 선이 또렷해진다.
+  // 격자가 3px 아래로 내려가면 무늬가 뭉개지므로 최소 2 는 지킨다
+  function q(v) { return Math.round(v / V.P) * V.P; }
+
+  // 격자에 맞춘 네모. 앞으로 칠하는 것은 거의 다 이걸 지나간다
+  function pr(g, x, y, w, h) {
+    const x0 = q(x), y0 = q(y);
+    g.fillRect(x0, y0, Math.max(V.P, q(x + w) - x0), Math.max(V.P, q(y + h) - y0));
+  }
+
+  // 모서리를 한 픽셀씩 깎은 네모. 둥근 모서리 대신 쓴다.
+  // 곡선을 쓰면 아무리 작아도 안티에일리어싱이 붙어 흐려진다
+  function pbox(g, x, y, w, h) {
+    const P = V.P;
+    const x0 = q(x), y0 = q(y);
+    const w0 = Math.max(P * 3, q(x + w) - x0), h0 = Math.max(P * 3, q(y + h) - y0);
+    g.fillRect(x0 + P, y0,     w0 - P * 2, h0);
+    g.fillRect(x0,     y0 + P, w0,         h0 - P * 2);
+  }
+
   function setScale(ts) {
     V.TS  = ts;
+    V.P   = Math.max(2, Math.round(ts / 16));
     V.WH  = Math.round(ts * 0.46);   // 벽 높이
     V.CH  = Math.round(ts * 0.30);   // 상자 높이
     V.TOP = V.WH + 2;                // 줄 그림이 위로 삐져나오는 여유
@@ -240,15 +267,17 @@ const Art = (() => {
         g.fillStyle = css(c);
         g.fillRect(x * T, y * T, T, T);
 
+        // 이음선도 격자 한 칸 두께로. 1px 로 그리면 배율에 따라 사라진다
         g.fillStyle = css(joint, 0.5);
-        g.fillRect(x * T, y * T, T, 1);
-        g.fillRect(x * T, y * T, 1, T);
+        g.fillRect(x * T, y * T, T, V.P);
+        g.fillRect(x * T, y * T, V.P, T);
 
         if (h > 0.80) {
+          // 티끌 한 점. 격자에 맞춰서 찍는다
           g.fillStyle = css(fleck, 0.7);
-          const s = h > 0.95 ? 2 : 1;
-          g.fillRect(x * T + 3 + ((h * 97) | 0) % (T - 7),
-                     y * T + 3 + ((h * 131) | 0) % (T - 7), s, s);
+          const s = (h > 0.95 ? 2 : 1) * V.P;
+          pr(g, x * T + V.P * 2 + ((h * 97) | 0) % (T - V.P * 4),
+                y * T + V.P * 2 + ((h * 131) | 0) % (T - V.P * 4), s, s);
         }
       }
     }
@@ -258,12 +287,12 @@ const Art = (() => {
       for (let x = 0; x < W; ++x) {
         if (tiles[y][x] !== 1) continue;
 
+        // 그라데이션 대신 두 단. 픽셀 아트의 그림자는 번지지 않고 단으로 진다
         const px = x * T + T * 0.18, py = y * T + T * 0.30;
-        const grad = g.createLinearGradient(px, py, px, py + T * 1.1);
-        grad.addColorStop(0, 'rgba(0,0,0,0.30)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        g.fillStyle = grad;
-        g.fillRect(px, py, T, T * 1.1);
+        g.fillStyle = 'rgba(0,0,0,0.26)';
+        pr(g, px, py, T, T * 0.55);
+        g.fillStyle = 'rgba(0,0,0,0.13)';
+        pr(g, px, py + T * 0.55, T, T * 0.5);
       }
     }
   }
@@ -463,8 +492,8 @@ const Art = (() => {
     g.restore();
 
     // 어느 무늬든 왼쪽 위에 빛이 걸린다. 광원은 판 전체에 하나다
-    g.fillStyle = 'rgba(255,255,255,0.42)';
-    g.fillRect(bx + 2, by + 2, w * 0.34, 1.5);
+    g.fillStyle = 'rgba(255,255,255,0.45)';
+    g.fillRect(q(bx + V.P * 2), q(by + V.P), q(w * 0.34), V.P);
   }
 
   function buildRow(g, tiles, W, y) {
@@ -503,12 +532,12 @@ const Art = (() => {
         g.fillStyle = css(side);
         g.fillRect(px, Y + T - V.WH, T, V.WH);
 
-        // 앞면 아래쪽을 더 어둡게. 바닥과 만나는 데가 제일 어둡다
-        const grad = g.createLinearGradient(0, Y + T - V.WH, 0, Y + T);
-        grad.addColorStop(0, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, 'rgba(0,0,0,0.35)');
-        g.fillStyle = grad;
-        g.fillRect(px, Y + T - V.WH, T, V.WH);
+        // 앞면 아래쪽을 더 어둡게. 바닥과 만나는 데가 제일 어둡다.
+        // 그라데이션이 아니라 두 단이다. 픽셀 아트는 색이 번지지 않는다
+        g.fillStyle = 'rgba(0,0,0,0.18)';
+        pr(g, px, Y + T - V.WH * 0.55, T, V.WH * 0.55);
+        g.fillStyle = 'rgba(0,0,0,0.34)';
+        pr(g, px, Y + T - V.WH * 0.25, T, V.WH * 0.25);
 
         // 윗면. V.WH 만큼 위로 올라가 있다. 이 어긋남이 곧 높이다
         g.fillStyle = css(top);
@@ -519,11 +548,11 @@ const Art = (() => {
 
         // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘
         g.fillStyle = 'rgba(255,255,255,0.20)';
-        g.fillRect(px, Y - V.WH, T, 2);
-        g.fillRect(px, Y - V.WH, 2, T);
+        g.fillRect(px, Y - V.WH, T, V.P);
+        g.fillRect(px, Y - V.WH, V.P, T);
         g.fillStyle = 'rgba(0,0,0,0.14)';
-        g.fillRect(px, Y - V.WH + T - 2, T, 2);
-        g.fillRect(px + T - 2, Y - V.WH, 2, T);
+        g.fillRect(px, Y - V.WH + T - V.P, T, V.P);
+        g.fillRect(px + T - V.P, Y - V.WH, V.P, T);
 
         // 벽끼리 붙은 쪽에는 테두리를 안 긋는다. 그래야 벽이 덩어리로 보인다.
         // 칸마다 테두리를 그으면 바둑판이 된다
@@ -539,25 +568,30 @@ const Art = (() => {
         const m = Math.max(1, T * 0.09);
         const w = T - m * 2;
 
-        g.fillStyle = 'rgba(0,0,0,0.26)';
-        g.beginPath();
-        g.ellipse(px + T / 2 + T * 0.06, Y + T - T * 0.10, w * 0.52, w * 0.20, 0, 0, 7);
-        g.fill();
+        // 그림자. 타원 대신 모서리 깎은 납작한 네모다
+        g.fillStyle = 'rgba(0,0,0,0.24)';
+        pbox(g, px + m + V.P, Y + T - V.CH * 0.5, w, V.P * 2);
 
+        // 옆면
         g.fillStyle = css(cs);
-        rr(g, px + m, Y + m - V.CH + w * 0.5, w, w * 0.5 + V.CH, w * 0.18);
-        g.fill();
+        pbox(g, px + m, Y + m - V.CH + w * 0.5, w, w * 0.5 + V.CH);
 
-        const grad = g.createLinearGradient(0, Y + m - V.CH, 0, Y + m - V.CH + w);
-        grad.addColorStop(0, css(ct));
-        grad.addColorStop(1, css(cc));
-        g.fillStyle = grad;
-        rr(g, px + m, Y + m - V.CH, w, w, w * 0.18);
-        g.fill();
+        // 윗면. 그라데이션이 아니라 세 단으로 나눈다.
+        // 위 3분의 1이 밝고, 가운데가 바탕, 아래가 그늘이다
+        const bx0 = px + m, by0 = Y + m - V.CH;
+        g.fillStyle = css(ct);
+        pbox(g, bx0, by0, w, w);
+        g.fillStyle = css(cc);
+        pr(g, bx0, by0 + w * 0.38, w, w * 0.62 - V.P);
+        g.fillStyle = css(mix(cc, rgb('#000000'), 0.12));
+        pr(g, bx0 + V.P, by0 + w - V.P * 2, w - V.P * 2, V.P * 2);
 
-        g.strokeStyle = css(darker(cs, 0.35), 0.9);
-        g.lineWidth = 1;
-        g.stroke();
+        // 1픽셀 테두리. 픽셀 아트에서 물건을 물건으로 만드는 건 이 선이다
+        g.fillStyle = css(darker(cs, 0.42), 0.95);
+        g.fillRect(q(bx0 + V.P), q(by0), q(w - V.P * 2), V.P);
+        g.fillRect(q(bx0 + V.P), q(by0 + w * 0.5 + V.CH + w * 0.5 - V.P), q(w - V.P * 2), V.P);
+        g.fillRect(q(bx0), q(by0 + V.P), V.P, q(w * 0.5 + V.CH + w * 0.5 - V.P * 2));
+        g.fillRect(q(bx0 + w - V.P), q(by0 + V.P), V.P, q(w * 0.5 + V.CH + w * 0.5 - V.P * 2));
 
         // 장소마다 다른 물건이 쌓여 있다. 궤짝 · 드럼통 · 자루 · 돌덩이 · 얼음.
         // 실루엣은 같은 네모로 두고 무늬만 바꾼다. 어디가 막혔는지가 먼저다
@@ -568,20 +602,21 @@ const Art = (() => {
         if (box) {
           const bx = px + m, by = Y + m - V.CH;
 
-          g.strokeStyle = 'rgba(90,100,115,0.85)';
-          g.lineWidth = Math.max(1.5, w * 0.09);
-          g.beginPath();
-          g.moveTo(bx, by + w * 0.30); g.lineTo(bx + w, by + w * 0.30);
-          g.moveTo(bx, by + w * 0.74); g.lineTo(bx + w, by + w * 0.74);
-          g.stroke();
+          // 쇠테 두 줄. 선이 아니라 칠한 띠다
+          const bandH = Math.max(V.P, q(w * 0.10));
+          g.fillStyle = 'rgba(84,94,110,0.92)';
+          pr(g, bx, by + w * 0.26, w, bandH);
+          pr(g, bx, by + w * 0.70, w, bandH);
 
-          g.fillStyle = 'rgba(215,225,240,0.85)';
-          const r2 = Math.max(1, w * 0.055);
+          g.fillStyle = 'rgba(140,152,172,0.85)';
+          pr(g, bx, by + w * 0.26, w, V.P);
+          pr(g, bx, by + w * 0.70, w, V.P);
+
+          // 못 네 개. 한 점씩
+          g.fillStyle = 'rgba(226,234,246,0.95)';
           for (let i = 0; i < 4; ++i) {
-            g.beginPath();
-            g.arc(bx + (i & 1 ? w - w * 0.16 : w * 0.16),
-                  by + (i < 2 ? w * 0.30 : w * 0.74), r2, 0, 7);
-            g.fill();
+            pr(g, bx + (i & 1 ? w - w * 0.22 : w * 0.14),
+                  by + (i < 2 ? w * 0.28 : w * 0.72), V.P, V.P);
           }
         }
       }
@@ -997,7 +1032,99 @@ const Art = (() => {
     }
   }
 
+  // ── 캐릭터를 스프라이트로 굽는다 ────────────────────────────
+  //
+  // 캔버스에 그대로 그리면 아무리 색을 줄여도 곡선 가장자리가 흐려진다.
+  // 그게 '매끈한 웹게임' 느낌의 정체다. 크아는 한 점 한 점이 자리를 갖는다.
+  //
+  // 그래서 **작은 종이에 먼저 그린다.** 타일이 38px 이면 한 점이 2px 이니
+  // 캐릭터는 가로 17점쯤이다. 거기서 그리면 애초에 그릴 자리가 그것뿐이다.
+  // 그리고 반투명한 가장자리를 잘라낸다. 있거나 없거나 둘 중 하나로 만든다.
+  // 마지막에 확대해서 붙인다. 확대할 때 브라우저가 뭉개지 않게 꺼둔다.
+  //
+  // 굽는 값이 비싸므로 자세마다 한 번만 굽고 들고 있는다.
+  // 자세는 동물 · 색 · 보는 쪽 · 걷는지 · 걸음 토막 · 죽었는지 · 위급한지로 정해진다.
+  // 매 프레임 스물넷을 그리던 것이 붙이기만 하는 것으로 바뀐다
+  const spriteCache = new Map();
+  const SPRITE_FRAMES = 8;
+
+  function bakeChar(key, r, hex, o) {
+    let sp = spriteCache.get(key);
+    if (sp) return sp;
+
+    const P = V.P;
+    const halfW = r * 1.15, up = r * 1.55, down = r * 1.20;
+
+    const sw = Math.max(4, Math.round(halfW * 2 / P));
+    const sh = Math.max(4, Math.round((up + down) / P));
+
+    const cv = document.createElement('canvas');
+    cv.width = sw; cv.height = sh;
+    const c = cv.getContext('2d');
+
+    c.save();
+    c.translate(sw / 2, up / P);
+    c.scale(1 / P, 1 / P);
+    paintChar(c, 0, 0, r, hex, o);
+    c.restore();
+
+    // 반투명한 가장자리를 잘라낸다. 이게 없으면 확대했을 때
+    // 테두리가 뿌옇게 번져서 다시 매끈해진다
+    try {
+      const img = c.getImageData(0, 0, sw, sh);
+      const d = img.data;
+      for (let i = 3; i < d.length; i += 4) {
+        d[i] = d[i] < 110 ? 0 : 255;
+      }
+      c.putImageData(img, 0, 0);
+    } catch (e) { /* 시험용 가짜 캔버스에는 픽셀이 없다 */ }
+
+    sp = { cv: cv, sw: sw, sh: sh, up: up };
+    spriteCache.set(key, sp);
+
+    // 판이 오래 돌면 자세 조합이 쌓인다. 너무 많아지면 통째로 버린다
+    if (spriteCache.size > 900) spriteCache.clear();
+    return sp;
+  }
+
   function drawChar(g, cx, cy, r, hex, o) {
+    const moving = !!o.moving;
+    const t = o.t || 0;
+
+    // 걸음과 숨쉬기를 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져
+    // 스프라이트를 구울 수가 없다. 여덟 토막이면 눈에는 이어져 보인다
+    const frame = moving
+      ? (Math.floor((o.walk || 0) / (Math.PI * 2) * SPRITE_FRAMES) % SPRITE_FRAMES
+         + SPRITE_FRAMES) % SPRITE_FRAMES
+      : Math.floor(t / 175) % SPRITE_FRAMES;
+
+    const pose = {
+      face: o.face | 0,
+      animal: o.animal | 0,
+      moving: moving,
+      walk: frame / SPRITE_FRAMES * Math.PI * 2,
+      t: frame * 175,
+      danger: !!o.danger,
+      dead: !!o.dead,
+    };
+
+    const key = [hex, r | 0, V.P, pose.animal, pose.face, moving ? 1 : 0,
+                 frame, pose.danger ? 1 : 0, pose.dead ? 1 : 0].join(',');
+
+    const sp = bakeChar(key, r, hex, pose);
+    const P = V.P;
+
+    // 붙일 자리도 격자에 맞춘다. 반 픽셀에 붙이면 다시 흐려진다
+    const dx = Math.round((cx - sp.sw * P / 2) / P) * P;
+    const dy = Math.round((cy - sp.up) / P) * P;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(sp.cv, 0, 0, sp.sw, sp.sh, dx, dy, sp.sw * P, sp.sh * P);
+    g.imageSmoothingEnabled = smooth;
+  }
+
+  function paintChar(g, cx, cy, r, hex, o) {
     const face = o.face | 0;
     const walk = o.walk || 0;
     const moving = !!o.moving;
@@ -1270,7 +1397,7 @@ const Art = (() => {
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
-    drawChar, drawFace, drawBubble, drawItem,
+    drawChar, paintChar, drawFace, drawBubble, drawItem,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };

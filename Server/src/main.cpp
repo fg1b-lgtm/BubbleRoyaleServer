@@ -65,7 +65,6 @@ static void SeatViewers()
             ++i;   // 아직도 자리가 없다
             continue;
         }
-        g_viewers[i]->slot = slot;
         printf("[Tick] %s:%d seated as p%d\n", g_viewers[i]->ip, g_viewers[i]->port, slot);
         g_viewers[i] = g_viewers[--g_viewer_count];
     }
@@ -382,7 +381,7 @@ static void HandleJob(const Job* j){
                 SendWelcome(s, 0xFF);
                 break;
             }
-            s->slot = slot;
+            // 자리 번호는 AddPlayer 가 이미 s 에 적었다
 
             Player& p = g_game.players[slot];
             printf("[Tick] %s:%d entered as p%d at tile (%d,%d)\n",

@@ -216,6 +216,15 @@ console.log('  동물 ' + Art.ANIMALS.length + '종 중 서로 다른 그림: ' 
 check(uniq === Art.ANIMALS.length, '동물이 전부 다른 그림이다');
 
 // ── 이펙터 ───────────────────────────────────────────────────
+// 같은 자세를 두 번 그리면 두 번째는 붙이기만 해야 한다.
+// 스물넷이 돌아다니면 매 프레임 스물넷을 새로 그리게 되므로 여기가 프레임을 정한다
+const pose1 = { face: 0, moving: false, animal: 3, walk: 0, t: 0 };
+const first  = draw(() => Art.drawChar(ctx, 100, 100, 18, '#2f9e44', pose1));
+const second = draw(() => Art.drawChar(ctx, 100, 100, 18, '#2f9e44', pose1));
+console.log('  같은 자세 첫 번째 ' + first.length + ' 명령, 두 번째 ' + second.length + ' 명령');
+check(second.length < first.length,
+      '같은 자세는 한 번만 굽고 그다음엔 붙이기만 한다');
+
 console.log('\n=== 이펙터: 한 번에 얼마나 튀나 ===\n');
 
 // 파티클을 그리는 건 FX.draw 다. FX.done 은 카메라 변형을 되돌리기만 한다.

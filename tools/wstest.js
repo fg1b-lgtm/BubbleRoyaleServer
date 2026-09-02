@@ -29,6 +29,7 @@ let welcome = null;
 let welcomeCount = 0;
 const seeds = new Set();
 let rowsAfterRestart = 0;
+let snapsAfterRestart = 0;
 let restarted = false;
 const rows = new Set();
 let snapshots = 0, events = 0, maxPlayers = 0, maxBubbles = 0;
@@ -88,6 +89,7 @@ ws.onmessage = (e) => {
         if (restarted) ++rowsAfterRestart;
     }
     else if (id === PKT.SNAPSHOT) {
+        if (restarted) ++snapsAfterRestart;
         ++snapshots;
 
         // SnapshotHead 는 28 바이트다. 하나라도 틀리면 그 뒤가 전부 밀린다.
@@ -200,6 +202,16 @@ function report() {
     check(welcomeCount === 2, '다시 시작하면 WELCOME 이 한 번 더 온다');
     check(seeds.size === 2, '다시 시작하면 맵 씨앗이 바뀐다');
     check(rowsAfterRestart === 39, '다시 시작하면 판을 다시 보내준다');
+
+    // **다시 시작한 뒤에도 스냅샷이 계속 와야 한다.**
+    //
+    // 9/2 에 여기가 통째로 멎었다. 판이 다시 깔릴 때 사람이 새 자리에 앉는데
+    // Session 이 옛 자리 번호를 들고 있어서, AOI 가 엉뚱한 구역을 답하고
+    // 어느 묶음에도 안 걸렸다. 서버는 멀쩡히 돌고 브라우저만 멈춘다.
+    //
+    // 이 시험이 없어서 못 잡았다. 다시 시작이 오간 것만 보고 그 뒤를 안 봤다
+    check(snapsAfterRestart > 30,
+          '다시 시작한 뒤에도 스냅샷이 계속 온다 (' + snapsAfterRestart + '장)');
 
     check(sizeMismatch === 0,
           '스냅샷 길이가 머리에 적힌 사람/물풍선 수와 맞는다 (' + sizeMismatch + ' 번 어긋남)');

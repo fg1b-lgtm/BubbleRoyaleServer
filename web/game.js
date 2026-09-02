@@ -272,14 +272,45 @@ function rebuildFoam() {
 // 경계에서 화면이 덜덜 떨리지 않게 히스테리시스를 둔다.
 // 판정 칸은 경계를 넘는 순간 바뀌는데, 카메라까지 그러면
 // 경계에 서서 조금만 움직여도 화면이 왔다 갔다 한다
+// 관전할 때 누구를 보고 있나. 살아 있는 사람 목록에서의 자리다.
+//
+// 죽으면 '살아 있는 첫 사람' 을 그냥 따라갔다. 그 사람이 재미없는 데 있으면
+// 판이 끝날 때까지 그것만 본다. 방송을 보는 게 아니라 남의 화면을 뺏어 보는 것이다.
+// 좌우 키로 넘긴다
+let specAt = 0;
+
+function aliveList() {
+  const out = [];
+  for (const [id, p] of G.players) {
+    if ((p.flags & PF.ALIVE) && p.visible !== false) out.push(id);
+  }
+  out.sort((a, b) => a - b);   // 순서가 매 프레임 바뀌면 화면이 튄다
+  return out;
+}
+
+function specShift(step) {
+  const list = aliveList();
+  if (!list.length) return;
+  specAt = ((specAt + step) % list.length + list.length) % list.length;
+  specId = list[specAt];
+}
+
+let specId = -1;
+
 function updateCamera(dt) {
   const me = G.players.get(G.myId);
   let target = (me && (me.flags & PF.ALIVE)) ? me : null;
 
   if (!target) {
-    for (const [id, p] of G.players) {
-      if ((p.flags & PF.ALIVE) && p.visible !== false) { target = p; break; }
-    }
+    // 관전. 고른 사람이 죽었으면 목록에서 다음 사람으로 넘어간다
+    const list = aliveList();
+    if (!list.length) return;
+
+    let i = list.indexOf(specId);
+    if (i < 0) { i = Math.min(specAt, list.length - 1); specId = list[i]; }
+    specAt = i;
+
+    target = G.players.get(specId);
   }
   if (!target) return;
 
@@ -994,11 +1025,26 @@ function drawHUD(now) {
   else if (G.phase === PHASE.OVER) {
     drawResults(now);
   }
-  else if (me && !(me.flags & PF.ALIVE)) {
-    // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다
-    ctx.fillStyle = 'rgba(0,0,0,0.30)';
-    ctx.fillRect(0, H / 2 - 22, W, 44);
-    label('관전 중', W / 2, H / 2 + 6, 18, '#ff8f8f', 'center', 2);
+  else if (!me || !(me.flags & PF.ALIVE)) {
+    // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다.
+    // 띠를 화면 가운데가 아니라 아래에 둔다. 가운데는 판을 보는 자리다
+    const by = H - 96;
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
+    ctx.fillRect(0, by, W, 30);
+
+    const list = aliveList();
+    const who  = list.indexOf(specId);
+
+    label('관전 중', 16, by + 20, 13, '#ff8f8f', 'left', 2);
+
+    if (who >= 0) {
+      // 누구를 보고 있는지와, 바꾸는 방법을 같이 적는다.
+      // 바꿀 수 있다는 걸 모르면 없는 기능이다
+      label('P' + specId, W / 2 - 44, by + 20, 14, colorOf(specId), 'center');
+      label('(' + (who + 1) + '/' + list.length + ')', W / 2 + 6, by + 20, 12,
+            'rgba(255,255,255,0.5)', 'center');
+      label('← →', W / 2 + 62, by + 20, 13, 'rgba(255,255,255,0.75)', 'center', 1);
+    }
   }
 
   if (!G.connected) {
@@ -1354,6 +1400,15 @@ function pushInput() {
 
 addEventListener('keydown', (e) => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // 죽었으면 좌우로 관전 대상을 넘긴다. 살아 있으면 좌우는 이동이다
+  {
+    const me = G.players.get(G.myId);
+    const watching = !me || !(me.flags & PF.ALIVE);
+    if (watching && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      specShift(e.key === 'ArrowRight' ? 1 : -1);
+    }
+  }
+
   if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
 
   Sound.wake();

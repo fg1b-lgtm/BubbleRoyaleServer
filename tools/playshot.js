@@ -136,9 +136,24 @@ async function peek() {
     if (!target) { console.log('브라우저에 못 붙었다.'); browser.kill(); process.exit(1); }
 
     ws = new WebSocket(target.webSocketDebuggerUrl);
+    // 페이지에서 터진 예외를 그대로 받는다.
+    //
+    // 이게 없으면 화면이 안 움직일 때 서버를 의심하게 된다.
+    // 실제로 한 번 그랬다 — 서버는 멀쩡히 판을 돌리고 있는데 화면만 멈춰 있었고,
+    // 원인은 클라이언트 코드에서 난 예외였다. 브라우저 콘솔을 못 보니 안 보였다
     ws.onmessage = (ev) => {
         const m = JSON.parse(ev.data);
         if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || {}); waiting.delete(m.id); }
+
+        if (m.method === 'Runtime.exceptionThrown') {
+            const d = m.params.exceptionDetails || {};
+            const msg = (d.exception && (d.exception.description || d.exception.value)) || d.text;
+            console.log('  [페이지 예외] ' + String(msg).split(String.fromCharCode(10))[0]);
+        }
+        if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
+            console.log('  [페이지 오류] '
+                        + m.params.args.map((a) => a.value || a.description).join(' '));
+        }
     };
     await new Promise((r) => { ws.onopen = r; });
 

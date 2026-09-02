@@ -307,6 +307,17 @@ inline bool Occupied(const Player& p)
 
 // 판에 앉힌다. 자리가 없으면 -1.
 // bot 이 true 면 세션 없이 앉는다
+// 자리를 하나 준다. 없으면 -1.
+//
+// **자리 번호를 Session 에도 여기서 적는다.**
+//
+// 9/2 에 이걸 안 해서 화면이 통째로 멈췄다. 판이 다시 깔릴 때 사람을 새 자리에 앉히는데
+// Session::slot 은 옛 자리를 들고 있었다. AOI 는 그 번호로 "이 사람이 어느 구역을
+// 보고 있나" 를 물어보므로, 엉뚱한 구역을 답하고 어느 묶음에도 안 걸렸다.
+// 서버는 멀쩡히 판을 돌리는데 브라우저에는 스냅샷이 한 장도 안 갔다.
+//
+// 자리를 정하는 곳이 여기 하나이므로, 적는 곳도 여기 하나여야 한다.
+// 부르는 쪽에서 따로 적게 두면 언젠가 한 군데를 빠뜨린다. 실제로 빠뜨렸다
 inline int AddPlayer(Session* s, bool bot = false)
 {
     int slot = -1;
@@ -315,6 +326,9 @@ inline int AddPlayer(Session* s, bool bot = false)
     }
     if (slot < 0) {
         return -1;
+    }
+    if (s != nullptr) {
+        s->slot = slot;
     }
 
     // 빈 자리를 앞에서부터 주면 안 된다.
@@ -500,6 +514,7 @@ inline void RestartGame()
     for (int i = 0; i < PLAYER_MAX; ++i) {
         if (g_game.players[i].s != nullptr) {
             keep[n++] = g_game.players[i].s;
+            g_game.players[i].s->slot = -1;   // 새로 앉기 전까지는 자리가 없다
         }
     }
 

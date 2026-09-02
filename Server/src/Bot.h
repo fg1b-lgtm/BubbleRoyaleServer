@@ -147,6 +147,15 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
 
     int cx = MAP_W / 2, cy = MAP_H / 2;
 
+    // 물에 잠긴 칸은 지나가지 않는다. 들어가면 카운트다운이 돈다.
+    //
+    // 이게 없으면 물 경계에서 덜덜 떤다. 물 밖으로 한 걸음 나오는 순간
+    // '잠긴 구역이면 가운데로' 규칙이 꺼지고, 그다음 규칙이 적을 쫓아 다시 물로 넣는다.
+    // 나오면 들어가고 들어가면 나온다. 관전하면 그것만 하고 아무것도 안 하는 것으로 보인다.
+    //
+    // 이미 물 안에 있으면 예외다. 그때는 물을 지나야만 나올 수 있다
+    const bool start_wet = IsUnderWater(sx, sy);
+
     while (head < tail) {
         int x = qx[head], y = qy[head];
         ++head;
@@ -200,6 +209,7 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             // 이제 막힌 칸도 들여다보므로 범위를 먼저 본다
             if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
             if (dist[ny][nx] >= 0) continue;
+            if (!start_wet && IsUnderWater(nx, ny)) continue;
             if (!Passable(nx, ny)) {
                 // 막힌 칸이라도 밀 수 있는 상자면 지나갈 수 있다.
                 // **이 스위치는 평소에 꺼져 있다.** 켜면 BFS 가 밀기를 한 걸음으로 세는데,
@@ -237,7 +247,14 @@ inline int EscapeReach(const Player& p)
     return reach;
 }
 
-inline bool SafeToPlace(int tx, int ty, int range, int reach)
+// 여기 놓고 살아나갈 수 있나.
+//
+// **찾은 안전한 칸을 돌려준다.** 전에는 있다/없다만 돌려주고 버렸다.
+// 그래서 놓은 뒤에 제자리에 서고, 다음 틱에 도망 목표를 처음부터 다시 골랐다.
+// 그때는 10칸 범위로 골라서 **4칸밖에 못 가는데 10칸짜리 목표**를 잡았다.
+// 관전하면 놓고 나서 사거리 끝까지 걸어가다 거기서 터지는 것으로 보인다.
+// 놓을 때 확인한 그 칸으로 그대로 간다
+inline bool SafeToPlace(int tx, int ty, int range, int reach, int* out_gx, int* out_gy)
 {
     uint8_t saved = g_game.map.tile[ty][tx];
     g_game.map.tile[ty][tx] = TILE_BUBBLE;
@@ -260,6 +277,17 @@ inline bool SafeToPlace(int tx, int ty, int range, int reach)
 
     int dx, dy;
     bool ok = FindStep(tx, ty, Goal::Safe, reach, &dx, &dy);
+
+    // 그 방향으로 몇 칸 가면 안전해지는지까지 찾아 둔다.
+    // reach 를 넘지 않는다. 넘는 목표는 애초에 못 가는 목표다
+    if (ok && out_gx) {
+        *out_gx = tx; *out_gy = ty;
+        for (int r = 1; r <= reach; ++r) {
+            int nx = tx + dx * r, ny = ty + dy * r;
+            if (!Passable(nx, ny)) break;
+            if (!g_danger[ny][nx]) { *out_gx = nx; *out_gy = ny; break; }
+        }
+    }
 
     memcpy(g_danger, danger_backup, sizeof(g_danger));
     g_game.map.tile[ty][tx] = saved;
@@ -343,6 +371,25 @@ inline bool StepToward(int sx, int sy, int gx, int gy, int* out_dx, int* out_dy)
     return false;
 }
 
+// 놓자마자 확인해 둔 칸으로 출발한다.
+//
+// 제자리에 서서 다음 틱을 기다리면 퓨즈의 첫 틱들을 그냥 버린다.
+// 2.5초 안에 네 칸을 가야 하는데 한 틱도 아깝다
+inline void FleeTo(int slot, Player& p, int tx, int ty, int gx, int gy)
+{
+    g_flee_x[slot] = gx;
+    g_flee_y[slot] = gy;
+
+    int dx = 0, dy = 0;
+    if (gx != tx || gy != ty) {
+        if (StepToward(tx, ty, gx, gy, &dx, &dy)) {
+            p.dir_x = dx; p.dir_y = dy;
+            return;
+        }
+    }
+    p.dir_x = 0; p.dir_y = 0;
+}
+
 inline void ThinkBot(int slot)
 {
     Player& p = g_game.players[slot];
@@ -352,16 +399,28 @@ inline void ThinkBot(int slot)
     int dx = 0, dy = 0;
 
     // 붙잡아 둔 방향이 아직 살아 있으면 그대로 간다.
-    // 위험해졌거나 그 방향이 막혔으면 푼다
+    //
+    // **가려는 칸까지 본다.** 처음엔 지금 선 칸만 봤는데, 그러면 안전한 데 서서
+    // 위험한 칸으로 걸어 들어간다. 붙잡는 시간이 0.5초라 그 사이에 놓인 물풍선의
+    // 십자로 그대로 들어갔다. 관전하면 '뻔히 터지는 데로 들어가서 죽는' 것으로 보인다.
+    // 떨림을 줄이려고 넣은 것이 죽는 이유가 되면 안 넣느니만 못하다.
+    //
+    // 물도 본다. 물 밖에 있으면서 물로 걸어 들어가지 않는다
     if (g_hold[slot] > 0) {
         --g_hold[slot];
 
-        int nx = tx + g_hold_dx[slot], ny = ty + g_hold_dy[slot];
-        bool blocked = !Passable(nx, ny);
+        int hx = g_hold_dx[slot], hy = g_hold_dy[slot];
+        int nx = tx + hx, ny = ty + hy;
 
-        if (!g_danger[ty][tx] && !blocked && !(g_hold_dx[slot] == 0 && g_hold_dy[slot] == 0)) {
-            p.dir_x = g_hold_dx[slot];
-            p.dir_y = g_hold_dy[slot];
+        bool ok = (hx != 0 || hy != 0)
+                  && Passable(nx, ny)
+                  && !g_danger[ty][tx]
+                  && !g_danger[ny][nx]
+                  && (IsUnderWater(tx, ty) || !IsUnderWater(nx, ny));
+
+        if (ok) {
+            p.dir_x = hx;
+            p.dir_y = hy;
             return;
         }
         g_hold[slot] = 0;
@@ -392,12 +451,14 @@ inline void ThinkBot(int slot)
             return;
         }
 
-        if (FindStep(tx, ty, Goal::Safe, 10, &dx, &dy)) {
+        // 갈 수 있는 거리 안에서만 고른다.
+        // 10칸짜리 목표를 잡아놓고 네 칸밖에 못 가면 도중에 터진다
+        int flee_reach = EscapeReach(p);
+        if (FindStep(tx, ty, Goal::Safe, flee_reach, &dx, &dy)) {
             // 목표를 기억해 둔다. 다음 틱에도 같은 데로 간다
             int gx = tx, gy = ty;
-            FindStep(tx, ty, Goal::Safe, 10, &dx, &dy);
             // 첫 걸음 방향으로 안전한 칸을 다시 찾아 기억
-            for (int r = 1; r <= 10; ++r) {
+            for (int r = 1; r <= flee_reach; ++r) {
                 int nx = tx + dx * r, ny = ty + dy * r;
                 if (!Passable(nx, ny)) break;
                 if (!g_danger[ny][nx]) { gx = nx; gy = ny; break; }
@@ -432,10 +493,12 @@ inline void ThinkBot(int slot)
     // 3) 사거리 안에 적이 있으면 놓는다. 이게 없으면 아무도 안 죽어서 판이 안 끝난다
     int enemy_dist = 0;
     int reach = EscapeReach(p);
+    int gx = -1, gy = -1;
+
     bool enemy_near = FindStep(tx, ty, Goal::Enemy, range, &dx, &dy, slot, &enemy_dist);
-    if (enemy_near && SafeToPlace(tx, ty, range, reach)) {
+    if (enemy_near && SafeToPlace(tx, ty, range, reach, &gx, &gy)) {
         if (PlaceBubble(slot)) {
-            p.dir_x = 0; p.dir_y = 0;
+            FleeTo(slot, p, tx, ty, gx, gy);
             return;
         }
     }
@@ -459,9 +522,9 @@ inline void ThinkBot(int slot)
     for (int d = 0; d < 4; ++d) {
         if (g_game.map.IsBlock(tx + DX[d], ty + DY[d])) near_block = true;
     }
-    if (near_block && SafeToPlace(tx, ty, range, reach)) {
+    if (near_block && SafeToPlace(tx, ty, range, reach, &gx, &gy)) {
         if (PlaceBubble(slot)) {
-            p.dir_x = 0; p.dir_y = 0;
+            FleeTo(slot, p, tx, ty, gx, gy);
             return;
         }
     }

@@ -40,6 +40,11 @@ struct RoundResult
     int  boxes_pushed;   // 상자를 민 횟수. 0 이면 그 기능은 판에 없는 것이다
     int  items_at[8];    // 30초마다 살아 있는 사람의 평균 아이템 수 (10배)
     int  cap_tick;       // 누군가 처음 상한을 다 채운 틱. 그 뒤로는 성장이 없다
+
+    // 관전하면 눈에 걸리는 두 가지를 센다. '이상해 보인다' 를 숫자로 바꾼 것이다
+    int  self_deaths;    // 자기가 놓은 물풍선에 죽은 수
+    int  flips;          // 방향을 한 틱 만에 정반대로 뒤집은 횟수 (덜덜 떤다)
+    int  wet_flips;      // 그중 물가 한 칸 안에서 일어난 것
 };
 
 // ── 조각별 계측 (레벨 디자인용) ─────────────────────────────
@@ -107,6 +112,7 @@ static void PlayRound(unsigned int seed, RoundResult& r)
 
     int drowning_before[PLAYER_MAX];
     bool alive_before[PLAYER_MAX];
+    int  last_dx[PLAYER_MAX] = {}, last_dy[PLAYER_MAX] = {};
     int sample = 0;
 
     for (int t = 1; t <= MAX_TICKS; ++t) {
@@ -135,14 +141,42 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             if (Occupied(p) && p.alive) ++g_piece_ticks[PieceAt(p.judge_tx, p.judge_ty)];
         }
 
+        // 방향을 정반대로 뒤집었나. 사람은 이렇게 안 걷는다
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            const Player& q = g_game.players[i];
+            if (!q.alive) continue;
+
+            if ((q.dir_x != 0 || q.dir_y != 0)
+                && q.dir_x == -last_dx[i] && q.dir_y == -last_dy[i]) {
+                ++r.flips;
+
+                // 물가 한 칸 안인가. 침수 경계에서 떠는 게 제일 잘 보인다
+                bool near_water = false;
+                for (int d = 0; d < 4; ++d) {
+                    if (IsUnderWater(q.judge_tx + DX[d], q.judge_ty + DY[d])) near_water = true;
+                }
+                if (near_water || IsUnderWater(q.judge_tx, q.judge_ty)) ++r.wet_flips;
+            }
+            if (q.dir_x != 0 || q.dir_y != 0) { last_dx[i] = q.dir_x; last_dy[i] = q.dir_y; }
+        }
+
         for (int i = 0; i < PLAYER_MAX; ++i) {
             if (alive_before[i] && !g_game.players[i].alive) {
                 ++g_piece_deaths[PieceAt(g_game.players[i].judge_tx,
                                          g_game.players[i].judge_ty)];
                 // 죽는 길은 둘뿐이다. 물에 잠기거나, 갇힌 채로 터뜨려지거나.
                 // 물줄기 자체는 사람을 못 죽인다. 가두기만 한다
-                if (drowning_before[i] == 1) ++r.by_water;
-                else                         ++r.by_bubble;
+                if (drowning_before[i] == 1) {
+                    ++r.by_water;
+                }
+                else {
+                    ++r.by_bubble;
+                    // 나를 가둔 물줄기가 내가 놓은 것이었나
+                    if (g_game.blast_owner[g_game.players[i].judge_ty]
+                                          [g_game.players[i].judge_tx] == (int8_t)i) {
+                        ++r.self_deaths;
+                    }
+                }
                 if (r.first_kill_tick < 0) r.first_kill_tick = t;
             }
         }
@@ -233,6 +267,7 @@ int main(int argc, char** argv)
     long long ticks = 0, bubble = 0, water = 0, first = 0, items = 0, broken = 0;
     long long pushed = 0;
     long long capped = 0, items_at[8] = {};
+    long long selfd = 0, flips = 0, wet = 0;
     int cap_rounds = 0;
     long long self_kill = 0, win_items = 0;
     long long alive_at[8] = {}, tiles_at[8] = {};
@@ -251,6 +286,9 @@ int main(int argc, char** argv)
         win_items += r.winner_items;
         broken += r.blocks_broken;
         pushed += r.boxes_pushed;
+        selfd += r.self_deaths;
+        flips += r.flips;
+        wet += r.wet_flips;
         if (r.cap_tick > 0) { capped += r.cap_tick; ++cap_rounds; }
         for (int k = 0; k < 8; ++k) items_at[k] += r.items_at[k];
         if (r.first_kill_tick > 0) first += r.first_kill_tick;
@@ -278,8 +316,13 @@ int main(int argc, char** argv)
            bubble / rounds, dead ? bubble * 100 / dead : 0,
            water / rounds,  dead ? water * 100 / dead : 0);
     printf("  (물줄기는 사람을 못 죽인다. 가두기만 하고, 마무리는 몸으로 한다)\n");
-    printf("  자기 물풍선에 갇힌 횟수: %lld  <- 봇이 서툴다는 뜻이지 게임 문제가 아니다\n",
-           self_kill / rounds);
+    printf("  자기 물풍선에 갇힌 횟수: %lld,  그러다 죽은 수: %lld\n",
+           self_kill / rounds, selfd / rounds);
+
+    // 관전하면 제일 먼저 눈에 걸리는 것. 봇이 제자리에서 덜덜 떠는 횟수다.
+    // '이상해 보인다' 를 고칠 수 있으려면 숫자여야 한다
+    printf("  방향을 한 틱 만에 뒤집은 횟수: %lld (그중 물가에서 %lld)\n",
+           flips / rounds, wet / rounds);
 
     printf("\n--- 압박 곡선 (30초마다) ---\n");
     printf("  시각    생존   한 명당 칸\n");
