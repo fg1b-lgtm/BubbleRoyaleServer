@@ -244,11 +244,21 @@ constexpr int GRAZE_CHAIN_TICKS = TICK_RATE * 3;
 // 어차피 다 거기로 몰린다는 걸 알기 때문에 자리 잡기가 판단거리가 된다.
 constexpr int FLOOD_STAGES = 3;
 
+// 9/2 에 당겼다. 재보니 **판의 5분의 4가 1단계에서 끝나고 있었다.**
+//
+//   전 (90/180/270초)   1단계 77%  2단계 17%  3단계 5%
+//
+// 2·3단계를 만들어놓고 안 쓰는 셈이었다. 봇 40판 평균이 2분 26초인데
+// 3단계가 4분 30초에 오니 올 리가 없다.
+//
+// 사람은 봇보다 오래 버틸 것이므로 봇 평균에 딱 맞추지 않고 조금 뒤에 둔다.
+// 봇 판에서 1·2단계는 확실히 오고 3단계는 절반쯤 온다.
+// **이 값은 사람이 한 판 해보고 다시 정해야 한다.** 봇에게 맞춘 값이기 때문이다
 constexpr int FLOOD_WARN_TICKS[FLOOD_STAGES] = {
-    TICK_RATE * 60, TICK_RATE * 150, TICK_RATE * 240,
+    TICK_RATE * 50, TICK_RATE * 110, TICK_RATE * 170,
 };
 constexpr int FLOOD_FILL_TICKS[FLOOD_STAGES] = {
-    TICK_RATE * 90, TICK_RATE * 180, TICK_RATE * 270,
+    TICK_RATE * 70, TICK_RATE * 130, TICK_RATE * 190,
 };
 constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 3, 2 };
 

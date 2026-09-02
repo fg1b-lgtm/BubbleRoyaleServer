@@ -21,9 +21,24 @@ static const int SCALE = 10;   // 6분을 36초로
 
 static int g_fake_id = 0;
 
+// 시험용 가짜 손님.
+//
+// 전에는 (Session*)1, (Session*)2 처럼 **주소를 지어내서** 넘겼다.
+// 소켓을 안 쓰니 포인터가 서로 다르기만 하면 됐기 때문이다.
+//
+// 9/2 에 그게 터졌다. AddPlayer 가 자리 번호를 Session 에 적게 바뀌면서
+// 주소 1 에 쓰기가 됐다. 접근 위반이다. 시험이 시험 대상보다 먼저 죽었다.
+//
+// 지어낸 포인터는 '지금은 안 만지니까 괜찮다' 에 기대는 것이고,
+// 그 전제는 남이 코드를 고치는 순간 깨진다. 진짜 객체를 준다
+static Session g_fake_sessions[PLAYER_MAX];
+
 static Session* NextFakeSession()
 {
-    return (Session*)(INT_PTR)(++g_fake_id);
+    if (g_fake_id >= PLAYER_MAX) return nullptr;
+    Session* s = &g_fake_sessions[g_fake_id++];
+    s->slot = -1;
+    return s;
 }
 
 static void OpenBoard(unsigned int seed)
@@ -141,11 +156,19 @@ static void Test2_Warning()
         if (fill_at < 0 && CountEvent(EVT_FLOOD) > 0)      fill_at = t;
     }
 
-    printf("  예고 %d 틱, 침수 %d 틱, 사이 %d 초 (배속 %d배)\n",
-           warn_at, fill_at, (fill_at - warn_at) * SCALE / TICK_RATE, SCALE);
+    // 몇 초 전에 예고하는지는 상수에서 뽑는다.
+    //
+    // 30 이라고 적어뒀다가 9/2 에 침수 일정을 당기면서 이 줄만 거짓말이 됐다.
+    // 시험이 상수를 손으로 갖고 있으면, 상수를 고친 날 시험이 먼저 틀린다.
+    // 오늘만 세 번째다
+    const int LEAD = (FLOOD_FILL_TICKS[0] - FLOOD_WARN_TICKS[0]) / TICK_RATE;
+
+    printf("  예고 %d 틱, 침수 %d 틱, 사이 %d 초 (상수 %d초, 배속 %d배)\n",
+           warn_at, fill_at, (fill_at - warn_at) * SCALE / TICK_RATE, LEAD, SCALE);
 
     Check(warn_at > 0 && fill_at > warn_at, "예고가 먼저 온다");
-    Check((fill_at - warn_at) * SCALE / TICK_RATE == 30, "예고 30초 뒤에 잠긴다");
+    Check((fill_at - warn_at) * SCALE / TICK_RATE == LEAD,
+          "예고하고 상수만큼 지나서 잠긴다");
 }
 
 // ── 시험 3 : 같은 씨앗이면 같은 순서로 잠기는가 ──────────────

@@ -22,9 +22,24 @@ static void Check(bool ok, const char* what)
 static int g_fake_id = 0;
 
 // 세션 포인터는 "빈 자리인가" 를 보는 데만 쓰인다. 게임 규칙은 안을 안 본다
+// 시험용 가짜 손님.
+//
+// 전에는 (Session*)1, (Session*)2 처럼 **주소를 지어내서** 넘겼다.
+// 소켓을 안 쓰니 포인터가 서로 다르기만 하면 됐기 때문이다.
+//
+// 9/2 에 그게 터졌다. AddPlayer 가 자리 번호를 Session 에 적게 바뀌면서
+// 주소 1 에 쓰기가 됐다. 접근 위반이다. 시험이 시험 대상보다 먼저 죽었다.
+//
+// 지어낸 포인터는 '지금은 안 만지니까 괜찮다' 에 기대는 것이고,
+// 그 전제는 남이 코드를 고치는 순간 깨진다. 진짜 객체를 준다
+static Session g_fake_sessions[PLAYER_MAX];
+
 static Session* NextFakeSession()
 {
-    return (Session*)(INT_PTR)(++g_fake_id);
+    if (g_fake_id >= PLAYER_MAX) return nullptr;
+    Session* s = &g_fake_sessions[g_fake_id++];
+    s->slot = -1;
+    return s;
 }
 
 // 테두리만 벽인 빈 판으로 갈아끼운다. 시험은 조건을 손으로 잡아야 한다

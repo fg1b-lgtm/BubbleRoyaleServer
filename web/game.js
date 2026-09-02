@@ -17,7 +17,14 @@
 const cv  = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 
-let W = 0, H = 0;          // CSS 픽셀 기준 화면 크기
+let W = 0, H = 0;          // 캔버스 크기 (CSS 픽셀)
+
+// 판이 그려지는 자리. 캔버스 안에서 가운데다.
+//
+// 판은 21x19 라 거의 정사각형인데 화면은 16:9 다. 그래서 **가로가 절반쯤 남는다.**
+// 남는 데를 검게 두면 화면이 작아 보이고, 거기다 HUD 를 두면 판을 안 가린다.
+// 타일 크기는 세로가 정하므로 이걸로 판이 커지지는 않는다. 판을 **덜 가리게** 된다
+let BX = 0, BY = 0, BW = 0, BH = 0;
 let dpr = 1;
 
 // 미리 그려두는 종이들
@@ -156,8 +163,16 @@ function resize() {
     Math.floor(Math.min(availW / view.w, availH / view.h))));
 
   Art.setScale(ts);
-  W = view.w * ts;
-  H = view.h * ts;
+
+  // 판 크기와 캔버스 크기를 나눈다. 캔버스는 창을 다 쓰고 판은 그 안에 가운데로 놓는다
+  BW = view.w * ts;
+  BH = view.h * ts;
+
+  W = Math.max(BW, Math.floor(availW));
+  H = BH;
+
+  BX = Math.floor((W - BW) / 2);
+  BY = 0;
 
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cv.width  = Math.round(W * dpr);
@@ -401,9 +416,16 @@ function drawWorld(now, dt) {
   FX.apply(ctx, now, W, H, dt);
 
   // 여기서부터는 **판 좌표**로 그린다. 카메라만큼 옮겨두면
-  // 아래 코드는 화면이 어디를 보고 있는지 몰라도 된다
+  // 아래 코드는 화면이 어디를 보고 있는지 몰라도 된다.
+  //
+  // 판 영역으로 잘라낸다. 전에는 캔버스 크기가 곧 판 크기라 저절로 잘렸는데,
+  // 캔버스를 창 전체로 넓히고 나서 **판이 여백까지 흘러넘쳤다.**
+  // 미리 그려둔 종이는 판 전체 크기라 붙이면 넘치는 게 당연하다
   ctx.save();
-  ctx.translate(-Math.round(view.x0), -Math.round(view.y0));
+  ctx.beginPath();
+  ctx.rect(BX, BY, BW, BH);
+  ctx.clip();
+  ctx.translate(BX - Math.round(view.x0), BY - Math.round(view.y0));
 
   ctx.drawImage(floorCv, 0, 0, G.C.mapW * T, G.C.mapH * T);
 
@@ -601,30 +623,33 @@ function drawWorld(now, dt) {
   //
   // 비네트와 색보정. 아주 약하게.
   // 이 두 겹이 "따로 그린 것들" 을 한 장의 그림처럼 묶어준다
-  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.30,
-                                      W / 2, H / 2, Math.max(W, H) * 0.72);
+  // 후처리는 **판 위에만** 건다. 캔버스가 창을 다 쓰게 되면서
+  // W,H 로 그리면 여백까지 덮어 화면 전체가 어두워진다
+  const cx0 = BX + BW / 2, cy0 = BY + BH / 2;
+  const vg = ctx.createRadialGradient(cx0, cy0, Math.min(BW, BH) * 0.30,
+                                      cx0, cy0, Math.max(BW, BH) * 0.72);
   vg.addColorStop(0, 'rgba(0,0,0,0)');
   vg.addColorStop(1, 'rgba(0,0,0,0.38)');
   ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(BX, BY, BW, BH);
 
   ctx.save();
   ctx.globalCompositeOperation = 'overlay';
   ctx.globalAlpha = th.gradeAmt;
   ctx.fillStyle = th.grade;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(BX, BY, BW, BH);
   ctx.restore();
 
   // 내가 위험하다. 화면 가장자리가 붉어진다.
   // 숫자나 글자로 알리면 싸우는 중에 못 본다
   if (me && (me.flags & PF.DROWNING)) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 120);
-    const eg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.28,
-                                        W / 2, H / 2, Math.max(W, H) * 0.62);
+    const eg = ctx.createRadialGradient(cx0, cy0, Math.min(BW, BH) * 0.28,
+                                        cx0, cy0, Math.max(BW, BH) * 0.62);
     eg.addColorStop(0, 'rgba(200,40,40,0)');
     eg.addColorStop(1, 'rgba(200,40,40,' + (0.25 + 0.25 * pulse) + ')');
     ctx.fillStyle = eg;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(BX, BY, BW, BH);
   }
 
   FX.drawFlash(ctx, now, W, H);
@@ -938,7 +963,13 @@ function drawHUD(now) {
   if (me) {
     const cell = 62, gap = 8;
     const bw = cell * 3 + gap * 4, bh = 68;
-    const bx = (W - bw) / 2, by = H - bh - 10;
+
+    // 여백이 넉넉하면 판 아래가 아니라 **왼쪽 여백**에 놓는다.
+    // 판 위에 얹으면 아래 두 줄이 가려지는데, 거기가 도망칠 자리다.
+    // 여백이 좁은 화면에서는 원래대로 판 아래에 둔다
+    const roomy = BX >= bw + 20;
+    const bx = roomy ? (BX - bw) / 2 : (W - bw) / 2;
+    const by = roomy ? H / 2 - bh / 2 : H - bh - 10;
     panel(bx, by, bw, bh, 10);
 
     // 시작값도 상한도 서버가 준 것을 쓴다. 여기 숫자를 적어두면
@@ -991,7 +1022,12 @@ function drawHUD(now) {
   {
     const cell = 17, gap = 3, pad = 10;
     const mw = 3 * cell + 2 * gap;
-    const mx = W - mw - pad - 10, my = H - mw - pad - 10;
+
+    // 아이템 패널과 같은 이유로 오른쪽 여백에 놓는다.
+    // 미니맵은 도망칠 방향을 정하는 데 쓰는데, 그게 판 구석을 가리면 앞뒤가 안 맞는다
+    const roomyR = (W - BX - BW) >= mw + pad * 2 + 20;
+    const mx = roomyR ? BX + BW + (W - BX - BW - mw) / 2 : W - mw - pad - 10;
+    const my = roomyR ? H / 2 - mw / 2 : H - mw - pad - 10;
 
     panel(mx - pad, my - pad, mw + pad * 2, mw + pad * 2, 8);
 

@@ -45,6 +45,9 @@ struct RoundResult
     int  self_deaths;    // 자기가 놓은 물풍선에 죽은 수
     int  flips;          // 방향을 한 틱 만에 정반대로 뒤집은 횟수 (덜덜 떤다)
     int  wet_flips;      // 그중 물가 한 칸 안에서 일어난 것
+
+    // 침수 몇 단계까지 갔나. 안 걸리는 단계는 만들어놓고 안 쓰는 것이다
+    int  flood_reached;
 };
 
 // ── 조각별 계측 (레벨 디자인용) ─────────────────────────────
@@ -340,6 +343,12 @@ static void PlayRound(unsigned int seed, RoundResult& r)
                 ++left;
                 ++piece_blocks1[PieceAt(x, y)];
             }
+    // 판이 끝날 때까지 침수 몇 단계가 실제로 왔나
+    r.flood_reached = 0;
+    for (int k = 0; k < FLOOD_STAGES; ++k) {
+        if (r.ticks >= g_game.flood_fill[k]) r.flood_reached = k + 1;
+    }
+
     r.blocks_broken = start_blocks - left;
 
     for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {
@@ -375,6 +384,7 @@ int main(int argc, char** argv)
     long long pushed = 0;
     long long capped = 0, items_at[8] = {};
     long long selfd = 0, flips = 0, wet = 0;
+    int flood_hit[FLOOD_STAGES + 1] = {};
     int cap_rounds = 0;
     long long self_kill = 0, win_items = 0;
     long long alive_at[8] = {}, tiles_at[8] = {};
@@ -393,6 +403,7 @@ int main(int argc, char** argv)
         win_items += r.winner_items;
         broken += r.blocks_broken;
         pushed += r.boxes_pushed;
+        ++flood_hit[r.flood_reached];
         selfd += r.self_deaths;
         flips += r.flips;
         wet += r.wet_flips;
@@ -461,6 +472,21 @@ int main(int argc, char** argv)
                (k + 1) * 30 / 60, ((k + 1) * 30) % 60,
                alive_at[k] / rounds, tiles_at[k] / rounds);
     }
+
+    printf("\n--- 침수가 실제로 오나 ---\n");
+    for (int k = 0; k <= FLOOD_STAGES; ++k) {
+        if (k == 0) {
+            printf("  한 단계도 안 옴   %3d 판  (%d%%)\n",
+                   flood_hit[0], flood_hit[0] * 100 / rounds);
+        }
+        else {
+            printf("  %d단계까지        %3d 판  (%d%%)   %d:%02d 에 잠긴다\n",
+                   k, flood_hit[k], flood_hit[k] * 100 / rounds,
+                   FLOOD_FILL_TICKS[k - 1] / TICK_RATE / 60,
+                   (FLOOD_FILL_TICKS[k - 1] / TICK_RATE) % 60);
+        }
+    }
+    printf("  (0%% 인 단계는 만들어놓고 한 번도 안 쓰는 것이다)\n");
 
     printf("\n--- 성장이 언제 멈추나 ---\n");
     printf("  시각    살아 있는 사람의 평균 아이템\n");
