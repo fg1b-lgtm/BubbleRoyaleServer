@@ -170,7 +170,7 @@ build.bat ..\tools\probe.cpp
 | `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
 | `walker.exe [사람수] [초]` | 예 | 실제로 걸어다니며 물풍선을 놓는다 |
 | `node tools/wstest.js` | 예 + 다리 | 브라우저 없이 웹 경로 전체를 확인한다 |
-| `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지 |
+| `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지, HUD 글자 대비, 스물넷이 다 보일 때 프레임 비용, 이벤트마다 소리가 몇 겹인지 |
 | `node tools/viewertest.js` | 예(`bots 0`) + 다리 | 자리가 다 찼을 때 스물다섯 번째로 붙은 사람. 안 끊고 관전시키나 |
 | `node tools/arttest.js` | 아니오 | 아트를 숫자로. 장소 열 곳의 색거리, 방향·걷기가 다른 그림인가, 이펙트가 쌓이지 않나 |
 
@@ -188,7 +188,7 @@ floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest  26 PASS / 0 FAIL
+clienttest  34 PASS / 0 FAIL   (UI 대비 · 붐빌 때 프레임 · 사운드 믹스 포함)
 viewertest   6 PASS / 0 FAIL
 arttest      8 PASS / 0 FAIL
 roundsim    60판 전부 결판, 평균 2분 58초

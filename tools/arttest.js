@@ -17,6 +17,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
+const { colorDist } = require('./colorlib');
 
 let pass = 0, fail = 0;
 const check = (ok, what) => {
@@ -106,32 +107,6 @@ const FX  = vm.runInContext('FX',  sandbox);
 
 const ctx = makeCtx();
 const draw = (fn) => { log = []; counting = true; fn(); counting = false; return log.slice(); };
-
-// ── 색 거리 (CIE Lab) ────────────────────────────────────────
-//
-// RGB 로 빼면 사람 눈이 느끼는 차이와 안 맞는다. 초록은 조금만 달라도 크게 보이고
-// 파랑은 많이 달라도 비슷해 보인다. 그래서 Lab 으로 옮겨서 잰다.
-// 10 아래면 나란히 놓아야 겨우 구분되고, 20 넘으면 확실히 다른 색이다
-function lab(hex) {
-    let r = parseInt(hex.slice(1, 3), 16) / 255;
-    let g = parseInt(hex.slice(3, 5), 16) / 255;
-    let b = parseInt(hex.slice(5, 7), 16) / 255;
-
-    const inv = (c) => c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92;
-    r = inv(r); g = inv(g); b = inv(b);
-
-    const X = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
-    const Y = (r * 0.2126 + g * 0.7152 + b * 0.0722);
-    const Z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
-
-    const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
-    return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
-}
-
-function colorDist(a, b) {
-    const p = lab(a), q = lab(b);
-    return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-}
 
 console.log('\n=== 원화 · 컨셉: 장소 열 곳이 서로 구별되나 ===\n');
 
