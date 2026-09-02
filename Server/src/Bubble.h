@@ -15,6 +15,13 @@
 
 #include "Game.h"
 
+// 블록에서 아이템이 나올 확률. 기본은 상수 그대로다.
+//
+// 소유 스레드 : tick (서버는 아예 안 바꾼다)
+// roundsim 만 시작할 때 한 번 덮어쓴다
+inline int g_drop_percent = ITEM_DROP_PERCENT;
+
+
 // 이 사람이 지금 놓아둔 물풍선 수
 inline int CountBubbles(int owner)
 {
@@ -95,7 +102,10 @@ inline void BreakBlock(int tx, int ty)
     g_game.map.tile[ty][tx] = TILE_EMPTY;
     PushEvent(EVT_BLOCK, tx, ty, 0xFF, 0);
 
-    if (g_game.drop_rnd.Next(100) >= ITEM_DROP_PERCENT) {
+    // 밸런스를 쓸어보려고 시뮬레이터에서만 이 값을 바꾼다.
+    // 서버는 g_drop_percent 를 안 건드리므로 늘 ITEM_DROP_PERCENT 그대로다.
+    // 상수를 고쳐 다시 빌드하는 대신 인자로 스무 판씩 돌려보려는 것이다
+    if (g_game.drop_rnd.Next(100) >= g_drop_percent) {
         return;
     }
 

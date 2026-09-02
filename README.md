@@ -165,12 +165,13 @@ build.bat ..\tools\probe.cpp
 | `bubbletest.exe` | 아니오 | 퓨즈, 십자 폭발, 연쇄 지연, 갇힘, 아이템 |
 | `floodtest.exe` | 아니오 | 침수 일정, 익사, 탈출, 경계에서의 걸치기 |
 | `maptest.exe` | 아니오 | 맵 품질. 죽음의 칸, 뼈대 막다른 길, 파는 깊이, 스폰 공정성 |
-| `roundsim.exe [판수]` | 아니오 | 봇 24명으로 한 판을 통째로. 판이 끝나나, 누가 죽이나, 압박 곡선 |
+| `roundsim.exe [판수] [드롭%]` | 아니오 | 봇 24명으로 한 판을 통째로. 판이 끝나나, 누가 죽이나, 압박 곡선, 조각별 위험지수, 성장이 언제 멈추나 |
 | `probe.exe` | 예 | 패킷 경계. 쪼개 보내기 / 몰아 보내기 / 브로드캐스트 |
 | `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
 | `walker.exe [사람수] [초]` | 예 | 실제로 걸어다니며 물풍선을 놓는다 |
 | `node tools/wstest.js` | 예 + 다리 | 브라우저 없이 웹 경로 전체를 확인한다 |
 | `node tools/clienttest.js` | 아니오 | 브라우저 없이 웹 클라이언트를 돌린다. 그리다 터지는지, 판을 매 프레임 다시 그리는지 |
+| `node tools/viewertest.js` | 예(`bots 0`) + 다리 | 자리가 다 찼을 때 스물다섯 번째로 붙은 사람. 안 끊고 관전시키나 |
 
 앞의 셋은 소켓을 안 쓴다. **게임 규칙만 꺼내서 두들기므로 서버를 켤 필요가 없다.**
 
@@ -186,8 +187,9 @@ floodtest   33 PASS / 0 FAIL
 maptest      8 PASS / 0 FAIL   (맵 200개)
 probe       10 PASS / 0 FAIL
 wstest      20 PASS / 0 FAIL
-clienttest  25 PASS / 0 FAIL
-roundsim    20판 전부 결판, 평균 3분 6초
+clienttest  26 PASS / 0 FAIL
+viewertest   6 PASS / 0 FAIL
+roundsim    60판 전부 결판, 평균 2분 58초
 봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
 
 AOI 전후 (walker 12명 30초, 봇 12)

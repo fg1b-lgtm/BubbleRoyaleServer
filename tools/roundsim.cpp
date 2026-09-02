@@ -38,7 +38,31 @@ struct RoundResult
     int  winner_items;   // 승자가 들고 끝낸 아이템 수. 스노볼 지표다
     int  blocks_broken;
     int  boxes_pushed;   // 상자를 민 횟수. 0 이면 그 기능은 판에 없는 것이다
+    int  items_at[8];    // 30초마다 살아 있는 사람의 평균 아이템 수 (10배)
+    int  cap_tick;       // 누군가 처음 상한을 다 채운 틱. 그 뒤로는 성장이 없다
 };
+
+// ── 조각별 계측 (레벨 디자인용) ─────────────────────────────
+//
+// 조각을 열 개 그려놓고 **조각별로 재본 적이 없었다.**
+// 그림이 다른 것과 플레이가 다른 것은 다른 얘기다.
+// 열 개가 전부 똑같이 플레이되면 그건 한 개짜리 맵에 페인트를 열 번 칠한 것이다.
+//
+// 판마다 아홉 개가 뽑히고 좌우/상하로 뒤집히므로, 등장 횟수로 나눠서 본다.
+// 체류(사람이 그 조각 위에 있던 틱)로 나누는 이유는 안 가는 조각이
+// 안전해 보이는 착시를 없애기 위해서다
+static long long g_piece_seen[SECTOR_TEMPLATE_COUNT];    // 등장 횟수
+static long long g_piece_ticks[SECTOR_TEMPLATE_COUNT];   // 사람이 머문 틱
+static long long g_piece_deaths[SECTOR_TEMPLATE_COUNT];  // 거기서 죽은 사람
+static long long g_piece_broken[SECTOR_TEMPLATE_COUNT];  // 거기서 부순 블록
+
+// 이 칸이 어느 조각인가
+static int PieceAt(int x, int y)
+{
+    int sx = x / SECTOR_W; if (sx > SECTOR_COLS - 1) sx = SECTOR_COLS - 1;
+    int sy = y / SECTOR_H; if (sy > SECTOR_ROWS - 1) sy = SECTOR_ROWS - 1;
+    return g_game.map.sector_template[sy * SECTOR_COLS + sx];
+}
 
 static int OpenTilesNotFlooded()
 {
@@ -62,9 +86,17 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     ClearFleeTargets();
 
     int start_blocks = 0;
+    int piece_blocks0[SECTOR_TEMPLATE_COUNT] = {};
     for (int y = 0; y < MAP_H; ++y)
         for (int x = 0; x < MAP_W; ++x)
-            if (g_game.map.tile[y][x] == TILE_BLOCK) ++start_blocks;
+            if (IsBreakableTile(g_game.map.tile[y][x])) {
+                ++start_blocks;
+                ++piece_blocks0[PieceAt(x, y)];
+            }
+
+    for (int slot = 0; slot < SECTOR_SLOTS; ++slot) {
+        ++g_piece_seen[g_game.map.sector_template[slot]];
+    }
 
     // 전부 봇으로 앉힌다. 세션을 흉내 낼 필요가 없어졌다
     for (int i = 0; i < PLAYER_MAX; ++i) {
@@ -97,8 +129,16 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             }
         }
 
+        // 사람이 어느 조각 위에 서 있었나. 죽은 자리와 나눠서 봐야 한다
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            const Player& p = g_game.players[i];
+            if (Occupied(p) && p.alive) ++g_piece_ticks[PieceAt(p.judge_tx, p.judge_ty)];
+        }
+
         for (int i = 0; i < PLAYER_MAX; ++i) {
             if (alive_before[i] && !g_game.players[i].alive) {
+                ++g_piece_deaths[PieceAt(g_game.players[i].judge_tx,
+                                         g_game.players[i].judge_ty)];
                 // 죽는 길은 둘뿐이다. 물에 잠기거나, 갇힌 채로 터뜨려지거나.
                 // 물줄기 자체는 사람을 못 죽인다. 가두기만 한다
                 if (drowning_before[i] == 1) ++r.by_water;
@@ -115,7 +155,29 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             int alive = AliveCount();
             r.alive_at[sample] = alive;
             r.tiles_per_head[sample] = alive > 0 ? OpenTilesNotFlooded() / alive : 0;
+
+            // 살아 있는 사람이 그 시각에 아이템을 몇 개 들고 있나.
+            // 마지막 값만 보면 '승자는 만렙' 밖에 안 나온다. 언제 만렙이 됐는지가 질문이다
+            int sum = 0;
+            for (int i = 0; i < PLAYER_MAX; ++i) {
+                const Player& q = g_game.players[i];
+                if (Occupied(q) && q.alive) sum += q.bubble_lv + q.power_lv + q.speed_lv;
+            }
+            r.items_at[sample] = alive > 0 ? sum * 10 / alive : 0;
             ++sample;
+        }
+
+        // 처음으로 셋 다 상한을 찍은 순간. 이 뒤로는 아이템을 먹어도 아무 일이 없다
+        if (r.cap_tick == 0) {
+            for (int i = 0; i < PLAYER_MAX; ++i) {
+                const Player& q = g_game.players[i];
+                if (!Occupied(q) || !q.alive) continue;
+                if (q.bubble_lv >= STAT_CAP_FROM_WALL && q.power_lv >= STAT_CAP_FROM_WALL
+                    && q.speed_lv >= STAT_CAP_SPEED) {
+                    r.cap_tick = (int)g_game.tick;
+                    break;
+                }
+            }
         }
 
         r.ticks     = (int)g_game.tick;
@@ -135,10 +197,18 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     }
 
     int left = 0;
+    int piece_blocks1[SECTOR_TEMPLATE_COUNT] = {};
     for (int y = 0; y < MAP_H; ++y)
         for (int x = 0; x < MAP_W; ++x)
-            if (g_game.map.tile[y][x] == TILE_BLOCK) ++left;
+            if (IsBreakableTile(g_game.map.tile[y][x])) {
+                ++left;
+                ++piece_blocks1[PieceAt(x, y)];
+            }
     r.blocks_broken = start_blocks - left;
+
+    for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {
+        g_piece_broken[k] += piece_blocks0[k] - piece_blocks1[k];
+    }
     r.boxes_pushed  = (int)g_push_count;
 }
 
@@ -149,10 +219,21 @@ int main(int argc, char** argv)
     int rounds = (argc > 1) ? atoi(argv[1]) : 20;
     if (rounds < 1) rounds = 1;
 
-    printf("=== 봇 %d명, %d판 ===\n\n", PLAYER_MAX, rounds);
+    // 두 번째 인자로 드롭 확률을 덮어쓴다. 상수를 고쳐 다시 빌드하지 않고
+    // roundsim 40 20 처럼 여러 값을 연달아 돌려보라고 둔 것이다
+    if (argc > 2) {
+        g_drop_percent = atoi(argv[2]);
+        if (g_drop_percent < 0)   g_drop_percent = 0;
+        if (g_drop_percent > 100) g_drop_percent = 100;
+    }
+
+    printf("=== 봇 %d명, %d판, 드롭 %d%% ===\n\n",
+           PLAYER_MAX, rounds, g_drop_percent);
 
     long long ticks = 0, bubble = 0, water = 0, first = 0, items = 0, broken = 0;
     long long pushed = 0;
+    long long capped = 0, items_at[8] = {};
+    int cap_rounds = 0;
     long long self_kill = 0, win_items = 0;
     long long alive_at[8] = {}, tiles_at[8] = {};
     int unfinished = 0;
@@ -170,6 +251,8 @@ int main(int argc, char** argv)
         win_items += r.winner_items;
         broken += r.blocks_broken;
         pushed += r.boxes_pushed;
+        if (r.cap_tick > 0) { capped += r.cap_tick; ++cap_rounds; }
+        for (int k = 0; k < 8; ++k) items_at[k] += r.items_at[k];
         if (r.first_kill_tick > 0) first += r.first_kill_tick;
         if (r.alive_end > 1) ++unfinished;
         if (r.ticks > longest)  longest = r.ticks;
@@ -207,6 +290,54 @@ int main(int argc, char** argv)
                alive_at[k] / rounds, tiles_at[k] / rounds);
     }
 
+    printf("\n--- 성장이 언제 멈추나 ---\n");
+    printf("  시각    살아 있는 사람의 평균 아이템\n");
+    for (int k = 0; k < 8; ++k) {
+        if (alive_at[k] == 0 && k > 0) break;
+        printf("  %d:%02d      %2lld.%lld / %d\n",
+               (k + 1) * 30 / 60, ((k + 1) * 30) % 60,
+               items_at[k] / rounds / 10, (items_at[k] / rounds) % 10,
+               STAT_CAP_FROM_WALL * 2 + STAT_CAP_SPEED);
+    }
+    if (cap_rounds > 0) {
+        printf("  %d / %d 판에서 누군가 상한을 다 채웠다. 평균 %lld:%02lld\n",
+               cap_rounds, rounds,
+               capped / cap_rounds / TICK_RATE / 60, (capped / cap_rounds / TICK_RATE) % 60);
+        printf("  (그 뒤로 그 사람은 아이템을 먹어도 아무 일이 없다)\n");
+    }
+    else {
+        printf("  상한을 다 채운 사람이 한 판도 없었다\n");
+    }
+
+    printf("\n--- 조각 열 개가 서로 다르게 플레이되나 ---\n");
+
+    long long tick_sum = 0, death_sum = 0;
+    for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {
+        tick_sum  += g_piece_ticks[k];
+        death_sum += g_piece_deaths[k];
+    }
+
+    // 사망을 그냥 세면 조각당 판별력이 없다. 한 판에 스물세 명이 죽는데
+    // 사람이 머문 틱은 13만이라 나누면 전부 0 으로 눌린다.
+    // **몫으로 본다.** 체류 몫보다 사망 몫이 크면 거기서 더 죽는 조각이다.
+    // 위험지수 100 이 평균, 130 이면 머문 시간에 비해 3할 더 죽는다
+    printf("  이름         등장  체류%%  사망%%  위험지수  부순블록/등장\n");
+
+    for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {
+        long long seen = g_piece_seen[k];
+        if (seen == 0) continue;
+
+        long long t_share = tick_sum  ? g_piece_ticks[k]  * 1000 / tick_sum  : 0;
+        long long d_share = death_sum ? g_piece_deaths[k] * 1000 / death_sum : 0;
+
+        printf("  %-11s %4lld  %3lld.%lld  %3lld.%lld  %6lld    %6lld\n",
+               SECTOR_TEMPLATES[k].name, seen,
+               t_share / 10, t_share % 10,
+               d_share / 10, d_share % 10,
+               t_share ? d_share * 100 / t_share : 0,
+               g_piece_broken[k] / seen);
+    }
+    printf("  (아홉 자리에 골고루 흩어지면 체류도 사망도 11.1%% 다)\n");
     printf("\n--- 아이템 ---\n");
     printf("  부순 블록 %lld 개, 상자 민 횟수 %lld 번, 살아남은 사람의 아이템 %lld.%lld 개\n",
            broken / rounds, pushed / rounds,

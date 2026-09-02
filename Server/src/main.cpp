@@ -283,6 +283,15 @@ static void SendSnapshot()
         else       need[w] = true;
     }
 
+    // 자리가 없어서 보고만 있는 사람은 **players[] 에 없다.** g_viewers 에 있다.
+    //
+    // 여기를 안 봐서 9/2 까지 그 사람에게 스냅샷이 한 장도 안 갔다.
+    // 죽어서 관전하는 사람은 자리를 그대로 들고 있어(alive 만 꺼진다) 잘 나갔기 때문에
+    // 관전이 되는 줄 알고 있었다. 두 종류의 관전자가 서로 다른 곳에 산다
+    if (g_viewer_count > 0) {
+        need_watcher = true;
+    }
+
     for (int sct = 0; sct < SECTOR_SLOTS; ++sct) {
         if (!need[sct]) continue;
         int len = BuildSnapshot(buf, sct);
