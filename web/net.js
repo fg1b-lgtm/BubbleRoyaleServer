@@ -74,6 +74,17 @@ function onWelcome(v) {
   // 아홉 자리에 어떤 조각이 깔렸나. 규칙이 아니라 **화면용**이다.
   // 구역마다 다른 장소처럼 그리는 데 쓴다
   for (let i = 0; i < 9; ++i) G.C.sectorKind.push(u8());
+
+  // 아이템 시작값과 상한.
+  //
+  // 9/2 까지 HUD 가 이걸 손으로 적어두고 있었다. 물줄기를 `2 + 먹은 수` 로 그렸는데
+  // 시작 사거리가 2 에서 1 로 내려간 뒤로 **화면이 실제보다 1 크게 말하고 있었다.**
+  // 눈으로 한 판 해보기 전까지 아무 시험도 이걸 못 잡았다
+  G.C.baseBubble = u8();
+  G.C.baseRange  = u8();
+  G.C.capBubble  = u8();
+  G.C.capRange   = u8();
+  G.C.capSpeed   = u8();
   G.myId = G.C.myId;
   G.snapInterval = 1000 / G.C.tickRate;
 

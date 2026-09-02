@@ -578,12 +578,11 @@ function drawPlayer(id, p, alpha, now, T) {
   const dead = !(p.flags & PF.ALIVE);
   const r = T * G.C.bodyNum / G.C.bodyDen / 2;
 
-  // 판정 칸. 아주 희미하게. 눈에 걸리면 안 된다 (SPEC 2.3)
-  if (!dead) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(p.jtx * T + 0.5, p.jty * T + 0.5, T - 1, T - 1);
-  }
+  // 판정 칸을 그리던 자리.
+  //
+  // 걸치기를 눈에 보이게 하려고 사람마다 흰 네모를 하나씩 그렸는데,
+  // 스물넷이 돌아다니면 화면에 흰 네모가 스물넷 깜빡인다. 판이 지저분해진다.
+  // 걸치기는 몸이 두 칸에 걸친 것으로 이미 보인다. 네모는 뺀다
 
   // 내 캐릭터 발밑에만 고리. 스물넷이 엉키면 색만으로는 내가 어디 있는지 못 찾는다
   if (id === G.myId && !dead) {
@@ -823,14 +822,19 @@ function drawHUD(now) {
   const me = G.players.get(G.myId);
   if (me) {
     const cell = 62, gap = 8;
-    const bw = cell * 3 + gap * 4, bh = 60;
+    const bw = cell * 3 + gap * 4, bh = 68;
     const bx = (W - bw) / 2, by = H - bh - 10;
     panel(bx, by, bw, bh, 10);
 
+    // 시작값도 상한도 서버가 준 것을 쓴다. 여기 숫자를 적어두면
+    // 상수를 바꾼 날 화면만 거짓말을 하게 된다
     const stats = [
-      { kind: ITEM.BUBBLE, c: '#4dabf7', v: 1 + me.bubble_lv, max: 5, t: '물풍선' },
-      { kind: ITEM.POWER,  c: '#ff922b', v: 2 + me.power_lv,  max: 6, t: '물줄기' },
-      { kind: ITEM.ROLLER, c: '#51cf66', v: me.speed_lv,      max: 7, t: '속도'   },
+      { kind: ITEM.BUBBLE, c: '#4dabf7',
+        v: G.C.baseBubble + me.bubble_lv, max: G.C.capBubble, t: '물풍선' },
+      { kind: ITEM.POWER,  c: '#ff922b',
+        v: G.C.baseRange  + me.power_lv,  max: G.C.capRange,  t: '물줄기' },
+      { kind: ITEM.ROLLER, c: '#51cf66',
+        v: me.speed_lv,                   max: G.C.capSpeed,  t: '속도'   },
     ];
 
     stats.forEach((st, i) => {
@@ -852,7 +856,9 @@ function drawHUD(now) {
 
       bigNum(String(st.v), x + cell / 2, by + 50, 19,
              flash > 0 ? '#ffffff' : st.c, 'center');
-      label(st.t, x + cell / 2, by + bh - 2, 9, 'rgba(255,255,255,0.45)', 'center', 1);
+      // 판때기를 6px 키우고 글자를 그 안으로 넣는다.
+      // 처음엔 글자만 위로 올렸다가 숫자와 겹쳤다. 자리가 없으면 자리를 만들어야 한다
+      label(st.t, x + cell / 2, by + bh - 7, 9, 'rgba(255,255,255,0.45)', 'center', 1);
 
       // 상한까지 얼마 남았나. 가는 선으로만
       for (let m = 0; m < st.max; ++m) {

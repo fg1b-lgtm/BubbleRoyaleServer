@@ -276,7 +276,10 @@ const Art = (() => {
     for (let x = 0; x < W; ++x) {
       const t = tiles[y][x];
       const px = x * T;
-      if (t !== 1 && t !== 2) continue;
+      // 4 = 밀 수 있는 상자. 이 줄에 4 가 빠져 있어서 **한 판에 200개쯤이 통째로
+      // 안 그려지고 있었다.** 보이지도 않는데 길은 막는다.
+      // 아래에 쇠테와 못을 그리는 코드가 멀쩡히 있는데 여기서 걸러지고 있었다
+      if (t !== 1 && t !== 2 && t !== 4) continue;
 
       const th = placeAt(x, y);
       const top = rgb(th.wallTop), side = rgb(th.wallSide), edge = rgb(th.wallEdge);
@@ -285,7 +288,11 @@ const Art = (() => {
       // 색만 바꾸면 장소 팔레트에 묻혀서 못 알아본다.
       // 쇠테를 두르고 네 귀퉁이에 못을 박아서, 무겁고 미는 것처럼 보이게 한다
       const box = (t === 4);
-      const ct = rgb(box ? lighter(rgb(th.crate), 0.10) : rgb(th.crateTop));
+      // rgb() 를 두 번 걸고 있었다. 안쪽이 이미 [r,g,b] 배열인데 바깥에서 또 불러서
+      // parseInt('106', 16) 로 읽혔고, **모든 상자의 윗면이 짙은 남색**이 됐다.
+      // 상자가 나무 궤짝이 아니라 젤리처럼 보이던 게 이 한 줄이다.
+      // 위가 어둡고 아래가 밝아서 빛이 아래에서 오는 것처럼도 보였다
+      const ct = box ? lighter(rgb(th.crate), 0.10) : rgb(th.crateTop);
       const cs = rgb(th.crateSide), cc = rgb(th.crate);
 
       if (t === 1) {

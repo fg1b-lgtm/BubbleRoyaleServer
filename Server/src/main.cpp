@@ -108,6 +108,12 @@ static void SendWelcome(Session* s, int slot)
     w.cam_hysteresis     = (uint8_t)CAMERA_HYSTERESIS;
     w.seed               = g_game.map.seed;
 
+    w.base_bubble        = (uint8_t)BUBBLE_BASE_COUNT;
+    w.base_range         = (uint8_t)BLAST_BASE_RANGE;
+    w.cap_bubble         = (uint8_t)(BUBBLE_BASE_COUNT + STAT_CAP_FROM_WALL);
+    w.cap_range          = (uint8_t)(BLAST_BASE_RANGE  + STAT_CAP_FROM_WALL);
+    w.cap_speed          = (uint8_t)STAT_CAP_SPEED;
+
     // 아홉 자리에 어떤 조각이 깔렸는지. 화면이 구역마다 다르게 그리는 데 쓴다
     for (int i = 0; i < SECTOR_SLOTS; ++i) {
         w.sector_kind[i] = g_game.map.sector_template[i];

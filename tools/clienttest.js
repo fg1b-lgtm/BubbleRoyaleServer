@@ -209,8 +209,8 @@ function pkt(id, bodyLen, fillBody) {
 const feed = (v) => api.onPacket(v);
 
 // WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
-// (21 + peek 1 + 조각 9 = 31 바이트)
-feed(pkt(5, 32, (v, o) => {
+// (23 + 조각 9 + 시작값·상한 5 = 37 바이트)
+feed(pkt(5, 37, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
     v.setUint8(o + 1, MAP_W);
     v.setUint8(o + 2, MAP_H);
@@ -230,9 +230,22 @@ feed(pkt(5, 32, (v, o) => {
     // 아홉 자리에 조각 번호. 열 가지 장소가 다 한 번씩은 그려지게 섞어 넣는다
     const kinds = [0, 3, 7, 2, 9, 5, 6, 8, 1];
     for (let i = 0; i < 9; ++i) v.setUint8(o + 23 + i, kinds[i]);
+
+    // 아이템 시작값과 상한. 전에는 화면이 이걸 손으로 갖고 있었다
+    v.setUint8(o + 32, 1);   // base_bubble
+    v.setUint8(o + 33, 1);   // base_range
+    v.setUint8(o + 34, 5);   // cap_bubble
+    v.setUint8(o + 35, 5);   // cap_range
+    v.setUint8(o + 36, 7);   // cap_speed
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');
+
+// 화면이 게임 상수를 손으로 갖고 있으면 안 된다.
+// 9/2 에 HUD 가 물줄기를 '2 + 먹은 수' 로 그리고 있었다. 시작 사거리는 1인데
+check(api.G.C.baseRange === 1 && api.G.C.capSpeed === 7,
+      '아이템 시작값과 상한도 서버가 준 것을 쓴다 (사거리 ' + api.G.C.baseRange
+      + ', 롤러 상한 ' + api.G.C.capSpeed + ')');
 check(api.Art.V.TS >= 14, '화면 크기에 맞춰 타일 크기를 골랐다 (' + api.Art.V.TS + 'px)');
 
 // 9/1 부터 화면이 판 전체가 아니라 **내 구역 + 가장자리 세 칸**이다.
