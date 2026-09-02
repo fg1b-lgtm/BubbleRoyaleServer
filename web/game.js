@@ -778,24 +778,39 @@ function drawHUD(now) {
   const T = Art.V.TS;
 
   // ── 위쪽 띠 ────────────────────────────────────────────────
+  //
+  // 9/2 까지 라벨이 ROUND / KILL / SLOT / TIME 이었다. 판 밖이라 글자를 써도 되지만,
+  // **영어를 쓸 이유는 없었다.** 그냥 안 고쳤던 것이다.
+  //
+  // 고치면서 세 갈래로 나눴다.
+  //   자명한 것은 라벨을 뺀다   0:07 은 시간 말고 읽을 게 없다
+  //   숫자에 붙는 것은 단위로   '2 판', '3 처치' 처럼 숫자 뒤에 붙인다
+  //   뜻이 없는 것은 지운다     칸 스물넷 위의 SLOT 은 아무 말도 안 하고 있었다
   panel(10, 10, 132, 44, 8);
-  label('ROUND', 22, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+  // 숫자 폭을 measureText 로 재면 그 순간 걸린 글꼴에 따라 달라진다.
+  // bigNum 이 save/restore 안에서 글꼴을 바꾸므로 밖에서 잰 값은 못 믿는다.
+  // 자릿수로 자리를 잡는다. 판 번호는 한두 자리다
+  // 라벨은 숫자 **위**에 작게 둔다.
+  // 한 줄에 나란히 놓아봤더니 숫자가 커질 때 라벨을 덮었다. 자릿수를 못 재기 때문이다
+  label('판', 22, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
   bigNum(String(G.roundNo + 1), 22, 48, 20, '#fff');
 
   const phaseName = ['대기', '시작', '진행', '결과'][G.phase] || '';
   label(phaseName, 128, 48, 12, 'rgba(255,255,255,0.55)', 'right');
 
   // 남은 사람. 숫자 하나가 제일 크다. 이 게임에서 제일 중요한 숫자다
-  panel(W / 2 - 90, 10, 180, 44, 8);
-  bigNum(String(G.aliveCount), W / 2 - 44, 48, 26, '#fff', 'right');
-  label('생존', W / 2 - 36, 46, 12, 'rgba(255,255,255,0.55)');
+  // 패널을 넓혔다. 칸 스물넷이 오른쪽 절반을 통째로 쓰므로
+  // 좁게 두면 숫자와 칸이 겹친다
+  panel(W / 2 - 110, 10, 220, 44, 8);
+  bigNum(String(G.aliveCount), W / 2 - 62, 44, 26, '#fff', 'right');
+  label('생존', W / 2 - 54, 44, 13, 'rgba(255,255,255,0.55)');
 
   // 누가 살아 있나. 칸 스물넷. 내 칸만 하얗다.
   // 숫자만 있으면 몇인지는 알아도 누가 남았는지는 모른다
   {
-    const n = 24, pw = 4, gap = 1.6;
+    const n = 24, pw = 3, gap = 1.2;
     const total = n * pw + (n - 1) * gap;
-    let x = W / 2 + 78 - total;
+    let x = W / 2 + 100 - total;
     for (let i = 0; i < n; ++i) {
       // 서버가 보내준 전역 마스크를 쓴다. 내 구역 사람만 보고 그리면
       // 옆 구역 사람이 전부 죽은 것처럼 보인다
@@ -804,10 +819,9 @@ function drawHUD(now) {
       ctx.fillStyle = !known ? 'rgba(255,255,255,0.08)'
                     : alive ? (i === G.myId ? '#ffffff' : colorOf(i))
                     : 'rgba(255,255,255,0.14)';
-      ctx.fillRect(x, 20, pw, alive ? 10 : 5);
+      ctx.fillRect(x, 22, pw, alive ? 11 : 5);
       x += pw + gap;
     }
-    label('SLOT', W / 2 + 78, 46, 9, 'rgba(255,255,255,0.30)', 'right', 2);
   }
 
   // 내가 몇을 잡았나. 잡는 순간 튀어오른다.
@@ -818,11 +832,11 @@ function drawHUD(now) {
     const kills = statOf(G.myId).kills;
     const pop = Math.max(0, 1 - (now - killPop) / 450);
 
-    panel(W / 2 - 90 - 66, 10, 60, 44, 8);
-    label('KILL', W / 2 - 90 - 54, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+    panel(W / 2 - 110 - 72, 10, 66, 44, 8);
+    label('처치', W / 2 - 110 - 60, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
 
     ctx.save();
-    ctx.translate(W / 2 - 90 - 16, 48);
+    ctx.translate(W / 2 - 110 - 18, 48);
     const k = 1 + Art.overshoot(Math.min(1, pop * 2)) * 0.5 * pop;
     ctx.scale(k, k);
     bigNum(String(kills), 0, 0, 20, pop > 0 ? '#ffd166' : '#fff', 'right');
@@ -834,9 +848,10 @@ function drawHUD(now) {
     const sec = Math.floor(G.tick / G.C.tickRate);
     const mm = String(Math.floor(sec / 60));
     const ss = String(sec % 60).padStart(2, '0');
+    // 시간은 라벨이 없다. mm:ss 를 시간 말고 다르게 읽을 방법이 없다.
+    // 라벨이 빠진 만큼 숫자를 패널 가운데에 놓는다
     panel(W - 106, 10, 96, 44, 8);
-    label('TIME', W - 94, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
-    bigNum(mm + ':' + ss, W - 20, 48, 20, '#fff', 'right');
+    bigNum(mm + ':' + ss, W - 20, 42, 22, '#fff', 'right');
   }
 
   // ── 내 능력치 ──────────────────────────────────────────────

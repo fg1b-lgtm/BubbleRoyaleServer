@@ -1307,97 +1307,163 @@ const Art = (() => {
   //
   // 다 똑같은 동그라미면 뭘 먹으러 갈지 고를 수가 없다.
   // 멀리서 **모양으로** 갈려야 한다. 색은 그다음이다
-  function drawItem(g, cx, cy, T, kind, t) {
-    const float = Math.sin(t / 420 + cx * 0.1) * T * 0.07;
-    const y = cy + float;
+  // ── 아이템 ───────────────────────────────────────────────────
+  //
+  // 도트로 직접 찍는다. 캐릭터처럼 굽지 않고 그 자리에서 그린다 —
+  // 모양이 몇 개 안 되고 격자에 맞춰 네모만 칠하므로 애초에 흐려질 데가 없다.
+  //
+  // 각 그림은 **11x11 도트 지도**다. 문자 하나가 점 하나고, 색은 아래 표에 있다.
+  // 이렇게 두면 모양을 고칠 때 좌표를 계산할 필요가 없다. 글자만 바꾸면 된다.
+  // 좌표로 그리던 때는 화살표 하나 고치는 데 꼭짓점 일곱 개를 만져야 했다
+  const ITEM_ART = {
+    // 물풍선 하나 더. 물방울
+    1: {
+      '.': null, 'o': '#8fd8ff', 'O': '#dff2ff', 'b': '#3b9ae8', 'k': '#12456f',
+      rows: [
+        '.....k.....',
+        '....kOk....',
+        '....kOk....',
+        '...kOOk....',
+        '...kOOok...',
+        '..kOOoobk..',
+        '.kOOooobbk.',
+        '.kOoooobbk.',
+        '.kOooobbbk.',
+        '..kkoobbk..',
+        '...kkkkk...',
+      ],
+    },
+    // 물줄기가 길어진다. 위로 뻗는 화살
+    2: {
+      '.': null, 'o': '#ffb066', 'O': '#ffc078', 'b': '#e8590c', 'k': '#7a3200',
+      rows: [
+        '.....k.....',
+        '....kOk....',
+        '...kOObk...',
+        '..kOOOObk..',
+        '.kOOOOOObk.',
+        'kkkOOOObkkk',
+        '...kOOOb...',
+        '...kOOOb...',
+        '...kOOOb...',
+        '...kOOOb...',
+        '...kkkkk...',
+      ],
+    },
+    // 롤러. 바퀴
+    3: {
+      '.': null, 'o': '#69db7c', 'O': '#a9e9b4', 'b': '#2f9e44', 'k': '#10401f',
+      rows: [
+        '...kkkkk...',
+        '.kkbOOObkk.',
+        '.kbOOOOObk.',
+        'kbOOOkOOObk',
+        'kbOOOkOOObk',
+        'kbkkkOkkkbk',
+        'kbOOOkOOObk',
+        'kbOOOkOOObk',
+        '.kbOOOOObk.',
+        '.kkbOOObkk.',
+        '...kkkkk...',
+      ],
+    },
+  };
+  // 도트 지도를 한 번만 찍어 종이에 굽고, 그다음부터는 붙이기만 한다.
+  //
+  // 처음엔 매 프레임 점을 찍었다. 11x11 이면 아이템 하나에 fillRect 가 80번쯤이고,
+  // 화면에 아이템이 여럿이면 프레임당 700번이 됐다. clienttest 가 바로 잡았다
+  // (판이 안 변할 때 프레임당 fillRect 400 미만이어야 한다).
+  //
+  // 아이템은 종류가 넷뿐이라 캐시가 아주 작다. 캐릭터를 굽는 것과 같은 수다
+  const dotCache = new Map();
 
+  function bakeDots(key, art, px) {
+    let cv = dotCache.get(key);
+    if (cv) return cv;
+
+    const w = art.rows[0].length, h = art.rows.length;
+    cv = document.createElement('canvas');
+    cv.width = w * px; cv.height = h * px;
+
+    const c = cv.getContext('2d');
+    for (let r = 0; r < h; ++r) {
+      const row = art.rows[r];
+      for (let x = 0; x < row.length; ++x) {
+        const col = art[row[x]];
+        if (!col) continue;
+        c.fillStyle = col;
+        c.fillRect(x * px, r * px, px, px);
+      }
+    }
+
+    dotCache.set(key, cv);
+    if (dotCache.size > 64) dotCache.clear();
+    return cv;
+  }
+
+  function drawDots(g, art, x0, y0, px, key) {
+    const cv = bakeDots(key + ':' + px, art, px);
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, x0, y0);
+    g.imageSmoothingEnabled = smooth;
+  }
+
+  function drawItem(g, cx, cy, T, kind, t) {
+    // 위아래로 뜬다. 뜨는 것도 격자 단위로 끊는다. 안 끊으면 도트가 미끄러진다
+    const P  = Math.max(1, Math.round(T / 16));
+    const up = Math.round(Math.sin(t / 420 + cx * 0.1) * 1.2) * P;
+
+    // 그림자. 뜰수록 작아진다
     g.fillStyle = 'rgba(0,0,0,0.26)';
-    g.beginPath();
-    g.ellipse(cx, cy + T * 0.30, T * 0.24 - float * 0.2, T * 0.09, 0, 0, 7);
-    g.fill();
+    g.fillRect(Math.round((cx - T * 0.22) / P) * P,
+               Math.round((cy + T * 0.30) / P) * P,
+               Math.round(T * 0.44 / P) * P - (up > 0 ? P * 2 : 0), P);
 
     if (kind === 4) {
-      // 울트라. 뒤에서 빛이 난다. 대비가 있어야 특수가 특별해진다
+      // 울트라. 뒤에서 빛이 난다. 대비가 있어야 특수가 특별해진다.
+      // 빛은 도트로 안 찍는다. 번지는 게 목적이라 격자에 맞추면 오히려 어색하다
       const pulse = 0.5 + 0.5 * Math.sin(t / 150);
-      const r = T * (0.34 + 0.05 * pulse);
+      const y = cy + up;
 
       g.save();
       g.globalCompositeOperation = 'lighter';
       const glow = g.createRadialGradient(cx, y, 0, cx, y, T * 1.1);
-      glow.addColorStop(0, 'rgba(255,205,90,' + (0.45 + 0.25 * pulse) + ')');
+      glow.addColorStop(0, 'rgba(255,205,90,' + (0.40 + 0.25 * pulse) + ')');
       glow.addColorStop(1, 'rgba(255,180,60,0)');
       g.fillStyle = glow;
       g.fillRect(cx - T * 1.1, y - T * 1.1, T * 2.2, T * 2.2);
       g.restore();
 
-      g.fillStyle = '#ffd166';
-      g.strokeStyle = '#fff6d8';
-      g.lineWidth = 1.5;
-      g.beginPath();
-      for (let i = 0; i < 10; ++i) {
-        const a = -Math.PI / 2 + i * Math.PI / 5 + t / 2200;
-        const rad = (i & 1) ? r * 0.44 : r;
-        g.lineTo(cx + Math.cos(a) * rad, y + Math.sin(a) * rad);
-      }
-      g.closePath();
-      g.fill(); g.stroke();
+      // 별. 도트로 찍는다. 다른 아이템과 같은 세계에 살아야 한다
+      const star = [
+        '.....k.....',
+        '....kOk....',
+        '....kOk....',
+        'kkkkkOkkkkk',
+        '.kOOOOOOOk.',
+        '..kOOOOOk..',
+        '..kOOOOOk..',
+        '.kOOk.kOOk.',
+        '.kOk...kOk.',
+        'kkk.....kkk',
+        '...........',
+      ];
+      drawDots(g, { '.': null, 'O': '#ffd166', 'k': '#8a5a00', rows: star },
+               Math.round((cx - 5.5 * P) / P) * P,
+               Math.round((y - 5.5 * P) / P) * P, P, 'star');
       return;
     }
 
-    const r = T * 0.27;
-    g.lineWidth = Math.max(1, T * 0.06);
-    g.strokeStyle = 'rgba(20,25,32,0.55)';
-
-    if (kind === 1) {          // 물풍선 하나 더. 물방울
-      const grad = g.createRadialGradient(cx - r * 0.3, y - r * 0.35, r * 0.1, cx, y, r * 1.2);
-      grad.addColorStop(0, '#dff2ff'); grad.addColorStop(1, '#3b9ae8');
-      g.fillStyle = grad;
-      g.beginPath();
-      g.moveTo(cx, y - r * 1.15);
-      g.quadraticCurveTo(cx + r * 1.05, y + r * 0.15, cx, y + r);
-      g.quadraticCurveTo(cx - r * 1.05, y + r * 0.15, cx, y - r * 1.15);
-      g.fill(); g.stroke();
-    }
-    else if (kind === 2) {     // 물줄기가 길어진다. 위로 뻗는 화살
-      const grad = g.createLinearGradient(cx, y - r, cx, y + r);
-      grad.addColorStop(0, '#ffd8a8'); grad.addColorStop(1, '#f76707');
-      g.fillStyle = grad;
-      g.beginPath();
-      g.moveTo(cx, y - r * 1.1);
-      g.lineTo(cx + r * 0.85, y + r * 0.15);
-      g.lineTo(cx + r * 0.34, y + r * 0.15);
-      g.lineTo(cx + r * 0.34, y + r);
-      g.lineTo(cx - r * 0.34, y + r);
-      g.lineTo(cx - r * 0.34, y + r * 0.15);
-      g.lineTo(cx - r * 0.85, y + r * 0.15);
-      g.closePath();
-      g.fill(); g.stroke();
-    }
-    else {                     // 롤러. 바퀴가 돈다
-      const grad = g.createRadialGradient(cx - r * 0.3, y - r * 0.3, r * 0.1, cx, y, r * 1.2);
-      grad.addColorStop(0, '#c6f6c9'); grad.addColorStop(1, '#2f9e44');
-      g.fillStyle = grad;
-      g.beginPath(); g.arc(cx, y, r, 0, 7); g.fill(); g.stroke();
-
-      g.save();
-      g.translate(cx, y);
-      g.rotate(t / 400);
-      g.strokeStyle = 'rgba(20,45,25,0.55)';
-      g.beginPath();
-      for (let i = 0; i < 3; ++i) {
-        const a = i * Math.PI / 3;
-        g.moveTo(-Math.cos(a) * r * 0.8, -Math.sin(a) * r * 0.8);
-        g.lineTo(Math.cos(a) * r * 0.8, Math.sin(a) * r * 0.8);
-      }
-      g.stroke();
-      g.restore();
-    }
+    const art = ITEM_ART[kind] || ITEM_ART[1];
+    drawDots(g, art,
+             Math.round((cx - 5.5 * P) / P) * P,
+             Math.round((cy + up - 5.5 * P) / P) * P, P, 'item' + kind);
   }
-
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
     buildFloor, buildRow, water, foamEdge,
-    drawChar, paintChar, drawFace, drawBubble, drawItem,
+    drawChar, paintChar, drawFace, drawBubble, drawItem, ITEM_ART,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };

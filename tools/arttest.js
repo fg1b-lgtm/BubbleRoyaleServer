@@ -216,6 +216,32 @@ console.log('  동물 ' + Art.ANIMALS.length + '종 중 서로 다른 그림: ' 
 check(uniq === Art.ANIMALS.length, '동물이 전부 다른 그림이다');
 
 // ── 이펙터 ───────────────────────────────────────────────────
+// 아이템 도트 지도가 네모난가.
+//
+// 손으로 찍은 그림이라 한 줄만 한 칸 짧아도 그림이 어긋난다.
+// 실제로 처음 찍었을 때 화살 한 줄에 공백이 하나 섞여서 구멍이 났고,
+// 바퀴 살에도 구멍이 났다. 눈으로 봐야 알았다. 그걸 여기서 센다
+console.log('');
+console.log('=== 아이템 도트 지도 ===');
+console.log('');
+
+let dotBad = [];
+for (const key of Object.keys(Art.ITEM_ART)) {
+    const art = Art.ITEM_ART[key];
+    const w = art.rows[0].length;
+    for (let r = 0; r < art.rows.length; ++r) {
+        const row = art.rows[r];
+        if (row.length !== w) dotBad.push(key + ' ' + r + '번 줄 폭 ' + row.length);
+        for (const ch of row) {
+            if (!(ch in art)) dotBad.push(key + ' ' + r + '번 줄에 모르는 글자 [' + ch + ']');
+        }
+    }
+    console.log('  ' + key + '번: ' + art.rows.length + '줄 x ' + w + '칸');
+}
+check(dotBad.length === 0,
+      '도트 지도가 전부 네모나고 모르는 글자가 없다'
+      + (dotBad.length ? ' — ' + dotBad.slice(0, 3).join(', ') : ''));
+
 // 같은 자세를 두 번 그리면 두 번째는 붙이기만 해야 한다.
 // 스물넷이 돌아다니면 매 프레임 스물넷을 새로 그리게 되므로 여기가 프레임을 정한다
 const pose1 = { face: 0, moving: false, animal: 3, walk: 0, t: 0 };
