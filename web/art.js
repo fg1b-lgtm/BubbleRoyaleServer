@@ -194,6 +194,11 @@ const Art = (() => {
       wallTop: '#2c4929', wallSide: '#1b2d19', wallEdge: '#152314',
       crate: '#b68143', crateTop: '#cea779', crateSide: '#8d6434',
       markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
+      // 사람이 그려온 타일. 이게 있으면 도트로 찍는 길을 안 탄다.
+      // 위 색들은 그림이 안 왔을 때(파일이 없거나 시험 중일 때) 쓴다
+      tiles: { floor: 'grass',
+               wall:  ['tree', 'stone', 'bush'],
+               crate: ['crate_plain', 'crate_x'] },
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
@@ -208,6 +213,11 @@ const Art = (() => {
       wallTop: '#4e461a', wallSide: '#302b10', wallEdge: '#25210c',
       crate: '#c3776d', crateTop: '#d6a19a', crateSide: '#aa5246',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
+      // 모래는 02 번만 테두리가 없다. 나머지 열다섯은 풀이 물린 이음새 타일이라
+               // 바닥에 깔면 온 판에 풀 자국이 격자로 생긴다
+      tiles: { floor: 'desert_sand_02',
+               wall:  ['desert_stone_round', 'desert_sand_block', 'desert_cactus_pot3'],
+               crate: ['desert_crate', 'desert_barrel1', 'desert_star_crate'] },
       step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —
@@ -388,6 +398,17 @@ const Art = (() => {
       for (let x = 0; x < W; ++x) {
         // 칸마다 자기 구역의 장소 색을 쓴다. 경계에서 색이 바뀌는 게 곧 "다른 데" 다
         const th = placeAt(x, y);
+
+        // 그림 타일이 있는 장소는 그림을 깐다. 색으로 찍은 바닥은 그다음이다
+        if (th.tiles && atlases.tiles) {
+          const cv = bakeTileSprite(th.tiles.floor, T);
+          if (cv) {
+            g.imageSmoothingEnabled = false;
+            g.drawImage(cv, 0, 0, cv.width, cv.height, x * T, y * T, T, T);
+            continue;
+          }
+        }
+
         const base = rgb(th.floor), alt = rgb(th.floorAlt);
         const joint = rgb(th.joint), fleck = rgb(th.fleck);
         const h = hash2(x, y);
@@ -1499,13 +1520,30 @@ const Art = (() => {
     const T = V.TS;
     const t = tiles[y][x];
 
+    const place = placeAt(x, y);
+
+    // 그림 타일이 있는 장소. 도트로 찍는 길을 아예 안 탄다
+    if (place.tiles && atlases.tiles) {
+      const set = t === 1 ? place.tiles.wall : place.tiles.crate;
+      const cv = bakeTileSprite(set[tileHash(x, y) % set.length], T);
+      if (cv) {
+        g.imageSmoothingEnabled = false;
+        // 아랫변을 칸 바닥에. 가로가 두 칸이면 가운데를 칸 가운데에 맞춘다
+        g.drawImage(cv, px - (cv.width - T) / 2, py + T - cv.height);
+        // 밀 수 있는 상자는 쇠테로 표시한다. 실루엣을 바꾸면 어느 게 밀리는지
+        // 외워야 하는데, 그건 규칙이 아니라 암기다
+        if (t === 4) paintBands(g, px, py + T - cv.height, T);
+        return;
+      }
+    }
+
     if (t === 2 || t === 4) { paintCrate(g, px, py, T, x, y, t === 4); return; }
     if (t !== 1) return;
 
     const isWall = (xx, yy) => (yy < 0 || yy >= tiles.length || xx < 0 || xx >= W)
                                ? true : tiles[yy][xx] === 1;
 
-    const th = placeAt(x, y);
+    const th = place;
     const dp = Math.max(1, Math.round(T / 16));
 
     // **한 조각 안에서도 무늬를 섞는다.**
@@ -1689,23 +1727,33 @@ const Art = (() => {
 
       if (!box) return;
 
-      // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
-      const bx = dp;
-      const by = dp * 4;
-      const bw = dp * 14;
-
-      g.fillStyle = 'rgba(84,94,110,0.95)';
-      g.fillRect(bx, by, bw, dp);
-      g.fillRect(bx, by + dp * 5, bw, dp);
-      g.fillStyle = 'rgba(150,162,182,0.95)';
-      g.fillRect(bx, by - dp, bw, dp);
-      g.fillRect(bx, by + dp * 4, bw, dp);
-
-      g.fillStyle = 'rgba(228,236,248,0.95)';
-      for (let i = 0; i < 4; ++i) {
-        g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
-      }
+      paintBands(g, 0, 0, T);
     });
+  }
+
+  // 밀 수 있는 상자에 두르는 쇠테 두 줄과 못 넷.
+  //
+  // 도트로 찍은 상자와 그림 타일이 **같은 표시**를 써야 한다. 두 군데에 따로
+  // 그리면 장소에 따라 밀리는 것을 알아보는 방법이 달라진다.
+  //
+  // px, py 는 상자 그림의 왼쪽 위다
+  function paintBands(g, px, py, T) {
+    const dp = Math.max(1, Math.round(T / 16));
+    const bx = px + dp;
+    const by = py + dp * 4;
+    const bw = dp * 14;
+
+    g.fillStyle = 'rgba(84,94,110,0.95)';
+    g.fillRect(bx, by, bw, dp);
+    g.fillRect(bx, by + dp * 5, bw, dp);
+    g.fillStyle = 'rgba(150,162,182,0.95)';
+    g.fillRect(bx, by - dp, bw, dp);
+    g.fillRect(bx, by + dp * 4, bw, dp);
+
+    g.fillStyle = 'rgba(228,236,248,0.95)';
+    for (let i = 0; i < 4; ++i) {
+      g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
+    }
   }
 
 
@@ -2192,6 +2240,45 @@ const Art = (() => {
   //
   // flip 을 주면 좌우나 상하로 뒤집어 굽는다. 물줄기 끝처럼 방향만 다른
   // 그림을 네 장씩 받을 이유가 없다
+  // 판 타일 하나를 굽는다.
+  //
+  // 캐릭터와 담는 방식이 다르다. 캐릭터는 높이를 맞추면 되는데, 판 타일은
+  // **가로가 한 칸**이고 높이는 그림이 정한다 - 나무는 한 칸 반, 가로등은 두 칸,
+  // 집은 두 칸 폭이다. 색인의 다섯 번째 값이 몇 칸 폭인지다.
+  //
+  // 아랫변을 칸 바닥에 붙여 그리면 위로 솟는다. 앞뒤를 발밑 y 로 정하는
+  // 규칙과 그대로 맞아서, 큰 나무 뒤에 선 사람은 저절로 가려진다
+  function bakeTileSprite(name, T) {
+    const A = atlases.tiles;
+    if (!A) return null;
+    const box = A.map.sprites[name];
+    if (!box) return null;
+
+    const w = Math.max(1, Math.round(T * box[4]));
+    const key = 'T:' + name + ':' + w;
+    let cv = spriteCache.get(key);
+    if (cv) return cv;
+
+    const h = Math.max(1, Math.round(box[3] * w / box[2]));
+    cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = true;   // 줄일 때는 켜야 계단이 안 생긴다
+    c.drawImage(A.img, box[0], box[1], box[2], box[3], 0, 0, w, h);
+
+    try {
+      const d = c.getImageData(0, 0, w, h);
+      const px = d.data;
+      for (let i = 3; i < px.length; i += 4) px[i] = px[i] < 110 ? 0 : 255;
+      c.putImageData(d, 0, 0);
+    } catch (e) { /* 시험용 가짜 캔버스에는 픽셀이 없다 */ }
+
+    spriteCache.set(key, cv);
+    if (spriteCache.size > 900) spriteCache.clear();
+    return cv;
+  }
+
   function bakeFromAtlas(key, atlasKey, name, h, flipH, flipV) {
     let cv = spriteCache.get(key);
     if (cv) return cv;

@@ -440,6 +440,10 @@ Art.loadAtlas('chars', 'art/chars.png', 'art/chars.json');
 Art.loadAtlas('fx',    'art/fx.png',    'art/fx.json');
 Art.loadAtlas('trap',  'art/trap.png',  'art/trap.json');
 
+// 판 타일. 다 받으면 바닥을 다시 구워야 한다 — 색으로 찍어둔 바닥이
+// 그림으로 바뀌기 때문이다. 벽과 상자는 매 프레임 그리니 저절로 바뀐다
+Art.loadAtlas('tiles', 'art/tiles.png', 'art/tiles.json', () => { floorDirty = true; });
+
 function frame(ts) {
   requestAnimationFrame(frame);
   if (!G.C || !floorCtx) return;

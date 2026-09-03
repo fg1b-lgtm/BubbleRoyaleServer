@@ -122,6 +122,78 @@ def main():
                     88, 88, cols=24, fit='center')
     print('갇힘 아틀라스 %s, %d칸' % (size, n))
 
+    build_tiles()
+
+
+
+# ── 판 타일 ──────────────────────────────────────────────────
+#
+# 사람이 만들어 온 마을 타일 108장이다. 캐릭터 아틀라스와 담는 방식이 다르다.
+#
+# 캐릭터는 칸 크기를 정해놓고 그 안에 앉히면 된다. 판 타일은 그러면 안 된다 -
+# 나무는 한 칸 폭에 한 칸 반 높이고, 가로등은 두 칸 높이고, 집은 두 칸 폭이다.
+# 억지로 같은 칸에 넣으면 나무가 눌리고 집이 찌그러진다.
+#
+# **PNG 의 가로가 곧 한 칸**이다 (집과 우물만 두 칸). 그 비율로 담고, 몇 칸
+# 폭인지와 원래 비율을 색인에 적어둔다. 화면은 아랫변을 칸 바닥에 붙이고
+# 위로 솟게 그린다 - 앞뒤 순서를 발밑 y 로 정하는 규칙과 그대로 맞는다.
+TILE_W = 96          # 한 칸을 아틀라스에서 몇 픽셀로 담나
+
+# 두 칸을 차지하는 것들. 나머지는 다 한 칸이다
+TILE_WIDE = {'house': 2, 'well': 2, 'desert_house_red': 2, 'desert_house_blue': 2,
+             'desert_market': 2, 'desert_palm_big': 2, 'desert_rock_big': 2}
+
+
+def build_tiles():
+    src = os.path.join(OUT, 'tiles')
+    if not os.path.isdir(src):
+        print('!! web/art/tiles 가 없다')
+        return
+
+    # 먼저 다 줄여놓고, 키 순으로 줄에 늘어놓는다 (선반 쌓기).
+    #
+    # 칸을 제일 높은 것(가로등 두 칸)에 맞춰 격자로 잡았더니 그림 한 장이
+    # 1.9MB 가 됐다. 대부분이 빈 자리였다. 키가 비슷한 것끼리 한 줄에 두면
+    # 빈 자리가 거의 안 생긴다
+    shrunk = []
+    for name in sorted(f[:-4] for f in os.listdir(src) if f.endswith('.png')):
+        im = Image.open(os.path.join(src, name + '.png')).convert('RGBA')
+        bb = im.getbbox()
+        if bb:
+            im = im.crop(bb)
+
+        tw = TILE_WIDE.get(name, 1)
+        w = TILE_W * tw
+        h = max(1, round(im.height * w / im.width))
+
+        small = im.resize((w, h), Image.BOX)
+        # 반투명 가장자리를 자른다. 안 자르면 확대했을 때 뿌옇다
+        small.putalpha(small.split()[3].point(lambda v: 255 if v > 120 else 0))
+        shrunk.append((name, small, tw))
+
+    shrunk.sort(key=lambda t: -t[1].height)
+
+    SHEET_W = 1024
+    place, x, y, rowh = [], 0, 0, 0
+    for name, im, tw in shrunk:
+        if x + im.width > SHEET_W:
+            x, y, rowh = 0, y + rowh, 0
+        place.append((name, im, tw, x, y))
+        x += im.width
+        rowh = max(rowh, im.height)
+
+    sheet = Image.new('RGBA', (SHEET_W, y + rowh), (0, 0, 0, 0))
+    index = {}
+    for name, im, tw, px, py in place:
+        sheet.paste(im, (px, py), im)
+        # x, y, w, h, 몇 칸 폭인가. 화면은 w 를 T*tw 로 늘리고 아랫변을 칸 바닥에 맞춘다
+        index[name] = [px, py, im.width, im.height, tw]
+
+    sheet.save(os.path.join(OUT, 'tiles.png'))
+    with open(os.path.join(OUT, 'tiles.json'), 'w', encoding='utf-8') as f:
+        json.dump({'tileW': TILE_W, 'sprites': index}, f, ensure_ascii=False, indent=1)
+    print('판 타일 아틀라스 %s, %d칸' % (sheet.size, len(index)))
+
 
 if __name__ == '__main__':
     main()

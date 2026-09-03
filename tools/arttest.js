@@ -393,5 +393,39 @@ for (let t = 200; t <= 4000; t += 200) {
 console.log('  4초 뒤          조각 ' + FX.count() + ' 개, ' + tail + ' 명령');
 check(FX.count() === 0, '시간이 지나면 조각이 사라진다 (안 쌓인다)');
 
+// ── 그림 타일 이름이 실제로 있나 ─────────────────────────────
+//
+// 장소마다 어느 그림을 쓸지 이름으로 적어둔다. 이름을 틀리면 아무 일도
+// 안 일어나고 조용히 도트 그림으로 되돌아간다. **틀린 걸 알 방법이 없다** —
+// 화면은 멀쩡히 나오고, 그림을 새로 넣은 사람만 왜 안 바뀌나 하고 있게 된다.
+//
+// 아틀라스 색인과 대조하는 건 여기서 한 번이면 끝난다
+console.log();
+console.log('=== 그림 타일 이름 ===');
+{
+  const idx = path.join(webDir, 'art', 'tiles.json');
+  if (!fs.existsSync(idx)) {
+    console.log('  web/art/tiles.json 이 없다. python tools/buildart.py 를 돌려라');
+    check(false, '판 타일 아틀라스가 있다');
+  } else {
+    const have = new Set(Object.keys(JSON.parse(fs.readFileSync(idx, 'utf8')).sprites));
+    const missing = [];
+    let used = 0;
+
+    for (const th of Art.PLACES) {
+      if (!th.tiles) continue;
+      for (const n of [th.tiles.floor].concat(th.tiles.wall, th.tiles.crate)) {
+        ++used;
+        if (!have.has(n)) missing.push(th.name + ' : ' + n);
+      }
+    }
+
+    console.log('  아틀라스 ' + have.size + '칸,  장소가 쓰는 이름 ' + used + '개');
+    if (missing.length) console.log('  없는 이름: ' + missing.join(', '));
+    check(used > 0, '그림 타일을 쓰는 장소가 있다');
+    check(missing.length === 0, '장소가 부르는 이름이 아틀라스에 다 있다');
+  }
+}
+
 console.log('\n===== 결과: ' + pass + ' PASS / ' + fail + ' FAIL =====');
 process.exit(fail ? 1 : 0);
