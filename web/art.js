@@ -198,6 +198,7 @@ const Art = (() => {
       // 위 색들은 그림이 안 왔을 때(파일이 없거나 시험 중일 때) 쓴다
       tiles: { floor: 'grass',
                wall:  ['tree', 'stone', 'bush'],
+               big:   ['house', 'well'],
                crate: ['crate_plain', 'crate_x'] },
       step: 'grass' },
 
@@ -217,6 +218,7 @@ const Art = (() => {
                // 바닥에 깔면 온 판에 풀 자국이 격자로 생긴다
       tiles: { floor: 'desert_sand_02',
                wall:  ['desert_stone_round', 'desert_sand_block', 'desert_cactus_pot3'],
+               big:   ['desert_house_red', 'desert_house_blue', 'desert_market'],
                crate: ['desert_crate', 'desert_barrel1', 'desert_star_crate'] },
       step: 'sand' },
 
@@ -1524,6 +1526,39 @@ const Art = (() => {
 
     // 그림 타일이 있는 장소. 도트로 찍는 길을 아예 안 탄다
     if (place.tiles && atlases.tiles) {
+      const wall4 = (xx, yy) => (yy < 0 || yy >= tiles.length || xx < 0 || xx >= W)
+                                ? false : tiles[yy][xx] === 1;
+
+      // **벽이 넷 붙은 자리에는 집이나 우물을 세운다.**
+      //
+      // 조각마다 따로 놓인 나무와 돌만으로는 판이 '물건을 늘어놓은 데' 로 보인다.
+      // 크아 맵이 하나의 그림으로 보이는 건 거기에 집이 있고 우물이 있어서다.
+      //
+      // 없는 정보를 지어내는 게 아니다. 벽 넷이 붙은 자리는 이미 판에 있는
+      // 정보고, 거기가 마침 두 칸짜리가 들어갈 유일한 자리다.
+      //
+      // 짝수 자리에서만 묶는다. 아무 데서나 묶으면 벽 하나가 여러 묶음에
+      // 동시에 속해서 어느 쪽으로 그릴지가 안 정해진다.
+      //
+      // 그리는 것은 **왼쪽 아래 칸 하나**가 맡는다. 그 칸의 발밑 y 가 곧
+      // 집의 아랫변이라, 두 칸짜리도 한 칸짜리와 같은 자로 줄을 선다.
+      // 나머지 세 칸은 아무것도 안 그린다
+      if (t === 1 && place.tiles.big) {
+        const qx = x & ~1, qy = y & ~1;
+        if (wall4(qx, qy) && wall4(qx + 1, qy)
+            && wall4(qx, qy + 1) && wall4(qx + 1, qy + 1)) {
+          if (x !== qx || y !== qy + 1) return;      // 나머지 세 칸
+
+          const big = place.tiles.big;
+          const cv = bakeTileSprite(big[tileHash(qx, qy) % big.length], T);
+          if (cv) {
+            g.imageSmoothingEnabled = false;
+            g.drawImage(cv, qx * T, (qy + 2) * T - cv.height);
+            return;
+          }
+        }
+      }
+
       const set = t === 1 ? place.tiles.wall : place.tiles.crate;
       const cv = bakeTileSprite(set[tileHash(x, y) % set.length], T);
       if (cv) {
@@ -1532,7 +1567,13 @@ const Art = (() => {
         g.drawImage(cv, px - (cv.width - T) / 2, py + T - cv.height);
         // 밀 수 있는 상자는 쇠테로 표시한다. 실루엣을 바꾸면 어느 게 밀리는지
         // 외워야 하는데, 그건 규칙이 아니라 암기다
-        if (t === 4) paintBands(g, px, py + T - cv.height, T);
+        // 그림이 실제로 차지하는 네모에 두른다. 칸 크기로 잡으면
+        // 통이나 항아리처럼 좁은 그림에서 테가 밖으로 삐져나온다
+        if (t === 4) {
+          const o = cv.op;
+          paintBands(g, px - (cv.width - T) / 2 + o.x, py + T - cv.height + o.y,
+                     o.w, o.h);
+        }
         return;
       }
     }
@@ -1727,7 +1768,7 @@ const Art = (() => {
 
       if (!box) return;
 
-      paintBands(g, 0, 0, T);
+      paintBands(g, 0, 0, T, T);
     });
   }
 
@@ -1736,23 +1777,29 @@ const Art = (() => {
   // 도트로 찍은 상자와 그림 타일이 **같은 표시**를 써야 한다. 두 군데에 따로
   // 그리면 장소에 따라 밀리는 것을 알아보는 방법이 달라진다.
   //
-  // px, py 는 상자 그림의 왼쪽 위다
-  function paintBands(g, px, py, T) {
-    const dp = Math.max(1, Math.round(T / 16));
-    const bx = px + dp;
-    const by = py + dp * 4;
-    const bw = dp * 14;
+  // 자리를 칸 크기(T)로 잡고 있었다. 그림 타일은 칸보다 크고 종류마다 높이가
+  // 달라서, 쇠테가 상자 위쪽 허공에 떠 있는 회색 막대로 보였다.
+  // **받은 네모 안에서 비율로** 잡는다. 어떤 그림이 와도 상자 몸통에 걸린다
+  function paintBands(g, bx, by, bw, bh) {
+    const t = Math.max(1, Math.round(bh * 0.055));   // 테 두께
+    const x0 = bx + bw * 0.06, w = bw * 0.88;
+    const y0 = by + bh * 0.34, y1 = by + bh * 0.62;  // 위 테, 아래 테
 
-    g.fillStyle = 'rgba(84,94,110,0.95)';
-    g.fillRect(bx, by, bw, dp);
-    g.fillRect(bx, by + dp * 5, bw, dp);
-    g.fillStyle = 'rgba(150,162,182,0.95)';
-    g.fillRect(bx, by - dp, bw, dp);
-    g.fillRect(bx, by + dp * 4, bw, dp);
+    // 그늘 · 몸 · 빛 세 단. 한 단이면 스티커로 보인다
+    g.fillStyle = 'rgba(60,68,82,0.95)';
+    g.fillRect(x0, y0 - t, w, t);
+    g.fillRect(x0, y1 - t, w, t);
+    g.fillStyle = 'rgba(148,160,180,0.95)';
+    g.fillRect(x0, y0, w, t);
+    g.fillRect(x0, y1, w, t);
+    g.fillStyle = 'rgba(90,100,118,0.95)';
+    g.fillRect(x0, y0 + t, w, t);
+    g.fillRect(x0, y1 + t, w, t);
 
+    // 못 넷. 테 끝에 박는다
     g.fillStyle = 'rgba(228,236,248,0.95)';
     for (let i = 0; i < 4; ++i) {
-      g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
+      g.fillRect((i & 1) ? x0 + w - t * 2 : x0 + t, (i < 2) ? y0 : y1, t, t);
     }
   }
 
@@ -2267,11 +2314,28 @@ const Art = (() => {
     c.imageSmoothingEnabled = true;   // 줄일 때는 켜야 계단이 안 생긴다
     c.drawImage(A.img, box[0], box[1], box[2], box[3], 0, 0, w, h);
 
+    // 그림이 실제로 차지하는 네모를 같이 재둔다.
+    //
+    // 밀 수 있는 상자에 쇠테를 두를 때 칸 크기로 잡았더니, 그림이 칸보다 좁은
+    // 종류(통, 항아리)에서 테가 상자 밖으로 삐져나왔다. 알파를 훑는 김에
+    // 한 번 재두면 그릴 때마다 다시 안 재도 된다
+    cv.op = { x: 0, y: 0, w: w, h: h };
     try {
       const d = c.getImageData(0, 0, w, h);
       const px = d.data;
-      for (let i = 3; i < px.length; i += 4) px[i] = px[i] < 110 ? 0 : 255;
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let i = 3, k = 0; i < px.length; i += 4, ++k) {
+        const on = px[i] >= 110;
+        px[i] = on ? 255 : 0;
+        if (!on) continue;
+        const cx = k % w, cy = (k / w) | 0;
+        if (cx < x0) x0 = cx;
+        if (cx > x1) x1 = cx;
+        if (cy < y0) y0 = cy;
+        if (cy > y1) y1 = cy;
+      }
       c.putImageData(d, 0, 0);
+      if (x1 >= x0) cv.op = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
     } catch (e) { /* 시험용 가짜 캔버스에는 픽셀이 없다 */ }
 
     spriteCache.set(key, cv);

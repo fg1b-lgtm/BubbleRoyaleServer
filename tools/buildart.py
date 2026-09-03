@@ -143,6 +143,23 @@ TILE_W = 96          # 한 칸을 아틀라스에서 몇 픽셀로 담나
 TILE_WIDE = {'house': 2, 'well': 2, 'desert_house_red': 2, 'desert_house_blue': 2,
              'desert_market': 2, 'desert_palm_big': 2, 'desert_rock_big': 2}
 
+# 바닥으로 까는 타일. 테두리를 잘라낸다.
+#
+# 그림 시트의 타일은 한 장씩 알아보기 쉬우라고 가장자리를 어둡게 그려놨다.
+# 그대로 깔면 판 전체에 검은 격자가 생긴다. 잔디밭이 아니라 타일 바닥이 된다.
+#
+# 가운데만 남기면 이어 깔았을 때 이음매가 안 보인다. 안쪽 무늬는 잔풀과
+# 모래알이라 잘라내도 티가 안 난다
+FLOOR_TRIM = 0.09
+
+
+def is_floor(name):
+    for head in ('grass', 'dirt_', 'water_', 'desert_sand_0', 'desert_sand_1',
+                 'desert_water_', 'desert_carpet'):
+        if name.startswith(head):
+            return True
+    return False
+
 
 def build_tiles():
     src = os.path.join(OUT, 'tiles')
@@ -161,6 +178,10 @@ def build_tiles():
         bb = im.getbbox()
         if bb:
             im = im.crop(bb)
+
+        if is_floor(name):
+            mx = int(im.width * FLOOR_TRIM), int(im.height * FLOOR_TRIM)
+            im = im.crop((mx[0], mx[1], im.width - mx[0], im.height - mx[1]))
 
         tw = TILE_WIDE.get(name, 1)
         w = TILE_W * tw
