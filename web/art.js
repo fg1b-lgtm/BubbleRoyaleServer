@@ -2291,42 +2291,62 @@ const Art = (() => {
   //
   // hit(x,y) 는 그 칸에 물줄기가 있나. 아직 안 뻗은 칸은 없는 것으로 친다 —
   // 그래야 물이 자라는 동안에도 끝이 끝으로 보인다
-  function drawBlastTile(g, px, py, T, hit, x, y, alpha) {
-    if (!hasAtlas('fx')) return false;
+  // 물줄기 한 칸.
+  //
+  // **어디까지 닿는지가 한눈에 보여야 한다.** 그게 이 그림의 유일한 임무다.
+  // 예쁜 것은 그다음이고, 예쁘게 만들다 사거리가 안 읽히면 진 것이다.
+  //
+  // 그림 시트에서 가운데·팔·끝 조각을 잘라 이어 붙여 봤다. 안 됐다.
+  // 조각마다 둥근 외곽선과 물방울이 있어서 이어 붙이면 마디가 보였고,
+  // 마디를 지우려고 3할 키워 겹쳤더니 이번엔 사거리보다 넓어 보였다.
+  // 조각이 오밀조밀해서 십자 모양 자체가 안 읽히기도 했다.
+  //
+  // 그려서 만든다. 규칙이 하나뿐이라 어느 배율에서도 안 어긋난다 —
+  // **물줄기가 이어지는 쪽으로는 칸 끝까지, 안 이어지는 쪽으로는 여백을 둔다.**
+  // 그러면 이음매가 아예 생길 수 없고, 십자 바깥이 하나의 실루엣이 된다.
+  //
+  // 세 겹이다. 테두리 · 몸 · 심. 겹마다 여백을 한 픽셀씩 더 줘서 안으로 들어간다.
+  // 끝 쪽은 그 여백이 그대로 뾰족해지는 효과를 내서 따로 끝 조각을 안 그려도 된다
+  function drawBlastTile(g, px, py, T, hit, x, y, alpha, heat) {
+    const P = V.P;
+    const q = (v) => Math.round(v / P) * P;
 
     const L = hit(x - 1, y), R = hit(x + 1, y);
     const U = hit(x, y - 1), D = hit(x, y + 1);
+    const lone = !L && !R && !U && !D;
 
-    let name, fh = false, fv = false;
-    if ((L || R) && (U || D)) name = 'blast_mid';       // 십자가 갈라지는 자리
-    else if (L && R)          name = 'blast_h';
-    else if (U && D)          name = 'blast_v';
-    else if (R)               name = 'blast_tip_h';     // 왼쪽이 끝이다
-    else if (L)             { name = 'blast_tip_h'; fh = true; }
-    else if (U)               name = 'blast_tip_v';     // 아래쪽이 끝이다
-    else if (D)             { name = 'blast_tip_v'; fv = true; }
-    else                      name = 'blast_mid';       // 한 칸짜리
+    // 몸통 두께. 칸의 8할쯤이 남는다.
+    // 더 두꺼우면 십자의 안쪽 모서리가 메워져서 네모로 보이고,
+    // 더 얇으면 물줄기가 아니라 선으로 보인다
+    const t0 = Math.max(P, q(T * 0.10));
 
-    // **칸보다 크게 그려서 옆 칸과 겹치게 한다.**
-    //
-    // 조각을 칸에 딱 맞춰 그렸더니 하나로 뻗은 물줄기가 아니라 물보라를
-    // 늘어놓은 것으로 보였다. 조각마다 둥근 외곽선과 물방울이 있어서,
-    // 딱 붙여놔도 경계에 선이 보이기 때문이다.
-    //
-    // 3할쯤 키워서 겹치면 그 선이 사라진다. 밝은 물이라 겹친 데가 더 밝아지는데,
-    // 그게 오히려 이어진 것으로 읽힌다
-    const BD = Math.round(T * 1.3);
-    const key = name + ':' + BD + ':' + (fh ? 1 : 0) + (fv ? 1 : 0);
-    const cv = bakeFromAtlas(key, 'fx', name, BD, fh, fv);
-    if (!cv) return false;
+    const h = heat || 0;
+    const LAYER = [
+      // 테두리. 판에서 제일 어두운 파랑이라 어느 바닥 위에서도 물줄기가 뜬다
+      { d: 0,     c: [20 + h * 30, 78 + h * 40, 150 + h * 40] },
+      { d: P,     c: [70 + h * 90, 168 + h * 70, 236 + h * 19] },
+      { d: P * 3, c: [200 + h * 55, 240 + h * 15, 255] },
+    ];
 
-    const smooth = g.imageSmoothingEnabled;
-    g.imageSmoothingEnabled = false;
-    g.globalAlpha = alpha;
-    g.drawImage(cv, Math.round(px + (T - cv.width) / 2),
-                    Math.round(py + (T - cv.height) / 2));
-    g.globalAlpha = 1;
-    g.imageSmoothingEnabled = smooth;
+    for (const ly of LAYER) {
+      const t = t0 + ly.d;
+      if (t * 2 >= T) break;                  // 심이 들어갈 자리가 없다. 여기서 끝
+
+      g.fillStyle = 'rgba(' + Math.round(ly.c[0]) + ',' + Math.round(ly.c[1])
+                  + ',' + Math.round(ly.c[2]) + ',' + alpha + ')';
+
+      // 가로 팔. 이어지는 쪽은 칸 끝까지 간다 — 그래서 옆 칸과 딱 붙는다
+      if (L || R || lone) {
+        const x0 = L ? 0 : t, x1 = R ? T : T - t;
+        g.fillRect(px + x0, py + t, x1 - x0, T - t * 2);
+      }
+      // 세로 팔
+      if (U || D || lone) {
+        const y0 = U ? 0 : t, y1 = D ? T : T - t;
+        g.fillRect(px + t, py + y0, T - t * 2, y1 - y0);
+      }
+    }
+
     return true;
   }
 

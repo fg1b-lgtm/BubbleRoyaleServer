@@ -65,50 +65,31 @@ def main():
                     CELL_W, CELL_H, cols=24)
     print('캐릭터 아틀라스 %s, %d칸' % (size, n))
 
-    # ── 물풍선 · 물줄기 · 물 ─────────────────────────────────
+    # ── 물풍선 ───────────────────────────────────────────────
     #
-    # 물줄기는 통짜 십자로 받으면 못 쓴다. 사거리가 아이템으로 1칸에서 6칸까지
-    # 늘어나서 십자 크기가 매판 달라지기 때문이다.
-    # 가운데 · 팔 · 끝 조각으로 받아서 길이만큼 이어 붙인다.
+    # 시트에는 물줄기 조각(가운데 · 팔 · 끝)과 차오른 물, 웅덩이도 들어 있는데
+    # 안 쓴다. 물줄기는 이어 붙여 봤더니 마디가 보였다 — 조각마다 둥근 외곽선과
+    # 물방울이 있어서, 딱 붙여도 경계가 남고 겹치면 사거리보다 넓어 보였다.
+    # 지금은 화면에서 직접 그린다 (art.js 의 drawBlastTile).
     #
     # 시트에서 몇 번째 조각이 무엇인지는 눈으로 보고 정했다. 자동으로 알아낼
-    # 방법이 없진 않지만, 열두 개짜리를 위해 판별기를 만드는 건 배보다 배꼽이다
+    # 방법이 없진 않지만, 넷을 위해 판별기를 만드는 건 배보다 배꼽이다
     WATER = {
         'balloon0':   5,    # 갓 놓았다
         'balloon1':   0,    # 부풀었다
         'balloon2':   1,    # 더 부풀었다
         'balloon_hot': 2,   # 곧 터진다 (빨강)
-        'blast_mid':  8,    # 십자 가운데
-        'blast_v':    9,    # 세로 팔
-        'blast_h':   14,    # 가로 팔
-        'blast_tip_h': 11,  # 가로 끝 (왼쪽을 본다. 오른쪽은 뒤집어 쓴다)
-        'blast_tip_v': 13,  # 세로 끝 (아래를 본다. 위쪽은 뒤집어 쓴다)
-        'water_top':  24,   # 차오른 물의 표면
-        'splash':     27,   # 파문
-        'puddle':     30,   # 웅덩이
     }
     imgs = load_pieces('water', 0)
 
-    # 물줄기 조각과 물풍선은 담는 방식이 다르다.
-    #
-    # 물줄기는 **칸을 꽉 채워야** 한다. 비율을 지키면 가로로 긴 팔 조각이 칸보다
-    # 좁아져서 옆 칸과 사이에 틈이 생긴다. 그러면 하나로 뻗은 물줄기가 아니라
-    # 조각을 늘어놓은 것으로 보인다 — 실제로 그렇게 보였다.
-    #
-    # 물풍선은 비율을 지켜야 한다. 늘리면 찌그러진 풍선이 된다
-    BLAST = ('blast_mid', 'blast_v', 'blast_h', 'blast_tip_h', 'blast_tip_v')
+    # 비율을 지킨다. 늘리면 찌그러진 풍선이 된다
+    fx = [(k, imgs[v]) for k, v in WATER.items() if v < len(imgs)]
 
-    fx_fill = [(k, imgs[v]) for k, v in WATER.items()
-               if k in BLAST and v < len(imgs)]
-    fx_keep = [(k, imgs[v]) for k, v in WATER.items()
-               if k not in BLAST and v < len(imgs)]
-
-    size, n = build(fx_fill + fx_keep,
+    size, n = build(fx,
                     os.path.join(OUT, 'fx.png'),
                     os.path.join(OUT, 'fx.json'),
-                    96, 96, cols=6, fit='center',
-                    fill_names=set(k for k, _ in fx_fill))
-    print('물 아틀라스 %s, %d칸' % (size, n))
+                    96, 96, cols=4, fit='center')
+    print('물풍선 아틀라스 %s, %d칸' % (size, n))
 
     # ── 갇힌 모습 ────────────────────────────────────────────
     #

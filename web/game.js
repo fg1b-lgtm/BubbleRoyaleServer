@@ -729,8 +729,7 @@ function drawWorld(now, dt) {
   // 처음에는 칸마다 둥근 빛을 퍼뜨렸다. 예뻤는데 빛이 칸 밖으로 새서
   // 실제 사거리보다 넓어 보였다. 어디까지 위험한지를 못 읽으면 그건 연출이 아니라 방해다.
   //
-  // 그래서 **칸에 딱 맞게** 칠하고, 물줄기끼리 안 닿는 쪽에만 테두리를 긋는다.
-  // 그러면 십자 전체가 윤곽선 하나로 둘러싸여서 모양이 그대로 읽힌다.
+  // 그리는 일은 Art.drawBlastTile 이 한다. 여기서는 **어느 칸이 언제 뻗었나**만 본다.
   G.blasts = G.blasts.filter(b => b.until > now);
   if (G.blasts.length) {
     const total = (G.C.blast / G.C.tickRate) * 1000;
@@ -753,25 +752,9 @@ function drawWorld(now, dt) {
       const fade = age < 0.7 ? 0 : (age - 0.7) / 0.3;
       const px = b.x * T, py = b.y * T;
 
-      // 그림이 있으면 조각을 이어 붙여 그린다.
-      // 이웃을 보고 가운데인지 팔인지 끝인지 고른다
-      if (Art.drawBlastTile(ctx, px, py, T,
-                            (hx, hy) => hit.has(hx + ',' + hy),
-                            b.x, b.y, 1 - fade)) continue;
-
-      const g = ctx.createLinearGradient(px, py, px, py + T);
-      g.addColorStop(0,   'rgba(' + (150 + heat * 105) + ',' + (215 + heat * 40) + ',255,' + (0.82 - fade * 0.75) + ')');
-      g.addColorStop(1,   'rgba(' + (60 + heat * 90)  + ',' + (150 + heat * 80) + ',235,' + (0.72 - fade * 0.68) + ')');
-      ctx.fillStyle = g;
-      ctx.fillRect(px, py, T, T);
-
-      // 물줄기가 안 이어지는 쪽에만 밝은 선. 십자 바깥 윤곽만 남는다
-      ctx.fillStyle = 'rgba(235,250,255,' + (0.90 - fade * 0.85) + ')';
-      const e = Math.max(1.5, T * 0.09);
-      if (!hit.has(b.x + ',' + (b.y - 1))) ctx.fillRect(px, py, T, e);
-      if (!hit.has(b.x + ',' + (b.y + 1))) ctx.fillRect(px, py + T - e, T, e);
-      if (!hit.has((b.x - 1) + ',' + b.y)) ctx.fillRect(px, py, e, T);
-      if (!hit.has((b.x + 1) + ',' + b.y)) ctx.fillRect(px + T - e, py, e, T);
+      Art.drawBlastTile(ctx, px, py, T,
+                        (hx, hy) => hit.has(hx + ',' + hy),
+                        b.x, b.y, 1 - fade, heat);
     }
   }
 
