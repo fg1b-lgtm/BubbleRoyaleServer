@@ -452,19 +452,38 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
   let crashed = null;
 // ── 화면 예측이 옆으로 미나 ─────────────────────────────────
 //
-// 서버는 진짜 판 46,592 자리에서 한 점도 안 민다 (movetest 시험 10).
+// 서버는 진짜 판에서 트인 데를 한 점도 안 민다 (movetest 시험 10).
 // 그런데 화면은 예측을 따로 돌리므로, 여기가 다르면 사람은 밀린다고 느낀다 —
 // 예측이 옆으로 밀고, 다음 스냅샷이 그걸 되돌리는 게 매 틱 반복되기 때문이다.
 //
-// predict.js 의 centerAxis 가 Movement.h 와 같은 규칙인지를 실제로 걸어서 본다
+// predict.js 의 centerAxis 가 Movement.h 와 같은 규칙인지를 실제로 걸어서 본다.
+//
+// 9/3 에 서버 규칙을 "늘 당긴다" 에서 "막혔는데 줄에 맞으면 갈 수 있을 때만
+// 당긴다" 로 좁혔다. 그러면서 **끊겼다 다시 당기는 횟수(episodes)는 도로
+// 늘어났다** — 기둥 하나를 스칠 때마다 한 번씩 켜지는 것이라 정상이다.
+// 대신 두 가지가 없어야 진짜 문제가 없는 것이다.
+//   ① 트인 데에서는 한 점도 안 밀린다 (옆에 아무것도 없는데 미는 것)
+//   ② 당기는 쪽이 도중에 뒤집히지 않는다 (오른쪽으로 당기다 왼쪽으로 트는 것)
+// 서버 쪽 movetest 가 같은 두 가지를 잰다 — 둘이 같은 답을 내야 예측이 안
+// 되돌아간다
 {
     const DX = [1, -1, 0, 0], DY = [0, 0, 1, -1];
     const TU = api.G.C.tileUnits;
+    const LOOK = 3;
 
-    // 총량이 아니라 **끊겼다 다시 미는 횟수**를 센다.
-    // 한 번 쭉 당겨 줄에 맞추는 건 도움이고, 켜졌다 꺼지는 건 밀리는 느낌이다.
-    // 서버 쪽 movetest 가 같은 것을 센다 — 둘이 같은 답을 내야 예측이 안 되돌아간다
-    let tried = 0, episodes = 0, worst = 0;
+    const isWide = (tx, ty, d) => {
+        for (let a = 0; a <= LOOK; ++a) {
+            for (let k = -1; k <= 1; ++k) {
+                const ax = tx + DX[d] * a + (DX[d] !== 0 ? 0 : k);
+                const ay = ty + DY[d] * a + (DY[d] !== 0 ? 0 : k);
+                if (ax < 0 || ay < 0 || ax >= MAP_W || ay >= MAP_H) return false;
+                if (api.G.tiles[ay][ax] !== 0) return false;
+            }
+        }
+        return true;
+    };
+
+    let tried = 0, flips = 0, openTried = 0, openDrift = 0;
 
     for (let ty = 1; ty < MAP_H - 1; ++ty) {
         for (let tx = 1; tx < MAP_W - 1; ++tx) {
@@ -480,30 +499,37 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
                     ty * TU + (TU >> 1) + (DX[d] !== 0 ? off : 0));
 
                 const v0 = api.Predict.view();
-                let prev = DX[d] !== 0 ? v0.y : v0.x;
-                let wasMoving = false;
+                const start = DX[d] !== 0 ? v0.y : v0.x;
+                let prev = start, lastDir = 0;
 
                 for (let t = 0; t < 20; ++t) {
                     api.Predict.tick(api.G.tiles, DX[d], DY[d], 0, false);
                     const v = api.Predict.view();
                     const cur = DX[d] !== 0 ? v.y : v.x;
-                    const dd = Math.abs(cur - prev);
+                    const dd = cur - prev;
                     prev = cur;
 
-                    const moving = dd > 0.5;
-                    if (moving && !wasMoving && t > 0) ++episodes;
-                    wasMoving = moving;
-                    if (dd > worst) worst = dd;
+                    if (dd !== 0) {
+                        const dir = dd > 0 ? 1 : -1;
+                        if (lastDir !== 0 && dir !== lastDir) ++flips;
+                        lastDir = dir;
+                    }
                 }
                 ++tried;
+
+                if (isWide(tx, ty, d)) {
+                    ++openTried;
+                    if (Math.abs(prev - start) > 0.5) ++openDrift;
+                }
             }
         }
     }
     api.Predict.stop();
 
-    console.log('  화면 예측으로 ' + tried + ' 번 걸어봤다,  끊겼다 다시 민 횟수 '
-                + episodes + ' 번');
-    check(episodes === 0, '화면 예측도 당기다 끊기지 않는다');
+    console.log('  화면 예측으로 ' + tried + ' 번 걸어봤다,  트인 데 ' + openTried
+                + ' 번 중 밀린 것 ' + openDrift + ' 번,  방향 뒤집힘 ' + flips + ' 번');
+    check(openDrift === 0, '화면 예측도 트인 데에서는 한 점도 안 민다');
+    check(flips === 0, '화면 예측도 당기는 쪽이 도중에 안 뒤집힌다');
 }
 
 let pushOk = false, pushFrom = null;

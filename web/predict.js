@@ -122,28 +122,34 @@ const Predict = (() => {
     return pos + move;
   }
 
-  // 좁은 데로 들어갈 때만 내 칸 한가운데로 당긴다
+  // 줄 맞춤. **못 가는데, 줄에 맞으면 갈 수 있을 때만** 당긴다.
+  //
+  // Movement.h 의 CenterAxis 와 같은 규칙이어야 한다. 여기가 다르면 예측이
+  // 서버와 갈려서 매 틱 되돌아간다 — 트인 데서 캐릭터가 밀리는 것으로 보였던
+  // 그 버그가, 서버를 고쳐도 여기가 옛날 규칙 그대로면 **화면에서만** 남는다.
+  // 실제로 9/3에 서버만 고치고 여기를 안 고쳐서 이 일이 벌어질 뻔했다.
   function centerAxis(tiles, movePos, sidePos, step, movingIsX, speed) {
     if (C.laneSnap <= 0 || step === 0) return sidePos;
 
     const edge  = (step > 0) ? movePos + speed + HALF : movePos - speed - HALF;
     const ahead = Math.floor(edge / C.tileUnits);
-    const st    = Math.floor(sidePos / C.tileUnits);
 
-    const aheadOpen = movingIsX ? !solid(tiles, ahead, st) : !solid(tiles, st, ahead);
-    if (!aheadOpen) return sidePos;
+    // 지금 몸이 걸쳐 있는 옆줄들. 하나라도 막혀 있으면 못 간다
+    const s0 = Math.floor((sidePos - HALF) / C.tileUnits);
+    const s1 = Math.floor((sidePos + HALF) / C.tileUnits);
 
-    const narrow = movingIsX
-      ? (solid(tiles, ahead, st - 1) || solid(tiles, ahead, st + 1))
-      : (solid(tiles, st - 1, ahead) || solid(tiles, st + 1, ahead));
-    if (!narrow) return sidePos;
+    let blocked = false;
+    for (let s = s0; s <= s1; ++s) {
+      const isSolid = movingIsX ? solid(tiles, ahead, s) : solid(tiles, s, ahead);
+      if (isSolid) { blocked = true; break; }
+    }
+    if (!blocked) return sidePos;          // 그냥 갈 수 있다. 손댈 이유가 없다
 
-    // 몸이 실제로 안 들어갈 때만 당긴다. Movement.h 와 같은 규칙이다 —
-    // 여기가 다르면 예측이 서버와 갈려서 매 틱 되돌아간다.
-    //
-    // 9/3 에 조건을 통째로 없앴다. 좁은 데인지 · 몸이 들어가는지를 따지면
-    // 기둥을 지날 때마다 켜졌다 꺼져서 손에 '밀린다' 로 느껴진다.
-    // 한 축으로 걷는 동안에는 늘 줄 가운데로, 걷는 속도만큼 당긴다
+    // 줄 한가운데였으면 갈 수 있었나. 아니면 그냥 벽이라 당겨봐야 소용없다
+    const st = Math.floor(sidePos / C.tileUnits);
+    const centerOpen = movingIsX ? !solid(tiles, ahead, st) : !solid(tiles, st, ahead);
+    if (!centerOpen) return sidePos;
+
     const center = st * C.tileUnits + (C.tileUnits >> 1);
     let d = center - sidePos;
 
