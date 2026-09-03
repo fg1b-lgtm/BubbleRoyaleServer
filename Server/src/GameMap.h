@@ -110,23 +110,39 @@ struct GameMap
         //    사람이 길을 외우는 단위가 테마다. 그래서 테마는 안 겹치게 뽑고,
         //    같은 테마 안에서 어느 판이 나올지는 매번 다르다.
         //
-        //    섞어놓고 앞에서 아홉 개를 가져간다 (피셔-예이츠).
+        //    **템플릿이 하나도 없는 테마는 뽑지 않는다.**
+        //
+        //    SECTOR_THEME_COUNT(10)는 테마 번호의 칸수일 뿐, 지금 실제로
+        //    조각이 있는 테마 수와 다를 수 있다 — 지금 마을·사막 두 개만
+        //    시험 중이면 둘뿐이다. 번호만 보고 섞으면 조각이 없는 테마를
+        //    뽑아서 "그 테마엔 조각이 없다" 오류로 조용히 조각[0]만 반복해서
+        //    깔게 된다. 있는 테마만 추려서 섞는다
+        int active_theme[SECTOR_THEME_COUNT];
+        int active_count = 0;
+        for (int th = 0; th < SECTOR_THEME_COUNT; ++th) {
+            for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
+                if (SECTOR_TEMPLATES[i].theme == th) {
+                    active_theme[active_count++] = th;
+                    break;
+                }
+            }
+        }
+
+        //    섞어놓고 앞에서 가져간다 (피셔-예이츠).
         //    "랜덤으로 하나씩 뽑고 겹치면 다시" 로 하면 뽑을수록 느려지고,
         //    운이 나쁘면 안 끝난다. 섞는 쪽은 몇 번 도는지가 정해져 있다.
-        int theme[SECTOR_THEME_COUNT];
-        for (int i = 0; i < SECTOR_THEME_COUNT; ++i) {
-            theme[i] = i;
-        }
-        for (int i = SECTOR_THEME_COUNT - 1; i > 0; --i) {
+        for (int i = active_count - 1; i > 0; --i) {
             int j = rnd.Next(i + 1);
-            int t = theme[i]; theme[i] = theme[j]; theme[j] = t;
+            int t = active_theme[i]; active_theme[i] = active_theme[j]; active_theme[j] = t;
         }
 
         //    테마마다 판이 몇 개인지는 표를 훑어서 센다. 개수를 손으로 적어두면
-        //    판을 하나 더 그린 날 그 판이 영영 안 나온다
+        //    판을 하나 더 그린 날 그 판이 영영 안 나온다.
+        //
+        //    있는 테마가 아홉 개보다 적으면(지금 두 개) 섞은 목록을 돌려 쓴다
         int pick[SECTOR_SLOTS];
         for (int slot = 0; slot < SECTOR_SLOTS; ++slot) {
-            int want = theme[slot];
+            int want = active_theme[slot % active_count];
 
             int n = 0;
             for (int i = 0; i < SECTOR_TEMPLATE_COUNT; ++i) {
@@ -327,6 +343,17 @@ private:
                         spawn_y[spawn_count] = y;
                         ++spawn_count;
                     }
+                }
+                // b/p 는 **확률이 아니라 정해진 자리**다.
+                //
+                // 사람이 그려온 판(마을·사막)은 상자 하나하나가 그 자리에 있으라고
+                // 그려진 것이지, "대충 이 근방에 몇 개" 가 아니다. ? 로 두면 매판
+                // 다른 자리에 나서 그림과 달라진다. b/p 는 늘 그 칸에 있는다
+                else if (c == 'b') {
+                    tile[y][x] = TILE_BLOCK;
+                }
+                else if (c == 'p') {
+                    tile[y][x] = TILE_BOX;
                 }
                 else {
                     // 고정 벽과 스폰이 아니면 전부 상자 후보다.
