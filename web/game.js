@@ -746,10 +746,18 @@ function drawWorld(now, dt) {
   G.blasts = G.blasts.filter(b => b.until > now);
   if (G.blasts.length) {
     const total = (G.C.blast / G.C.tickRate) * 1000;
+    // **폭발마다 따로 잇는다.**
+    //
+    // 전에는 화면에 깔린 물줄기를 전부 한 덩어리로 봤다. 그래서 물풍선 두 개가
+    // 가까이 터지면 두 십자가 한 그림으로 이어졌다. 그러면 **누구 물줄기가
+    // 어디까지인지** 안 보인다. 사거리를 세야 하는 게임에서 그건 못 봐준다.
+    //
+    // 어느 물풍선에서 나왔는지를 열쇠에 넣는다. 옆 폭발은 이웃으로 안 쳐진다.
+    // 아직 안 뻗은 칸도 없는 것으로 친다 - 그래야 자라는 것처럼 보인다
     const hit = new Set();
-    // 아직 안 뻗은 칸은 없는 것으로 친다. 윤곽선도 그때그때 다시 잡혀야
-    // 물줄기가 자라는 것처럼 보인다
-    for (const b of G.blasts) if (b.born <= now) hit.add(b.x + ',' + b.y);
+    for (const b of G.blasts) {
+      if (b.born <= now) hit.add(b.grp + '|' + b.x + ',' + b.y);
+    }
 
     for (const b of G.blasts) {
       if (b.born > now) continue;
@@ -766,7 +774,7 @@ function drawWorld(now, dt) {
       const px = b.x * T, py = b.y * T;
 
       Art.drawBlastTile(ctx, px, py, T,
-                        (hx, hy) => hit.has(hx + ',' + hy),
+                        (hx, hy) => hit.has(b.grp + '|' + hx + ',' + hy),
                         b.x, b.y, 1 - fade, heat);
     }
   }
@@ -991,8 +999,11 @@ function trapLeft(p) {
   return Math.max(0, Math.min(1, 1 - gone / G.C.trap));
 }
 
-// 내 캐릭터가 마지막으로 그려진 화면 x. 걸음이 고른지 재는 데만 쓴다
-let drawnX = 0;
+// 내 캐릭터가 마지막으로 그려진 자리와 보던 쪽. 계측 도구가 읽는다.
+//
+// 화면 얘기를 재려면 화면이 실제로 그린 값을 읽어야 한다. 서버가 준 값이나
+// 예측기 안쪽 값을 읽으면 그림이 어떻든 늘 같은 수가 나온다
+let drawnX = 0, drawnY = 0, drawnFace = -1;
 
 function drawPlayer(id, p, alpha, now, T) {
   // 남은 스냅샷 두 장 사이를 보간한다. 그게 부드러움의 전부다.
@@ -1018,7 +1029,7 @@ function drawPlayer(id, p, alpha, now, T) {
   // 0 은 정의상 틱 시작 자리라, 보간이 되든 안 되든 틱마다 한 번씩만 바뀐다.
   // 99프레임 중 56프레임이 제자리라는 숫자가 나왔는데 그건 화면이 아니라
   // 재는 법 얘기였다. **눈에 보이는 값을 재야 한다**
-  if (id === G.myId) drawnX = px;
+  if (id === G.myId) { drawnX = px; drawnY = py; }
 
   const dead = !(p.flags & PF.ALIVE);
   const r = T * G.C.bodyNum / G.C.bodyDen / 2;
@@ -1066,7 +1077,11 @@ function drawPlayer(id, p, alpha, now, T) {
   if (!freeing) Art.drawChar(ctx, px, py, r, colorOf(id), {
     // 내 얼굴만 미리 돌린다. 남의 것은 서버가 준 그대로다 —
     // 남이 뭘 누르고 있는지는 여기서 알 길이 없다
-    face: (id === G.myId && myFace >= 0) ? myFace : (p.face | 0),
+    face: (() => {
+      const f = (id === G.myId && myFace >= 0) ? myFace : (p.face | 0);
+      if (id === G.myId) drawnFace = f;
+      return f;
+    })(),
     animal: animalOf(id),
     moving: !!p.moving && !dead,
     walk: p.walk || 0,
@@ -1859,6 +1874,7 @@ Hooks.welcome = function () {
   // 아홉 자리에 각각 다른 장소를 깐다. 공기(하늘·물·색보정)는 판 하나에 하나
   Art.setPlaces(G.C.sectorKind, G.C.seed, G.C.sectorW, G.C.sectorH);
   Art.setLanes(G.lanes);   // 바닥에 흙길을 그리는 데 쓴다
+  Art.setLooks(G.look);    // 강과 다리. 규칙에는 안 쓰고 그림만 바꾼다
   resize();
   FX.reset();
   killFeed = [];
@@ -1954,14 +1970,18 @@ Hooks.snapshot = function (prevPhase) {
 // 보낼 수도 있지만 그러려고 패킷을 늘리기는 아깝다 —
 // 화면은 물풍선이 어디 있었는지를 이미 알고 있다(bubbleTiles).
 // 제일 가까운 중심까지의 거리면 충분하다. 겹쳐 터져도 먼저 닿는 쪽을 따른다
-function centerDist(x, y) {
-  let best = 8;
-  for (const key of bubbleTiles) {
-    const c = key.split(',');
+// 이 칸이 **어느 폭발**의 것인가, 그리고 중심에서 몇 칸인가.
+//
+// 거리는 물줄기가 뻗어 나가는 연출에 쓰고, 어느 폭발인지는 물줄기를 잇는 데 쓴다.
+// 둘을 한 번에 찾는 이유는 답이 같은 물풍선 하나에서 나오기 때문이다
+function nearestBubble(x, y) {
+  let best = 8, key = '';
+  for (const k of bubbleTiles) {
+    const c = k.split(',');
     const d = Math.abs(x - (+c[0])) + Math.abs(y - (+c[1]));
-    if (d < best) best = d;
+    if (d < best) { best = d; key = k; }
   }
-  return best;
+  return { d: best, key: key };
 }
 
 Hooks.event = function (type, x, y, who, val) {
@@ -1999,11 +2019,14 @@ Hooks.event = function (type, x, y, who, val) {
       // 판정은 안 건드린다. 서버가 정한 그대로 맞는다. 그리는 시각만 칸마다 늦춘다.
       // 한 칸에 22ms 면 사거리 4가 88ms 다. 사람이 '뻗었다' 로 느끼는 최소치쯤이고
       // 반응할 시간을 주지는 않는다
-      const away = centerDist(x, y);
-      const lead = away * 22;
+      const from = nearestBubble(x, y);
+      const lead = from.d * 22;
 
       G.blasts.push({
         x: x, y: y,
+        // 어느 물풍선에서 나온 물줄기인가. 그리는 쪽이 이걸로 십자를 가른다 —
+        // 옆 폭발과 붙어 있어도 서로 안 이어진다
+        grp:   from.key,
         born:  now + lead,
         until: now + lead + (G.C.blast / G.C.tickRate) * 1000,
       });

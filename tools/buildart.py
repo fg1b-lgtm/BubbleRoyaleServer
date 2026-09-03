@@ -35,10 +35,87 @@ DIRS = ['d', 'u', 'l', 'r']          # 앞 · 뒤 · 왼 · 오
 CELL_W, CELL_H = 72, 88
 
 
-def load_pieces(sheet, expect):
+def load_grid(sheet, cols, rows):
+    """시트를 잘라 cols x rows 격자에 **자리로** 앉힌다.
+
+    전에는 잘라낸 순서대로 담았다. 개수가 96개로 맞아서 다 된 줄 알았는데,
+    조각 경계가 한 군데 어긋나 있었다. 왼쪽 걷기 셋째 프레임 자리에 오른쪽
+    걷기 첫 프레임이 들어갔고, 왼쪽으로 걸으면 세 걸음에 한 번 오른쪽을 봤다.
+    "캐릭터가 자꾸 뒤돌아본다" 가 그것이었다.
+
+    **개수가 맞는 것과 자리가 맞는 것은 다르다.** 순서로 담으면 한 군데만
+    어긋나도 그 뒤가 전부 한 칸씩 밀린다. 조각이 시트에서 있던 자리로 앉히면
+    한 군데가 틀려도 거기만 틀린다.
+
+    그리고 자리로 앉히면 **빈 칸과 겹친 칸이 보인다.** 순서로 담으면
+    안 보인다 - 개수만 세고 있었기 때문에 못 봤던 것이 이거다"""
     d = os.path.join(TMP, sheet)
-    meta = cut(os.path.join(SRC, sheet + '.png'), d, expect=expect)
-    return [Image.open(os.path.join(d, m['file'])).convert('RGBA') for m in meta]
+    meta = cut(os.path.join(SRC, sheet + '.png'), d, expect=cols)
+
+    cx = [m['x'] + m['w'] / 2.0 for m in meta]
+    cy = [m['y'] + m['h'] / 2.0 for m in meta]
+    x0, x1 = min(cx), max(cx)
+    y0, y1 = min(cy), max(cy)
+
+    grid = [[None] * cols for _ in range(rows)]
+    clash = 0
+    for m, mx, my in zip(meta, cx, cy):
+        c = int(round((mx - x0) / (x1 - x0) * (cols - 1))) if x1 > x0 else 0
+        r = int(round((my - y0) / (y1 - y0) * (rows - 1))) if y1 > y0 else 0
+        c = max(0, min(cols - 1, c))
+        r = max(0, min(rows - 1, r))
+        if grid[r][c] is not None:
+            clash += 1
+        grid[r][c] = Image.open(os.path.join(d, m['file'])).convert('RGBA')
+
+    empty = sum(1 for row in grid for v in row if v is None)
+    if clash or empty:
+        print('!! %s : 한 자리에 두 조각 %d개, 빈 자리 %d개 (조각 %d개)'
+              % (sheet, clash, empty, len(meta)))
+    return grid
+
+
+def _diff(a, b):
+    """두 조각이 얼마나 다른가. 0 이면 같은 그림이다"""
+    n = 48
+    a = a.resize((n, n), Image.BOX).convert('L')
+    b = b.resize((n, n), Image.BOX).convert('L')
+    pa, pb = a.load(), b.load()
+    s = 0
+    for y in range(n):
+        for x in range(n):
+            d = pa[x, y] - pb[x, y]
+            s += d if d > 0 else -d
+    return s / float(n * n)
+
+
+def check_facing(pieces):
+    """왼쪽 걷기 세 프레임이 정말 다 왼쪽을 보나.
+
+    개수만 세고 있었더니 한 프레임이 반대쪽에서 온 걸 못 잡았다.
+    왼쪽으로 걸으면 세 걸음에 한 번 오른쪽을 봤고, 손으로는 "캐릭터가 자꾸
+    뒤돌아본다" 로 느껴졌다. 화면 코드를 아무리 봐도 안 나오는 종류의 버그다.
+
+    같은 방향 세 프레임은 서로 닮았고, 반대 방향과는 덜 닮는다.
+    셋 중 하나가 제 식구보다 반대쪽과 더 닮으면 그 자리가 틀린 것이다"""
+    d = dict(pieces)
+    bad = []
+    for name in sorted(set(k.rsplit('_', 1)[0] for k in d)):
+        for face, other in (('l', 'r'), ('r', 'l')):
+            f = [d.get('%s_%s%d' % (name, face, i)) for i in range(3)]
+            o = [d.get('%s_%s%d' % (name, other, i)) for i in range(3)]
+            if any(v is None for v in f + o):
+                continue
+            for i in range(3):
+                mine  = min(_diff(f[i], f[j]) for j in range(3) if j != i)
+                theirs = min(_diff(f[i], o[j]) for j in range(3))
+                if theirs < mine:
+                    bad.append('%s_%s%d' % (name, face, i))
+
+    if bad:
+        print('!! 방향이 뒤바뀐 프레임 %d개: %s' % (len(bad), ', '.join(bad[:8])))
+    else:
+        print('걷기 프레임 방향 확인: 스물넷 다 제자리다')
 
 
 def main():
@@ -46,18 +123,18 @@ def main():
 
     # ── 캐릭터 ───────────────────────────────────────────────
     for si, sheet in enumerate(['walk_a', 'walk_b', 'walk_c']):
-        imgs = load_pieces(sheet, 12)
-        if len(imgs) != 96:
-            print('!! %s 가 96칸이 아니다 (%d)' % (sheet, len(imgs)))
+        grid = load_grid(sheet, 12, 8)
         for row in range(8):
             name = NAMES[si][row]
             for col in range(12):
-                k = row * 12 + col
-                if k >= len(imgs):
+                im = grid[row][col]
+                if im is None:
                     continue
                 d = DIRS[col // 3]
                 f = col % 3
-                pieces.append(('%s_%s%d' % (name, d, f), imgs[k]))
+                pieces.append(('%s_%s%d' % (name, d, f), im))
+
+    check_facing(pieces)
 
     size, n = build(pieces,
                     os.path.join(OUT, 'chars.png'),
@@ -80,7 +157,9 @@ def main():
         'balloon2':   1,    # 더 부풀었다
         'balloon_hot': 2,   # 곧 터진다 (빨강)
     }
-    imgs = load_pieces('water', 0)
+    d = os.path.join(TMP, 'water')
+    meta = cut(os.path.join(SRC, 'water.png'), d)
+    imgs = [Image.open(os.path.join(d, m['file'])).convert('RGBA') for m in meta]
 
     # 비율을 지킨다. 늘리면 찌그러진 풍선이 된다
     fx = [(k, imgs[v]) for k, v in WATER.items() if v < len(imgs)]
@@ -161,6 +240,27 @@ def is_floor(name):
     return False
 
 
+def _foot_width(im):
+    """맨 아랫부분의 폭. 이 물건이 칸을 얼마나 차지하나.
+
+    아래 12% 줄에서 제일 넓은 폭을 쓴다. 한 줄만 보면 그림자나 풀 한 포기에
+    휘둘리고, 너무 많이 보면 나무 잎까지 들어온다"""
+    w, h = im.size
+    px = im.load()
+    band = max(1, int(h * 0.12))
+    best = 0
+    for y in range(h - band, h):
+        x0, x1 = None, None
+        for x in range(w):
+            if px[x, y][3] >= 128:
+                if x0 is None:
+                    x0 = x
+                x1 = x
+        if x0 is not None and x1 - x0 + 1 > best:
+            best = x1 - x0 + 1
+    return best if best > 0 else w
+
+
 def build_tiles():
     src = os.path.join(OUT, 'tiles')
     if not os.path.isdir(src):
@@ -183,8 +283,18 @@ def build_tiles():
             mx = int(im.width * FLOOR_TRIM), int(im.height * FLOOR_TRIM)
             im = im.crop((mx[0], mx[1], im.width - mx[0], im.height - mx[1]))
 
+        # **발자국 폭**으로 크기를 잡는다. 그림 전체 폭이 아니다.
+        #
+        # 나무는 잎이 바닥보다 넓다. 그림 폭을 한 칸으로 잡으면 잎이 한 칸이
+        # 되고 바닥 잔디는 0.77칸이 된다. 그러면 구조물마다 둘레에 바닥이
+        # 비어 보이고, 구조물이 자기 잔디를 깔고 그 위에 앉은 것처럼 보인다.
+        #
+        # 칸을 차지하는 건 바닥이지 잎이 아니다. 맨 아랫부분의 폭을 재서
+        # 그게 한 칸이 되게 맞춘다. 잎은 그만큼 옆 칸으로 넘어가는데,
+        # 살짝 위에서 보는 그림에서는 그게 맞다
         tw = TILE_WIDE.get(name, 1)
-        w = TILE_W * tw
+        foot = _foot_width(im)
+        w = max(1, round(im.width * TILE_W * tw / foot))
         h = max(1, round(im.height * w / im.width))
 
         small = im.resize((w, h), Image.BOX)

@@ -414,8 +414,11 @@ console.log('=== 그림 타일 이름 ===');
 
     for (const th of Art.PLACES) {
       if (!th.tiles) continue;
-      for (const n of [th.tiles.floor].concat(th.tiles.wall, th.tiles.crate,
-                                               th.tiles.big || [])) {
+      const extra = [th.tiles.floor];
+      if (th.tiles.water)  extra.push(th.tiles.water);
+      if (th.tiles.bridge) extra.push(th.tiles.bridge);
+      for (const n of extra.concat(th.tiles.wall, th.tiles.crate,
+                                   th.tiles.push || [], th.tiles.big || [])) {
         ++used;
         if (!have.has(n)) missing.push(th.name + ' : ' + n);
       }

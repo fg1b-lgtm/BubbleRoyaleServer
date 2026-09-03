@@ -137,11 +137,17 @@ static void SendWelcome(Session* s, int slot)
 
     // 판을 한 줄씩. 한 패킷에 다 담으면 한도를 넘는다
     for (int y = 0; y < MAP_H; ++y) {
-        // 타일 · 아이템 · 길, 세 줄이 붙는다.
+        // 타일 · 아이템 · 길 · 겉모습, 네 줄이 붙는다.
         //
         // 길은 조각을 그릴 때 '반드시 통로' 로 그은 자리다. 화면이 바닥에
-        // 흙길을 그리는 데 쓴다. 한 번만 보내면 되고 판당 1.7KB 다
-        char row[HEADER_SIZE + sizeof(MapRowHead) + 3 * MAP_W];
+        // 흙길을 그리는 데 쓴다.
+        //
+        // 겉모습은 **같은 벽인데 다르게 보여야 하는 것**을 말한다. 강은 규칙에서
+        // 그냥 벽이고, 이 줄이 "그 벽은 물로 그려라" 만 말한다. 규칙에 강을
+        // 넣으면 지나갈 수 있나를 두 군데서 보게 된다.
+        //
+        // 한 번만 보내면 되고 판당 2.2KB 다
+        char row[HEADER_SIZE + sizeof(MapRowHead) + 4 * MAP_W];
         int  len = (int)sizeof(row);
 
         PacketHeader rh;
@@ -154,11 +160,13 @@ static void SendWelcome(Session* s, int slot)
         char* tiles = row + HEADER_SIZE + sizeof(MapRowHead);
         char* items = tiles + MAP_W;
         char* lanes = items + MAP_W;
+        char* looks = lanes + MAP_W;
 
         for (int x = 0; x < MAP_W; ++x) {
             tiles[x] = (char)g_game.map.tile[y][x];
             items[x] = (char)g_game.item[y][x];
             lanes[x] = (char)(g_game.map.street[y][x] ? 1 : 0);
+            looks[x] = (char)g_game.map.look[y][x];
         }
 
         SendPacket(s, row, len);
@@ -801,6 +809,13 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "fast") == 0) {
             flood_scale = 10;
+        }
+        // 조각 하나를 아홉 자리에 다 깐다. 새로 그린 조각을 눈으로 볼 때 쓴다
+        else if (strcmp(argv[i], "piece") == 0 && i + 1 < argc) {
+            g_force_piece = atoi(argv[++i]);
+            printf("[Map] piece %d (%s) 를 아홉 자리에 다 깐다\n", g_force_piece,
+                   (g_force_piece >= 0 && g_force_piece < SECTOR_TEMPLATE_COUNT)
+                   ? SECTOR_TEMPLATES[g_force_piece].name : "?");
         }
         else if (strcmp(argv[i], "aoi") == 0 && i + 1 < argc) {
             g_aoi_on = (atoi(argv[++i]) != 0);

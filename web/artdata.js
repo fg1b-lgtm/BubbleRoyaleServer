@@ -56,7 +56,9 @@ const ART_DATA = (() => {
       tiles: { floor: 'grass',
                wall:  ['tree', 'stone', 'bush'],
                big:   ['house', 'well'],
-               crate: ['crate_plain', 'crate_x'] },
+               crate: ['crate_plain'],      // 부서지는 것
+               push:  ['crate_x'],          // 밀리는 것. X 가 그려져 있다
+               water: 'water_06', bridge: 'bridge_h' },
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
@@ -76,7 +78,9 @@ const ART_DATA = (() => {
       tiles: { floor: 'desert_sand_02',
                wall:  ['desert_stone_round', 'desert_sand_block', 'desert_cactus_pot3'],
                big:   ['desert_house_red', 'desert_house_blue', 'desert_market'],
-               crate: ['desert_crate', 'desert_barrel1', 'desert_star_crate'] },
+               crate: ['desert_crate', 'desert_barrel1'],
+               push:  ['desert_star_crate'],
+               water: 'desert_water_06', bridge: 'desert_bridge_h' },
       step: 'sand' },
 
     // 9/2 에 색을 다시 잡았다. 광장과 색거리가 8.4 밖에 안 나왔다 —

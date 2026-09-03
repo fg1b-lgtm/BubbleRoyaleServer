@@ -209,150 +209,96 @@ async function peek() {
     await sleep(700);
     await shot('02-걷는중');
 
-    // ── 걸음이 매끄러운가 ───────────────────────────────────
+    // ── 한 쪽으로 쭉 걸어본다 ───────────────────────────────
     //
-    // 서버는 30Hz 로 돌고 화면은 60fps 다. 틱마다만 자리를 옮기면 한 프레임은
-    // 뛰고 다음 프레임은 제자리라 덜덜 떤다. 눈으로는 '버벅인다' 로만 느껴지고
-    // 원인을 못 짚는다. **프레임마다 몇 units 갔는지**를 재면 바로 나온다.
+    // 세 가지를 한 번에 잰다. 셋 다 "키를 누르고 있는 동안 화면이 어떻게
+    // 그려지나" 라서, 따로 재면 같은 일을 두 번 하고 시간도 두 배로 든다.
     //
-    // 고르면 걸음 간격이 다 비슷하고, 틱마다 뛰면 0 과 큰 값이 번갈아 나온다.
+    //   ① 걸음이 고른가   서버는 30Hz, 화면은 60fps 다. 틱마다만 옮기면
+    //                     한 프레임 뛰고 한 프레임 서서 덜덜 떤다
+    //   ② 보는 쪽이 안 흔들리나  한 쪽만 누르는데 캐릭터가 뒤돌아본다는 신고
+    //   ③ 옆으로 안 밀리나      눌린 축 말고 다른 축으로 움직이면 조작이 안 먹는 것이다
     //
-    // **화면에 실제로 그려진 자리**를 읽는다. 전에는 Predict.view(0) 을 읽었는데,
-    // 0 은 정의상 틱 시작 자리라 보간이 되든 안 되든 틱마다 한 번만 바뀐다.
-    // 99프레임 중 56이 제자리라는 숫자가 나왔지만 그건 화면 얘기가 아니라
-    // 재는 법 얘기였다. 재는 자리가 틀리면 숫자가 거짓말을 한다 - 두 번째다
-    //
-    // 막힌 쪽이면 안 움직인 게 맞고, 그건 화면 얘기가 아니다.
-    // 사방을 돌아가며 눌러서 **실제로 걸은 방향**으로 잰다
+    // **화면이 실제로 그린 값**을 읽는다. 예측기 안쪽 값을 읽으면 그림이
+    // 어떻든 늘 같은 수가 나온다 - 그걸로 두 번 속았다
     {
-      const SAMPLE = [
+      const PROBE = [
         'new Promise(function(done){',
-        '  var xs = [], n = 0;',
+        '  var f = [], xs = [], ys = [], n = 0;',
         '  function step(){',
-        '    if (typeof drawnX !== "undefined") xs.push(drawnX);',
+        '    f.push(typeof drawnFace !== "undefined" ? drawnFace : -1);',
+        '    xs.push(typeof drawnX !== "undefined" ? drawnX : 0);',
+        '    ys.push(typeof drawnY !== "undefined" ? drawnY : 0);',
         '    if (++n < 100) requestAnimationFrame(step);',
-        '    else done(JSON.stringify(xs));',
+        '    else done(JSON.stringify({f:f, x:xs, y:ys}));',
         '  }',
         '  requestAnimationFrame(step);',
         '})',
       ].join('');
 
-      // 걷다가 벽에 붙으면 거기서부터는 안 움직이는 게 맞다. 그 구간을 같이 세면
+      // 걷다가 벽에 붙으면 거기부터 안 움직이는 게 맞다. 그 구간을 같이 세면
       // 화면이 버벅이는 것으로 잡힌다 - 실제로 84/99 라는 숫자가 그렇게 나왔다.
-      // **쭉 걸은 구간**만 잘라서 본다
-      let best = null;
-      for (const [k, c] of [['d','KeyD'], ['s','KeyS'], ['a','KeyA'], ['w','KeyW']]) {
-        await keyDown(k, c);
-        await sleep(300);
-
-        const r = await cdp('Runtime.evaluate', {
-          expression: SAMPLE, awaitPromise: true, returnByValue: true,
-        });
-        await keyUp(k, c);
-
-        let xs = [];
-        try { xs = JSON.parse(r.result.value || '[]'); } catch (e) { /* 없다 */ }
-
-        const d = [];
-        for (let i = 1; i < xs.length; ++i) d.push(Math.abs(xs[i] - xs[i - 1]));
-
-        // 안 움직인 프레임이 세 번 이어지면 거기서 끊긴 것으로 본다.
-        // 한두 프레임 쉬는 건 보간이 아직 다음 칸을 안 넘은 것일 수 있다
+      // 쭉 걸은 구간만 잘라서 본다
+      const longest = (d) => {
         let run = [], cur = [], gap = 0;
         for (const v of d) {
           if (v > 0.01) { gap = 0; cur.push(v); }
           else if (++gap >= 3) { if (cur.length > run.length) run = cur; cur = []; }
           else cur.push(v);
         }
-        if (cur.length > run.length) run = cur;
+        return cur.length > run.length ? cur : run;
+      };
 
-        if (!best || run.length > best.run.length) best = { k, run };
-        if (best.run.length > 60) break;          // 넉넉히 걸었다. 더 안 봐도 된다
+      let best = null;
+      for (const [k, c, axis] of [['d','KeyD',0], ['s','KeyS',1],
+                                  ['a','KeyA',0], ['w','KeyW',1]]) {
+        await keyDown(k, c);
+        await sleep(250);
+        const r = await cdp('Runtime.evaluate', {
+          expression: PROBE, awaitPromise: true, returnByValue: true,
+        });
+        await keyUp(k, c);
+
+        let v = null;
+        try { v = JSON.parse(r.result.value || 'null'); } catch (e) { /* 없다 */ }
+        if (!v) continue;
+
+        const main = axis === 0 ? v.x : v.y;
+        const side = axis === 0 ? v.y : v.x;
+
+        const step = [], drift = [];
+        for (let i = 1; i < main.length; ++i) {
+          step.push(Math.abs(main[i] - main[i - 1]));
+          drift.push(Math.abs(side[i] - side[i - 1]));
+        }
+        const run = longest(step);
+        if (!best || run.length > best.run.length) {
+          best = { k, run, face: v.f, drift };
+        }
+        if (best.run.length > 60) break;        // 넉넉히 걸었다. 더 안 봐도 된다
       }
 
       if (best && best.run.length > 8) {
-        const run = best.run;
-        const move = run.filter((v) => v > 0.01);
+        const move = best.run.filter((v) => v > 0.01);
         const avg = move.reduce((a, b) => a + b, 0) / move.length;
         const dev = Math.sqrt(move.reduce((a, b) => a + (b - avg) * (b - avg), 0)
                               / move.length);
-        console.log('  걸음(' + best.k + '): 쭉 걸은 ' + run.length + '프레임 중 '
-                    + '안 움직인 프레임 ' + (run.length - move.length)
+        let flips = 0;
+        for (let i = 1; i < best.face.length; ++i)
+          if (best.face[i] !== best.face[i - 1]) ++flips;
+        const drift = best.drift.reduce((a, b) => a + b, 0);
+
+        console.log('  한 쪽으로 쭉(' + best.k + '): 걸은 ' + best.run.length
+                    + '프레임 중 안 움직인 프레임 ' + (best.run.length - move.length)
                     + ',  한 프레임에 ' + avg.toFixed(2) + 'px'
-                    + ',  들쭉날쭉 ' + dev.toFixed(2)
-                    + '  (안 움직인 프레임이 많거나 들쭉날쭉하면 버벅인다)');
+                    + ',  들쭉날쭉 ' + dev.toFixed(2));
+        console.log('    보는 쪽이 바뀐 횟수 ' + flips + ' (0 이어야 한다),'
+                    + '  옆으로 밀린 거리 ' + drift.toFixed(1) + 'px');
       } else {
-        console.log('  걸음: 사방이 막혔거나 죽었다');
+        console.log('  한 쪽으로 쭉: 사방이 막혔거나 죽었다');
       }
     }
 
-    await keyUp('d', 'KeyD');
-
-    // 물풍선을 놓고 도망친다. 터지는 걸 봐야 한다
-    await keyDown(' ', 'Space'); await sleep(60); await keyUp(' ', 'Space');
-    await sleep(120);
-    await shot('03-물풍선-놓음');
-
-    await keyDown('a', 'KeyA'); await sleep(900); await keyUp('a', 'KeyA');
-    await sleep(1500);
-    await shot('04-터지는-순간');
-    await sleep(400);
-    await shot('05-터진-직후');
-
-    // 조금 돌아다니다가 아래로. 구역을 넘으면 카메라가 바뀐다
-    await keyDown('s', 'KeyS'); await sleep(2500); await keyUp('s', 'KeyS');
-    await shot('06-아래로-이동');
-
-    // ── 확대해서 그림을 본다 ──────────────────────────────────
-    const w0 = await where();
-    console.log('  캔버스 ' + Math.round(w0.cw) + 'x' + Math.round(w0.ch)
-                + ', 타일 ' + w0.ts + 'px');
-
-    // HUD 왼쪽 위와 가운데. 글자가 겹치는지는 키워야 보인다
-    await zoom('z1-HUD왼쪽', w0.cx, w0.cy, 520, 100, 3);
-    await zoom('z2-HUD가운데', w0.cx + w0.cw / 2 - 200, w0.cy, 400, 100, 3);
-
-    // 판 한가운데. 캐릭터와 상자와 바닥이 같이 들어온다
-    await zoom('z3-판가운데', w0.cx + w0.cw / 2 - 130, w0.cy + w0.ch / 2 - 100, 260, 200, 4);
-
-    // 아이템 패널
-    await zoom('z4-아이템패널', w0.cx + w0.cw / 2 - 130, w0.cy + w0.ch - 90, 260, 90, 4);
-
-    st = await peek();
-    console.log('  ' + JSON.stringify(st));
-
-    // 침수까지 기다린다 (fast 면 첫 예고가 6초, 첫 침수가 9초쯤)
-    await sleep(12000);
-    await shot('07-침수');
-    st = await peek();
-    console.log('  ' + JSON.stringify(st));
-
-    await sleep(15000);
-    await shot('08-후반');
-    st = await peek();
-    console.log('  ' + JSON.stringify(st));
-
-    // ── 한 판의 흐름을 따라간다 ─────────────────────────────
-    //
-    // 연출 하나하나가 좋아도 **판 전체가 지루하면 안 한다.**
-    // 사람이 실제로 겪는 순서대로 찍어둔다 —
-    // 접속 · 시작 · 중반 · 압박 · 끝 · 그다음.
-    // 특히 '그다음' 이 중요하다. 한 판 더 하게 만드는 자리가 거기다
-    {
-      const beats = [
-        ['b1-중반',   6000],
-        ['b2-압박',  10000],
-        ['b3-후반',  12000],
-        ['b4-끝',    12000],
-        ['b5-그다음', 8000],
-      ];
-      for (const [name, wait] of beats) {
-        await sleep(wait);
-        await shot(name);
-        const st = await peek();
-        console.log('    ' + name + '  ' + JSON.stringify(st));
-      }
-    }
 
     // ── 키를 누르고 화면이 움직이기까지 ─────────────────────
     //

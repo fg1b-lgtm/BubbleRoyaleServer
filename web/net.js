@@ -15,6 +15,9 @@ const EVT  = { GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBB
 const TILE = { EMPTY:0, WALL:1, BLOCK:2, BUBBLE:3, BOX:4 };
 const ITEM = { NONE:0, BUBBLE:1, POWER:2, ROLLER:3, ULTRA:4 };
 
+// 칸의 겉모습. Common/GameConstants.h 의 TileLook 과 같아야 한다
+const LOOK = { PLAIN:0, WATER:1, BRIDGE:2 };
+
 // 스냅샷에서 한 사람이 차지하는 바이트. Protocol.h 의 PlayerState 와 같아야 한다.
 //
 // 여기저기 12 라고 적어뒀더니 대쉬 한 바이트를 빼는 데 파일 세 개를 고쳐야 했다.
@@ -127,6 +130,10 @@ function onWelcome(v) {
   // 규칙에는 안 쓴다 — 판정은 tiles 로만 한다
   G.lanes = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));
 
+  // 칸의 겉모습. 규칙에는 안 쓴다 - 강은 규칙에서 그냥 벽이고,
+  // 이 값이 "그 벽은 물로 그려라" 만 말한다
+  G.look = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));
+
   Hooks.welcome();
 }
 
@@ -139,6 +146,8 @@ function onMapRow(v) {
   for (let x = 0; x < G.C.mapW; ++x) G.items[y][x] = v.getUint8(o + x);
   o += G.C.mapW;
   for (let x = 0; x < G.C.mapW; ++x) G.lanes[y][x] = v.getUint8(o + x);
+  o += G.C.mapW;
+  for (let x = 0; x < G.C.mapW; ++x) G.look[y][x] = v.getUint8(o + x);
   Hooks.mapRow(y);
 }
 

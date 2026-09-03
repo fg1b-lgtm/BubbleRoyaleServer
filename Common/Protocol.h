@@ -178,7 +178,11 @@ struct WelcomeBody
 //
 // 45 x 39 를 한 패킷에 담으면 3510 바이트라 MAX_PACKET_SIZE 를 넘는다.
 // 한계를 올리는 대신 줄 단위로 쪼갠다. 크기 검사를 느슨하게 만들지 않으려는 것이다.
-// 뒤에 tiles[map_w] 와 items[map_w] 가 이어 붙는다
+// 뒤에 네 줄이 이어 붙는다 - tiles · items · lanes · looks. 전부 map_w 칸씩이다.
+//   tiles  판정에 쓰는 것. 빈칸 · 벽 · 블록 · 상자
+//   items  바닥에 놓인 아이템
+//   lanes  조각이 '반드시 통로' 로 그은 자리. 화면이 흙길을 그리는 데 쓴다
+//   looks  같은 벽인데 다르게 보여야 하는 것 (TileLook). 강 · 다리
 struct MapRowHead
 {
     uint8_t y;

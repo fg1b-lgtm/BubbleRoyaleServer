@@ -263,3 +263,82 @@ if __name__ == '__main__':
     print('%d 조각' % len(m))
     for b in m[:8]:
         print('  %s  %dx%d  (%d,%d)' % (b['file'], b['w'], b['h'], b['x'], b['y']))
+
+
+def cut_grid_even(path, out_dir, cols, rows, alpha_min=ALPHA_MIN):
+    """알맹이가 든 네모를 cols x rows 로 등분한다.
+
+    덩어리로 자르면 걷기 시트가 **한 칸씩 밀렸다.** 96조각이 나와서 됐다고
+    봤는데, 조각 경계가 한 군데 어긋나서 왼쪽 걷기 셋째 프레임 자리에
+    오른쪽 걷기 첫 프레임이 들어갔다. 왼쪽으로 걸으면 세 걸음에 한 번
+    오른쪽을 보는 게 그것이었다.
+
+    시트가 반듯한 격자면 등분이 제일 안전하다. 덩어리 찾기는 팔이 옆 칸에
+    닿거나 그림자가 이어지면 언제든 어긋난다 - 어긋나도 개수는 맞아서
+    **틀린 걸 개수로는 못 잡는다.**
+
+    등분한 뒤 각 칸에서 알맹이만 다시 오려내므로 몇 픽셀 어긋나도 괜찮다"""
+    im = Image.open(path).convert('RGBA')
+    bb = im.getbbox()
+    if not bb:
+        return []
+    x0, y0, x1, y1 = bb
+    cw = (x1 - x0) / cols
+    ch = (y1 - y0) / rows
+
+    os.makedirs(out_dir, exist_ok=True)
+    meta = []
+    for r in range(rows):
+        for c in range(cols):
+            a0 = int(x0 + c * cw); a1 = int(x0 + (c + 1) * cw)
+            b0 = int(y0 + r * ch); b1 = int(y0 + (r + 1) * ch)
+            sub = im.crop((a0, b0, a1, b1))
+            box = _center_blob(sub, alpha_min)
+            if not box:
+                continue
+            sub = sub.crop(box)
+            name = 'r%02dc%02d.png' % (r, c)
+            sub.save(os.path.join(out_dir, name))
+            meta.append({'file': name, 'row': r, 'col': c,
+                         'w': sub.width, 'h': sub.height})
+    return meta
+
+
+def _center_blob(im, alpha_min):
+    """칸 가운데에 붙어 있는 덩어리만 남긴다.
+
+    등분한 칸에는 옆 칸 그림이 몇 픽셀 딸려 들어온다. 칸 경계가 딱 떨어지지
+    않기 때문이다. 그대로 getbbox 를 하면 그 부스러기까지 품어서 조각이
+    옆으로 늘어나고, 아틀라스에 담을 때 캐릭터가 한쪽으로 쏠린다.
+
+    빈 줄로 끊어서 **가운데를 품은 토막**만 고른다. 부스러기는 사이에 빈 줄이
+    있어서 다른 토막이 된다"""
+    W, H = im.size
+    px = im.load()
+
+    def runs(n, filled):
+        out, s = [], None
+        for i in range(n):
+            if filled(i):
+                if s is None:
+                    s = i
+            elif s is not None:
+                out.append((s, i - 1)); s = None
+        if s is not None:
+            out.append((s, n - 1))
+        return out
+
+    cols = runs(W, lambda x: any(px[x, y][3] >= alpha_min for y in range(H)))
+    if not cols:
+        return None
+    cx = W // 2
+    span = next((c for c in cols if c[0] <= cx <= c[1]), None)
+    if span is None:                       # 가운데가 비었다. 제일 넓은 토막
+        span = max(cols, key=lambda c: c[1] - c[0])
+    x0, x1 = span
+
+    rows = runs(H, lambda y: any(px[x, y][3] >= alpha_min for x in range(x0, x1 + 1)))
+    if not rows:
+        return None
+    y0, y1 = rows[0][0], rows[-1][1]
+    return (x0, y0, x1 + 1, y1 + 1)

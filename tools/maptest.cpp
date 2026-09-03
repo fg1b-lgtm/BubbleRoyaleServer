@@ -400,6 +400,120 @@ static void Sweep()
     printf("  파는 깊이는 스폰에서 밖으로 나가기까지 부숴야 하는 블록 겹 수다.\n\n");
 }
 
+
+// ── 조각 하나하나가 약속을 지키나 ────────────────────────────
+//
+// SectorTemplates.h 맨 위에 약속 넷을 적어놨는데, 지키는지는 사람이 눈으로
+// 봤다. 조각이 열 개일 때는 됐다. 서른한 개가 되니 안 된다 -
+// 실제로 판을 스무 개 새로 그릴 때 열넷이 약속을 어겼다.
+//
+// 적어둔 규칙은 재기 전까지 규칙이 아니라 바람이다
+static void TemplatePromises()
+{
+    printf("\n--- 조각 약속 (조각 %d개) ---\n", SECTOR_TEMPLATE_COUNT);
+
+    int bad_gate = 0, bad_link = 0, bad_spawn = 0, bad_split = 0;
+    int spawn_total = 0;
+    const char* first_bad = nullptr;
+
+    for (int t = 0; t < SECTOR_TEMPLATE_COUNT; ++t) {
+        const SectorTemplate& T = SECTOR_TEMPLATES[t];
+
+        // 관문 네 곳. 좌우로 뒤집으면 좌우가, 위아래로 뒤집으면 위아래가
+        // 자리를 바꾸므로 어느 쪽으로 뒤집어도 관문은 관문이다
+        const int GATE[4][2] = { { SECTOR_W / 2, 0 }, { SECTOR_W / 2, SECTOR_H - 1 },
+                                 { 0, SECTOR_H / 2 }, { SECTOR_W - 1, SECTOR_H / 2 } };
+
+        // 글자 뜻. ~ 는 규칙으로 벽이고 = 은 규칙으로 길이다.
+        // 겉모습만 다른 것이라 여기서는 # 과 . 으로 취급한다
+        // (SectorTemplates.h 맨 위 설명과 같아야 한다)
+
+        // 1) 관문이 길인가
+        bool gate_ok = true;
+        for (int i = 0; i < 4; ++i) {
+            char c = T.row[GATE[i][1]][GATE[i][0]];
+            if (c != '.' && c != 's' && c != '=') gate_ok = false;
+        }
+        if (!gate_ok) { ++bad_gate; if (!first_bad) first_bad = T.name; }
+
+        // 2) 스폰이 안쪽에 있나. 가장자리에 붙이면 옆 조각 스폰과 세 칸이 된다
+        int spawns = 0;
+        bool spawn_ok = true;
+        for (int y = 0; y < SECTOR_H; ++y) {
+            for (int x = 0; x < SECTOR_W; ++x) {
+                if (T.row[y][x] != 's') continue;
+                ++spawns;
+                if (x < 3 || x > SECTOR_W - 4 || y < 3 || y > SECTOR_H - 4) spawn_ok = false;
+            }
+        }
+        spawn_total += spawns;
+        if (!spawn_ok || spawns == 0) { ++bad_spawn; if (!first_bad) first_bad = T.name; }
+
+        // 3) 길(.와 s)만으로 관문 넷과 스폰이 전부 이어지나.
+        //    블록이 최악으로 깔려도 시작하자마자 안 갇힌다는 뜻이다
+        bool lane[SECTOR_H][SECTOR_W] = {};
+        bool seen[SECTOR_H][SECTOR_W] = {};
+        for (int y = 0; y < SECTOR_H; ++y)
+            for (int x = 0; x < SECTOR_W; ++x)
+                lane[y][x] = (T.row[y][x] == '.' || T.row[y][x] == 's'
+                              || T.row[y][x] == '=');
+
+        int qx[SECTOR_W * SECTOR_H], qy[SECTOR_W * SECTOR_H], qn = 0;
+        qx[qn] = GATE[0][0]; qy[qn] = GATE[0][1]; ++qn;
+        seen[GATE[0][1]][GATE[0][0]] = true;
+        for (int h = 0; h < qn; ++h) {
+            for (int d = 0; d < 4; ++d) {
+                int nx = qx[h] + DX[d], ny = qy[h] + DY[d];
+                if (nx < 0 || ny < 0 || nx >= SECTOR_W || ny >= SECTOR_H) continue;
+                if (!lane[ny][nx] || seen[ny][nx]) continue;
+                seen[ny][nx] = true;
+                qx[qn] = nx; qy[qn] = ny; ++qn;
+            }
+        }
+        bool link_ok = true;
+        for (int i = 0; i < 4; ++i) if (!seen[GATE[i][1]][GATE[i][0]]) link_ok = false;
+        for (int y = 0; y < SECTOR_H; ++y)
+            for (int x = 0; x < SECTOR_W; ++x)
+                if (T.row[y][x] == 's' && !seen[y][x]) link_ok = false;
+        if (!link_ok) { ++bad_link; if (!first_bad) first_bad = T.name; }
+
+        // 4) 벽으로 갈라진 칸이 없나. 벽이 아닌 칸이 전부 한 덩어리여야 한다
+        bool vis[SECTOR_H][SECTOR_W] = {};
+        int open_n = 0, sx = -1, sy = -1;
+        for (int y = 0; y < SECTOR_H; ++y) {
+            for (int x = 0; x < SECTOR_W; ++x) {
+                if (T.row[y][x] == '#' || T.row[y][x] == '~') continue;
+                ++open_n;
+                if (sx < 0) { sx = x; sy = y; }
+            }
+        }
+        qn = 0; qx[qn] = sx; qy[qn] = sy; ++qn;
+        vis[sy][sx] = true;
+        int reach = 1;
+        for (int h = 0; h < qn; ++h) {
+            for (int d = 0; d < 4; ++d) {
+                int nx = qx[h] + DX[d], ny = qy[h] + DY[d];
+                if (nx < 0 || ny < 0 || nx >= SECTOR_W || ny >= SECTOR_H) continue;
+                if (T.row[ny][nx] == '#' || T.row[ny][nx] == '~'
+                    || vis[ny][nx]) continue;
+                vis[ny][nx] = true; ++reach;
+                qx[qn] = nx; qy[qn] = ny; ++qn;
+            }
+        }
+        if (reach != open_n) { ++bad_split; if (!first_bad) first_bad = T.name; }
+    }
+
+    printf("  스폰 %d개 (조각당 %d.%d)\n", spawn_total,
+           spawn_total / SECTOR_TEMPLATE_COUNT,
+           (spawn_total * 10 / SECTOR_TEMPLATE_COUNT) % 10);
+    if (first_bad) printf("  처음 어긴 조각: %s\n", first_bad);
+
+    Check(bad_gate == 0,  "조각마다 관문 네 곳이 길이다");
+    Check(bad_link == 0,  "길만으로 관문 넷과 스폰이 전부 이어진다");
+    Check(bad_spawn == 0, "스폰이 조각 가장자리 세 칸 안쪽에 있다");
+    Check(bad_split == 0, "벽으로 갈라져 못 가는 칸이 없다");
+}
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -497,6 +611,8 @@ int main(int argc, char** argv)
     printf("\n--- 공정성 ---\n");
     printf("  스폰 주변(반경3) 블록 수 차이: 최대 %d 개\n", spread_max);
     printf("  제일 가까운 두 스폰: %d 칸 (씨앗 %u)\n", gap_min, gap_seed);
+
+    TemplatePromises();
 
     printf("\n--- 판정 ---\n");
     Check(death == 0,

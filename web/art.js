@@ -185,6 +185,14 @@ const Art = (() => {
   // 서버가 맵 줄에 실어 보낸다. 규칙에는 안 쓰고 바닥을 그리는 데만 쓴다 —
   // 판정은 언제나 타일로만 한다
   let laneGrid = null;
+  // 칸의 겉모습. 서버가 MAPROW 로 보내준다. 규칙에는 안 쓴다 -
+  // 강은 규칙에서 그냥 벽이고, 이 값이 "그 벽은 물로 그려라" 만 말한다
+  let LOOKS = null;
+  function setLooks(g) { LOOKS = g; }
+  function lookAt(x, y) {
+    return (LOOKS && LOOKS[y]) ? LOOKS[y][x] : 0;
+  }
+
   function setLanes(g) { laneGrid = g; }
   function isLane(x, y) {
     if (!laneGrid || y < 0 || x < 0) return false;
@@ -297,7 +305,11 @@ const Art = (() => {
 
         // 그림 타일이 있는 장소는 그림을 깐다. 색으로 찍은 바닥은 그다음이다
         if (th.tiles && atlases.tiles) {
-          const cv = bakeTileSprite(th.tiles.floor, T);
+          // 다리는 빈칸인데 잔디가 아니다. 여기가 강을 건너는 자리라는 걸
+          // 바닥이 말해줘야 물풍선으로 막을 자리가 보인다
+          const name = (lookAt(x, y) === 2 && th.tiles.bridge)
+                       ? th.tiles.bridge : th.tiles.floor;
+          const cv = bakeTileSprite(name, T);
           if (cv) {
             g.imageSmoothingEnabled = false;
             g.drawImage(cv, 0, 0, cv.width, cv.height, x * T, y * T, T, T);
@@ -792,6 +804,19 @@ const Art = (() => {
 
     const place = placeAt(x, y);
 
+    // 강. 규칙으로는 벽인데 물로 그린다.
+    //
+    // 물은 위로 안 솟는다. 칸에 딱 맞게 깐다 - 강이 벽처럼 높이를 가지면
+    // 건널 수 있는 다리가 어디인지가 안 읽힌다
+    if (lookAt(x, y) === 1 && place.tiles && atlases.tiles && place.tiles.water) {
+      const cv = bakeTileSprite(place.tiles.water, T);
+      if (cv) {
+        g.imageSmoothingEnabled = false;
+        g.drawImage(cv, 0, 0, cv.width, cv.height, px, py, T, T);
+        return;
+      }
+    }
+
     // 그림 타일이 있는 장소. 도트로 찍는 길을 아예 안 탄다
     if (place.tiles && atlases.tiles) {
       const wall4 = (xx, yy) => (yy < 0 || yy >= tiles.length || xx < 0 || xx >= W)
@@ -827,21 +852,22 @@ const Art = (() => {
         }
       }
 
-      const set = t === 1 ? place.tiles.wall : place.tiles.crate;
+      // 밀 수 있는 상자는 **그림이 다르다.** 덧그리지 않는다.
+      //
+      // 전에는 아무 상자나 그려놓고 그 위에 쇠테 두 줄을 덧그렸다. 도트로 찍던
+      // 시절엔 그럴 수밖에 없었는데, 이제 X자 상자 그림이 따로 있다.
+      // 덧그린 것은 아무리 맞춰도 겉돈다 - 그림에 없던 것을 얹는 것이라
+      // 명암도 외곽선도 그림과 안 맞는다.
+      //
+      // 실루엣이 아니라 무늬가 다른 것이라 외울 게 없다. X 가 그려져 있으면 밀린다
+      const set = t === 1 ? place.tiles.wall
+                : t === 4 ? place.tiles.push
+                :           place.tiles.crate;
       const cv = bakeTileSprite(set[tileHash(x, y) % set.length], T);
       if (cv) {
         g.imageSmoothingEnabled = false;
-        // 아랫변을 칸 바닥에. 가로가 두 칸이면 가운데를 칸 가운데에 맞춘다
+        // 아랫변을 칸 바닥에. 그림이 칸보다 넓으면 가운데를 칸 가운데에 맞춘다
         g.drawImage(cv, px - (cv.width - T) / 2, py + T - cv.height);
-        // 밀 수 있는 상자는 쇠테로 표시한다. 실루엣을 바꾸면 어느 게 밀리는지
-        // 외워야 하는데, 그건 규칙이 아니라 암기다
-        // 그림이 실제로 차지하는 네모에 두른다. 칸 크기로 잡으면
-        // 통이나 항아리처럼 좁은 그림에서 테가 밖으로 삐져나온다
-        if (t === 4) {
-          const o = cv.op;
-          paintBands(g, px - (cv.width - T) / 2 + o.x, py + T - cv.height + o.y,
-                     o.w, o.h);
-        }
         return;
       }
     }
@@ -1555,7 +1581,11 @@ const Art = (() => {
     const box = A.map.sprites[name];
     if (!box) return null;
 
-    const w = Math.max(1, Math.round(T * box[4]));
+    // 아틀라스에는 **발자국이 한 칸**이 되게 담겨 있다 (buildart 의 TILE_W).
+    // 나무처럼 잎이 바닥보다 넓은 것은 그림 자체가 한 칸보다 넓다.
+    // 그 비율 그대로 줄인다 - 발자국이 T 가 되고 잎은 옆 칸으로 넘어간다
+    const unit = A.map.tileW || 96;
+    const w = Math.max(1, Math.round(box[2] * T / unit));
     const key = 'T:' + name + ':' + w;
     let cv = spriteCache.get(key);
     if (cv) return cv;
@@ -2306,7 +2336,7 @@ const Art = (() => {
   }
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
-    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
+    setLooks, loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
     buildFloor, drawProp, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,

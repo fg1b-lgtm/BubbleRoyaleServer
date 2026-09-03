@@ -41,6 +41,12 @@ struct MapRandom
 
 constexpr int SECTOR_SLOTS = SECTOR_COLS * SECTOR_ROWS;   // 9
 
+// 아홉 자리에 다 깔 조각. -1 이면 평소대로 뽑는다.
+// 명령줄 인자 piece 로만 켠다 (예: Server.exe piece 30)
+//
+// 소유 스레드 : 시작할 때 한 번 쓰고 그 뒤로는 읽기만 한다
+inline int g_force_piece = -1;
+
 struct GameMap
 {
     uint8_t tile[MAP_H][MAP_W];
@@ -51,6 +57,12 @@ struct GameMap
     // 조각을 그릴 때 길만으로 관문과 스폰이 전부 이어지도록 검사해뒀는데,
     // 뒤에 도는 손질(BalanceSpawnBlocks)이 그 위에 블록을 하나 얹으면 그 보장이 깨진다.
     bool street[MAP_H][MAP_W];
+
+    // 칸의 겉모습 (TileLook). 규칙에는 안 쓴다. 화면에만 보낸다.
+    //
+    // 판정은 tile 로만 한다. 여기에 규칙을 하나라도 걸면 "지나갈 수 있나" 를
+    // 두 군데서 보게 되고, 두 곳이 어긋나는 날 벽을 뚫는다
+    uint8_t look[MAP_H][MAP_W];
 
     // 스폰 자리. 판이 시작할 때 여기에 사람을 앉힌다
     int spawn_x[SPAWN_TOTAL];
@@ -129,6 +141,15 @@ struct GameMap
             }
         }
 
+        // 판 하나를 눈으로 보려고 아홉 자리에 다 깐다. 명령줄 인자 piece 로만 켠다.
+        //
+        // 조각이 서른한 개인데 그중 하나가 가운데에 올 확률은 3%다. 새로 그린
+        // 조각을 확인하려고 판을 서른 번 다시 까는 건 확인이 아니라 도박이다.
+        // 확률로 되는 걸 기다리지 말고 바로 볼 수 있어야 한다
+        if (g_force_piece >= 0 && g_force_piece < SECTOR_TEMPLATE_COUNT) {
+            for (int slot = 0; slot < SECTOR_SLOTS; ++slot) pick[slot] = g_force_piece;
+        }
+
         // 2) 아홉 자리에 하나씩 찍는다. 자리마다 뒤집기가 따로 걸린다.
         //
         //    돌리기는 못 한다. 조각이 15x13 이라 90도 돌리면 13x15 가 되어 안 맞는다.
@@ -148,6 +169,7 @@ struct GameMap
                 if (x == 0 || y == 0 || x == MAP_W - 1 || y == MAP_H - 1) {
                     tile[y][x]   = TILE_WALL;
                     street[y][x] = false;
+                    look[y][x]   = LOOK_PLAIN;   // 테두리는 강이 아니라 판 끝이다
                 }
             }
         }
@@ -285,10 +307,18 @@ private:
 
                 // 조각이 길이라고 그린 자리. 지금은 여기도 상자로 덮는다.
                 // 파고 나면 드러난다. 어디를 파야 빨리 나가는지가 판단거리가 된다
-                street[y][x] = (c == '.' || c == 's');
+                street[y][x] = (c == '.' || c == '=' || c == 's');
 
-                if (c == '#') {
+                // 겉모습. 규칙은 아래에서 정하고, 여기서는 어떻게 보일지만 정한다
+                look[y][x] = (c == '~') ? LOOK_WATER
+                           : (c == '=') ? LOOK_BRIDGE
+                           :              LOOK_PLAIN;
+
+                if (c == '#' || c == '~') {
                     tile[y][x] = TILE_WALL;
+                }
+                else if (c == '=') {
+                    tile[y][x] = TILE_EMPTY;
                 }
                 else if (c == 's') {
                     tile[y][x] = TILE_EMPTY;
