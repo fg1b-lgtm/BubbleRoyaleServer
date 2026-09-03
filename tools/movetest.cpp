@@ -513,6 +513,15 @@ static void Test10_NoDriftOnRealMaps()
     //   flips     옆으로 가던 쪽이 반대로 뒤집힌 횟수
     long long episodes = 0, flips = 0;
 
+    // **트인 데와 좁은 데를 갈라서 센다.**
+    //
+    // 전에는 한 덩어리로 셌다. 그래서 "밀린 횟수" 를 0 으로 만들려다 좁은 데서
+    // 줄을 맞춰주는 것까지 같이 껐고, 그러면 통로를 못 지나간다.
+    //
+    // 트인 데에서 밀리는 것은 무조건 틀린 것이다 - 도와줄 게 없는데 손을 댄 것이다.
+    // 좁은 데에서 밀리는 것은 도와주는 것이다. 그건 세되 막지 않는다
+    long long open_tried = 0, open_drift = 0;
+
     for (int seed = 1; seed <= 20; ++seed) {
         GameMap m{};
         m.Generate((uint32_t)seed);
@@ -529,6 +538,23 @@ static void Test10_NoDriftOnRealMaps()
                     if (DX[d] != 0) p.py += off; else p.px += off;
                     p.judge_tx = JudgeAxis(p.px);
                     p.judge_ty = JudgeAxis(p.py);
+
+                    // 스무 틱이면 360 units = 1.4칸을 간다. 그러니 한 칸만 봐서는
+                    // 안 된다 - 두 칸 앞 기둥에 걸려 당겨지는 것을 트인 데로 세게 된다.
+                    // **걸어갈 거리만큼** 앞을 보고, 옆으로도 세 줄을 본다
+                    const int LOOK = 3;
+                    bool wide = true;
+                    // a=0 (지금 서 있는 칸의 옆줄)도 본다. 몸이 0.8칸이라
+                    // 치우쳐 서면 옆줄에 걸치는데, 거기가 벽이면 ClampAxis 가
+                    // 몸을 빼내면서 옆으로 민다. 그것도 밀리는 것이다
+                    for (int a = 0; a <= LOOK && wide; ++a) {
+                        for (int k = -1; k <= 1; ++k) {
+                            int ax = tx + DX[d] * a + (DX[d] != 0 ? 0 : k);
+                            int ay = ty + DY[d] * a + (DY[d] != 0 ? 0 : k);
+                            if (ax < 0 || ay < 0 || ax >= MAP_W || ay >= MAP_H
+                                || m.tile[ay][ax] != TILE_EMPTY) { wide = false; break; }
+                        }
+                    }
 
                     int side0 = (DX[d] != 0) ? p.py : p.px;
 
@@ -555,6 +581,11 @@ static void Test10_NoDriftOnRealMaps()
                     int drift = side1 - side0;
                     if (drift < 0) drift = -drift;
 
+                    if (wide) {
+                        ++open_tried;
+                        if (drift > 0) ++open_drift;
+                    }
+
                     ++tried;
                     if (drift > 0) {
                         ++drifted;
@@ -580,12 +611,129 @@ static void Test10_NoDriftOnRealMaps()
     // 얼마나 밀렸나가 아니라 **몇 번 밀렸나**를 본다.
     // 한 번이라도 밀리면 사람은 그 한 번을 기억한다
     printf("  끊겼다 다시 밀린 횟수 %lld,  방향이 뒤집힌 횟수 %lld\n", episodes, flips);
+    printf("  트인 데에서 %lld 번 걸어서 %lld 번 밀렸다\n", open_tried, open_drift);
 
-    // 옆으로 당기는 것 자체는 있어야 한다. 몸이 0.8칸이라 안 당기면 벽에 파묻힌다.
-    // 문제는 **끊겼다 다시 당기는 것**이다. 그건 도움이 아니라 손을 뺏는 느낌이다
-    Check(episodes == 0, "당기기 시작하면 끊기지 않는다");
+    // **트인 데에서는 한 점도 안 밀려야 한다.**
+    //
+    // 좁은 데에서 줄을 맞춰주는 것은 도움이고 있어야 한다. 몸이 0.8칸이라
+    // 안 도와주면 통로를 못 지나간다.
+    //
+    // 그런데 도와줄 게 없는데 손을 대면 그건 도움이 아니라 조작을 뺏는 것이다.
+    // 걸치기를 하려고 일부러 치우쳐 선 사람을 서버가 도로 끌어오면 안 된다 -
+    // 이 게임의 정체성이 걸치기인데 그걸 서버가 방해하는 셈이 된다
+    Check(open_drift == 0, "트인 데에서는 한 점도 안 밀린다");
     Check(flips == 0, "당기는 쪽이 도중에 안 뒤집힌다");
 }
+// ── 시험 11 : 누른 대로 누른 만큼 가나 ───────────────────────
+//
+// "캐릭터가 내 마음대로 안 움직인다, 아무것도 없는데 어디선가 밀린다" 는
+// 신고가 들어왔다. 시험 10 은 **옆으로** 밀리는지만 봤다.
+// 여기서는 **누른 축으로 정확히 그만큼 가나**를 본다.
+//
+// 세 가지를 본다.
+//   ① 탁 트인 데서 스무 틱을 걸으면 정확히 speed x 20 만큼 간다
+//   ② 벽에 막히면 벽에 딱 붙어 서고, 거기서 더 안 떨거나 뒤로 안 간다
+//   ③ 같은 자리에서 같은 키를 누르면 늘 같은 자리로 간다 (재현성)
+//
+// ③ 이 있는 이유는 화면이 서버 답을 미리 그리기 때문이다. 서버가 같은 입력에
+// 다른 답을 내면 예측이 맞을 수가 없고, 그게 곧 "화면이 뒤로 튄다" 가 된다
+static void Test11_ExactSteps()
+{
+    printf("\n=== 시험 11: 누른 대로 누른 만큼 가나 ===\n");
+
+    const int DX[4] = { 1, -1, 0, 0 };
+    const int DY[4] = { 0, 0, 1, -1 };
+    const int TICKS = 20;
+    const int speed = MOVE_SPEED_BASE;   // 롤러를 안 먹은 기본 속도
+
+    long long open_tried = 0, open_bad = 0;
+    long long wall_tried = 0, wall_bad = 0;
+    long long back_step = 0;             // 누른 반대쪽으로 간 횟수
+    long long repeat_bad = 0;
+    int worst_short = 0;
+
+    for (int seed = 1; seed <= 12; ++seed) {
+        GameMap m{};
+        m.Generate((uint32_t)seed);
+
+        for (int ty = 1; ty < MAP_H - 1; ++ty) {
+            for (int tx = 1; tx < MAP_W - 1; ++tx) {
+                if (m.tile[ty][tx] != TILE_EMPTY) continue;
+
+                for (int d = 0; d < 4; ++d) {
+                    Player p = MakePlayer(tx, ty);
+                    p.dir_x = DX[d];
+                    p.dir_y = DY[d];
+
+                    int start = (DX[d] != 0) ? p.px : p.py;
+                    int prev  = start;
+                    bool blocked = false;
+
+                    for (int t = 0; t < TICKS; ++t) {
+                        MovePlayer(m, p);
+                        int cur = (DX[d] != 0) ? p.px : p.py;
+                        int step = cur - prev;
+
+                        // 누른 반대쪽으로 가면 그건 무조건 틀린 것이다
+                        int want = (DX[d] != 0) ? DX[d] : DY[d];
+                        if (step != 0 && ((step > 0) != (want > 0))) ++back_step;
+
+                        // 한 틱에 speed 보다 많이 가면 그것도 틀린 것이다
+                        if (step > speed || step < -speed) ++back_step;
+
+                        if (step == 0) blocked = true;
+                        prev = cur;
+                    }
+
+                    int went = prev - start;
+                    if (went < 0) went = -went;
+
+                    if (!blocked) {
+                        // 탁 트였다. 정확히 speed x TICKS 여야 한다
+                        ++open_tried;
+                        if (went != speed * TICKS) {
+                            ++open_bad;
+                            int miss = speed * TICKS - went;
+                            if (miss < 0) miss = -miss;
+                            if (miss > worst_short) worst_short = miss;
+                        }
+                    } else {
+                        // 막혔다. 몸이 벽 안에 들어가 있으면 안 된다
+                        ++wall_tried;
+                        int bx = p.px, by = p.py;
+                        int t0 = JudgeAxis(bx - PLAYER_HALF), t1 = JudgeAxis(bx + PLAYER_HALF);
+                        int u0 = JudgeAxis(by - PLAYER_HALF), u1 = JudgeAxis(by + PLAYER_HALF);
+                        for (int yy = u0; yy <= u1; ++yy) {
+                            for (int xx = t0; xx <= t1; ++xx) {
+                                if (xx < 0 || yy < 0 || xx >= MAP_W || yy >= MAP_H) continue;
+                                if (m.tile[yy][xx] != TILE_EMPTY) ++wall_bad;
+                            }
+                        }
+                    }
+
+                    // 같은 입력이면 같은 답. 한 번 더 돌려서 견준다
+                    Player q = MakePlayer(tx, ty);
+                    q.dir_x = DX[d];
+                    q.dir_y = DY[d];
+                    for (int t = 0; t < TICKS; ++t) MovePlayer(m, q);
+                    if (q.px != p.px || q.py != p.py) ++repeat_bad;
+                }
+            }
+        }
+    }
+
+    printf("  탁 트인 데 %lld 번,  막힌 데 %lld 번\n", open_tried, wall_tried);
+    printf("  스무 틱에 %d units 를 못 간 경우 %lld 번 (제일 모자란 양 %d)\n",
+           speed * TICKS, open_bad, worst_short);
+    printf("  누른 반대쪽으로 가거나 한 틱에 %d 를 넘긴 횟수 %lld\n", speed, back_step);
+    printf("  같은 입력에 다른 답이 나온 횟수 %lld\n", repeat_bad);
+
+    Check(open_bad == 0,   "안 막혔으면 누른 만큼 정확히 간다");
+    Check(back_step == 0,  "누른 반대쪽으로 가지 않고 한 틱 한도도 안 넘는다");
+    Check(wall_bad == 0,   "막혔을 때 몸이 벽 안에 들어가 있지 않다");
+    Check(repeat_bad == 0, "같은 자리에서 같은 키를 누르면 늘 같은 자리로 간다");
+}
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -600,6 +748,7 @@ int main(int argc, char** argv)
     Test7_NoSlide();
     Test8_NeverInsideWall();
     Test10_NoDriftOnRealMaps();
+    Test11_ExactSteps();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
 
