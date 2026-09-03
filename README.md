@@ -197,19 +197,19 @@ build.bat ..\tools\probe.cpp
 `bot.exe` 를 돌린 뒤 서버 로그에서 `connected` 수와 `fully closed` 수가 같아야 한다.
 다르면 세션이 샌 것이다.
 
-최근 확인:
+최근 확인 (9/3):
 
 ```
-movetest    32 PASS / 0 FAIL
-bubbletest  66 PASS / 0 FAIL
+movetest    40 PASS / 0 FAIL   (누른 만큼 정확히 가나 · 트인 데 밀림 0)
+bubbletest  73 PASS / 0 FAIL
 floodtest   33 PASS / 0 FAIL
-maptest      8 PASS / 0 FAIL   (맵 200개)
+maptest     12 PASS / 0 FAIL   (조각 31종 약속 검사 포함)
 probe       10 PASS / 0 FAIL
-wstest      20 PASS / 0 FAIL
-clienttest  41 PASS / 0 FAIL   (UI 대비 · 붐빌 때 프레임 · 사운드 믹스 포함)
+wstest      23 PASS / 0 FAIL
+clienttest  50 PASS / 0 FAIL   (UI 대비 · 앞뒤 정렬 · 화면 예측 밀림 0 포함)
 viewertest   6 PASS / 0 FAIL
-arttest     13 PASS / 0 FAIL
-roundsim    60판 전부 결판, 평균 2분 58초
+arttest     18 PASS / 0 FAIL   (그림 타일 이름이 아틀라스에 다 있나 포함)
+roundsim    60판 전부 결판, 평균 3분 18초 (10분 넘긴 판 0/60)
 봇 24개 10초  접속 585 = fully closed 585, 버린 주문 0
 
 AOI 전후 (walker 12명 30초, 봇 12)
@@ -242,7 +242,7 @@ BubbleRoyale.sln
 │   ├─ Flood.h           침수
 │   ├─ Bot.h             봇 두뇌. roundsim 과 서버가 같이 쓴다
 │   ├─ Aoi.h             누구에게 무엇을 보낼 것인가 + 송신량 계측
-│   ├─ SectorTemplates.h 손으로 그린 맵 조각 10종
+│   ├─ SectorTemplates.h 손으로 그린 맵 조각 31종 (테마 10개)
 │   ├─ GameTick.h        한 틱에 무엇을 어떤 순서로 하는가
 │   └─ ServerConfig.h    워커 수 · 동시 접속 상한
 ├─ Client/src/        테스트용 콘솔 클라이언트
@@ -250,7 +250,8 @@ BubbleRoyale.sln
 │   ├─ bridge.js         WebSocket ↔ TCP 다리 (Node 기본 모듈만)
 │   ├─ index.html        판 밖 껍데기. HUD 는 캔버스가 직접 그린다
 │   ├─ audio.js          소리. 층 쌓기 · 울림 · 덕킹 · 상황 따라 붙는 음악
-│   ├─ art.js            아트 디렉션. 팔레트 · 높이 있는 벽 · 캐릭터 · 물
+│   ├─ art.js            그리는 규칙. 팔레트 · 발밑 y 정렬 · 캐릭터 · 물
+│   ├─ artdata.js        그리는 그림. 도트 지도 · 장소 표 (함수 없음)
 │   ├─ fx.js             파티클과 카메라 (흔들림 · 멈춤 · 번쩍임)
 │   ├─ net.js            프로토콜과 판의 상태
 │   └─ game.js           그리는 순서 · 깊이 정렬 · HUD · 입력
@@ -348,7 +349,7 @@ CC0 는 저작자가 저작권을 통째로 포기한 것이라 **상업 이용�
 시트가 바뀌면 `buildart.py` 만 다시 돌리면 된다.
 
 **그림이 없어도 게임은 돈다.** 아틀라스를 못 받으면 예전처럼 도트를 찍어서 그린다
-(`web/art.js` 의 `CHAR_BODY`, `WALL_DOTS`, `CRATE_DOTS`).
+(`web/artdata.js` 의 `CHAR_BODY`, `WALL_DOTS`, `CRATE_DOTS`).
 바닥과 벽과 상자는 지금도 도트로 그린다.
 
 **음악은 계속 만들어 낸다.** 남은 사람 수에 따라 층이 붙었다 빠져야 해서
