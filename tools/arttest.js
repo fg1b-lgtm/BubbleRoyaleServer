@@ -99,7 +99,7 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
 const webDir = path.join(__dirname, '..', 'web');
-for (const f of ['art.js', 'fx.js']) {
+for (const f of ['artdata.js', 'art.js', 'fx.js']) {
     vm.runInContext(fs.readFileSync(path.join(webDir, f), 'utf8'), sandbox, { filename: f });
 }
 const Art = vm.runInContext('Art', sandbox);
