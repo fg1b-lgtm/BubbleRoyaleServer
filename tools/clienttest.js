@@ -236,7 +236,7 @@ check(true, '다섯 파일이 처음부터 끝까지 돌았다');
 // 스크립트 맨 위의 const 는 전역 **객체**에 안 붙는다. 전역 렉시컬 환경에 들어간다.
 // 브라우저에서는 스크립트끼리 그 환경을 같이 쓰므로 서로 잘 보이는데,
 // 밖에서 sandbox.G 로 꺼내려 하면 없다. 같은 realm 에서 식을 하나 굴려서 가져온다
-const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, Predict: Predict, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS })', sandbox);
+const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, Predict: Predict, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS, paintList: function(){ return paintList; }, PK: PK })', sandbox);
 
 // ── 진짜와 같은 모양의 패킷을 만들어 먹인다 ──────────────────
 const HEADER_SIZE = 4;
@@ -598,7 +598,7 @@ let pushOk = false, pushFrom = null;
   console.log();
 
   check((calls.drawImage || 0) >= MAP_H,
-        '줄마다 따로 그려서 붙였다 (사람이 벽 사이에 낀다)');
+        '칸마다 미리 구운 그림을 붙였다 (매 프레임 도트를 다시 찍지 않는다)');
   check((calls.gradient || 0) > 100, '그러데이션을 썼다 (물, 벽, 캐릭터, 물풍선)');
   check((calls.ellipse || 0) > 0,    '타원을 그렸다 (그림자, 발, 물결)');
   check((calls.clip || 0) > 0,       '잘라내기를 썼다 (물 구역, 위험 빗금)');
@@ -622,7 +622,38 @@ let pushOk = false, pushFrom = null;
 
   console.log();
   console.log('  판이 안 변할 때 프레임당 fillRect: ' + perFrame.toFixed(1) + ' 번');
-  check(perFrame < 400, '판이 안 변하면 다시 안 그린다 (미리 그려둔 종이를 붙이기만 한다)');
+  check(perFrame < 400, '칸마다 구워 두니 매 프레임 다시 찍지 않는다');
+
+  // ── 앞뒤 순서 ───────────────────────────────────────────────
+  //
+  // 여기가 이 화면에서 제일 자주 틀린 자리다. 사람이 상자 뒤에 서 있는데
+  // 상자 앞으로 나왔다. 원인은 사람을 두 군데에서 그린 것이었고,
+  // 목록을 하나로 합치고 발밑 y 로만 정렬해서 없앴다.
+  //
+  // 규칙 하나만 확인하면 된다 — **목록이 발밑 y 순으로 서 있나.**
+  // 그러면 무엇을 새로 넣든 자리는 저절로 맞는다
+  {
+    const list = api.paintList();
+    let sorted = true, worst = '';
+    for (let i = 1; i < list.length; ++i) {
+      if (list[i].y < list[i - 1].y) {
+        sorted = false;
+        worst = list[i - 1].k + '(' + list[i - 1].y.toFixed(0) + ') 다음에 '
+              + list[i].k + '(' + list[i].y.toFixed(0) + ')';
+      }
+    }
+    const kinds = new Set(list.map((v) => v.k));
+    console.log();
+    console.log('  앞뒤 목록 ' + list.length + ' 개, 종류 ' + kinds.size + ' 가지');
+    check(sorted, '벽 · 상자 · 물풍선 · 사람이 한 목록에서 발밑 y 순이다'
+                  + (sorted ? '' : ' — ' + worst));
+    check(list.length > 0, '판 위의 물건이 그 목록을 거쳐 그려진다');
+
+    // 사람이 두 번 들어가 있으면 나중 것이 늘 이긴다. 그게 옛 버그였다
+    const ppl = list.filter((v) => v.k === api.PK.PLAYER).map((v) => v.a);
+    check(ppl.length === new Set(ppl).size,
+          '사람은 목록에 한 번만 들어간다 (두 번이면 뒤엣것이 늘 앞에 선다)');
+  }
 
   // ── 걸치기가 보이나 ────────────────────────────────────────
   //

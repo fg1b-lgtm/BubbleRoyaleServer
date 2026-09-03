@@ -27,11 +27,13 @@ let W = 0, H = 0;          // 캔버스 크기 (CSS 픽셀)
 let BX = 0, BY = 0, BW = 0, BH = 0;
 let dpr = 1;
 
-// 미리 그려두는 종이들
+// 미리 그려두는 종이. 바닥 한 장뿐이다.
+//
+// 바닥은 벽이 부서질 때 말고 안 변하고, 아무것도 가리지 않는다. 그래서 미리
+// 굽는 게 이득이다. 그 위에 올라가는 것들은 전부 매 프레임 그린다 —
+// 미리 구우면 앞뒤 순서가 종이 안에 갇히기 때문이다
 let floorCv = null, floorCtx = null;
-let rowCv = [];            // 줄마다 한 장. 벽과 상자와 그림자가 들어 있다
 let floorDirty = true;
-const dirtyRows = new Set();
 
 // 죽은 자세.
 //
@@ -283,16 +285,6 @@ function resize() {
   floorCtx = floorCv.getContext('2d');
   floorCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const rowH = Art.V.TOP + ts + Art.V.BOT;
-  rowCv = [];
-  for (let y = 0; y < G.C.mapH; ++y) {
-    const c = document.createElement('canvas');
-    c.width = Math.round(mapPxW * dpr); c.height = Math.round(rowH * dpr);
-    const g = c.getContext('2d');
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    rowCv.push({ cv: c, g });
-  }
-
   // 안개용 잡티. 64x64 한 장을 만들어 두고 타일처럼 깐다.
   // 매 프레임 점을 찍으면 화면이 지글거리고 느리다
   noiseCv = document.createElement('canvas');
@@ -307,7 +299,6 @@ function resize() {
   }
 
   floorDirty = true;
-  for (let y = 0; y < G.C.mapH; ++y) dirtyRows.add(y);
   foamKey = '';
 }
 
@@ -329,16 +320,6 @@ function rebuild() {
     floorDirty = false;
   }
 
-  if (dirtyRows.size) {
-    const rowH = Art.V.TOP + Art.V.TS + Art.V.BOT;
-    for (const y of dirtyRows) {
-      const r = rowCv[y];
-      if (!r) continue;
-      r.g.clearRect(0, 0, mw, rowH);
-      Art.buildRow(r.g, G.tiles, G.C.mapW, y);
-    }
-    dirtyRows.clear();
-  }
 }
 
 // ── 물가 ─────────────────────────────────────────────────────
@@ -474,7 +455,7 @@ function frame(ts) {
     if (ts - sl.t0 < sl.ms) continue;
     if (G.tiles[sl.fy] && G.tiles[sl.fy][sl.fx] === TILE.BOX) {
       G.tiles[sl.fy][sl.fx] = TILE.EMPTY;
-      dirtyRows.add(sl.fy);
+      floorDirty = true;
     }
     slides.splice(i, 1);
   }
@@ -531,6 +512,79 @@ function stepPrediction() {
 
   const [dx, dy] = inputDir();
   Predict.tick(G.tiles, dx, dy, me.speed_lv | 0, !!(me.flags & PF.TRAPPED));
+}
+
+// ── 앞뒤 정렬 목록 ─────────────────────────────────
+//
+// 화면에 서 있는 모든 것을 한 목록에 담아 발밑 y 로 줄을 세운다.
+// 종류별로 따로 그리던 것을 합친 이유는 그래야만 서로를 가릴 수 있기 때문이다.
+//
+// 객체를 매 프레임 새로 만들면 쓰레기가 쌀이면서 가끔 한 프레임이 튀다.
+// 한 번 만들어 두고 값만 덮어쓴다
+const PK = { TILE: 0, SLIDE: 1, BUBBLE: 2, PLAYER: 3 };
+
+const paintPool = [];
+let paintList = [];
+
+function paintReset() { paintList.length = 0; }
+
+function paint(baseY, kind, a, b) {
+  const n = paintList.length;
+  const s = paintPool[n] || (paintPool[n] = {});
+  s.y = baseY; s.k = kind; s.a = a; s.b = b;
+  paintList.push(s);
+}
+
+function paintSorted(ctx, alpha, now, T) {
+  // 발밑 y 가 같으면 넣은 순서를 따른다. 같은 줄의 벽과 상자는 서로 안 겹친다
+  paintList.sort((p, q) => p.y - q.y);
+
+  for (const s of paintList) {
+    if (s.k === PK.TILE) {
+      Art.drawProp(ctx, G.tiles, G.C.mapW, s.a, s.b, s.a * T, s.b * T);
+    }
+    else if (s.k === PK.SLIDE) {
+      const sl = s.a, e = s.b;
+      Art.drawCrate(ctx, (sl.fx + (sl.tx - sl.fx) * e) * T,
+                         (sl.fy + (sl.ty - sl.fy) * e) * T, T, sl.fx, sl.fy, true);
+    }
+    else if (s.k === PK.BUBBLE) {
+      drawBubble(ctx, s.a, now, T);
+    }
+    else {
+      drawPlayer(s.a, s.b, alpha, now, T);
+    }
+  }
+}
+
+// 물풍선 하나.
+//
+// 터지기 전 예고는 임팩트만큼 중요하다 —
+// **예고 없는 폭발은 억울하고, 예고만 있는 폭발은 시시하다.**
+//
+// 두 단으로 나눈다.
+//   1초 전  숨이 가빤진다. '곳 터지겠구나'
+//   0.3초 전 부푸어 오르고 바닥에 그림자 고리가 퍼진다. '지금 나가야 한다'
+// 마지막 단은 반응할 시간을 주지 않을 만큼 짧아야 한다. 주면 난이도가 사라진다
+function drawBubble(ctx, b, now, T) {
+  const fuseSec = b.fuse / G.C.tickRate;
+  const bx = b.tx * T + T / 2, by = b.ty * T + T / 2;
+
+  if (fuseSec < 0.34) {
+    // 바닥 고리. 물풍선 밑에서 밖으로 퍼진다. 캐릭터에 안 가리게 발밑에 긐다
+    const k = 1 - fuseSec / 0.34;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,240,240,' + (0.55 * (1 - k)) + ')';
+    ctx.lineWidth = Math.max(1.5, T * 0.06);
+    ctx.beginPath();
+    ctx.ellipse(bx, by + T * 0.30, T * (0.35 + k * 0.55), T * (0.14 + k * 0.22),
+                0, 0, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  Art.drawBubble(ctx, bx, by, T * 0.40, fuseSec < 1.0, now,
+                 b.owner === 0xFF ? null : colorOf(b.owner));
 }
 
 function drawWorld(now, dt) {
@@ -649,130 +703,68 @@ function drawWorld(now, dt) {
     }
   }
 
-  // ── 줄 정렬 ────────────────────────────────────────────────
+  // ── 앞뒤 순서 ──────────────────────────────────
   //
-  // 사람과 물풍선을 발이 닿은 줄로 나눠 담고, 줄 그림 사이에 끼워 그린다
-  const rows = G.C.mapH;
-  const bucketP = new Array(rows), bucketB = new Array(rows);
-  for (let i = 0; i < rows; ++i) { bucketP[i] = null; bucketB[i] = null; }
-
+  // 규칙은 하나다. **바닥에 닿는 y 가 큰 것이 앞이다.**
+  //
+  // 벽이든 상자든 물풍선이든 사람이든 이 자 하나로 재서 줄을 세운다.
+  // 새 물건이 생겨도 발밑 y 만 넣으면 자리가 저절로 정해진다.
+  //
+  // 전에는 줄마다 미리 구운 종이를 깔고 그 사이에 사람을 끼웠다. 그러면 같은 줄
+  // 안에서는 앞뒤를 못 가리니, 사람을 판 위에 한 번 더 그렸다. 사람이 두 번
+  // 그려졌고 나중 것이 늘 이겨서 **상자 뒤에 선 사람이 상자 앞으로 나왔다.**
+  // 목록이 하나면 그런 일이 생길 수가 없다
   const alpha = Math.min(1, (now - snapAtGame) / G.snapInterval);
-
-  for (const [id, p] of G.players) {
-    if (p.visible === false) continue;   // AOI 로 안 온 사람. 기억만 있고 지금은 안 보인다
-    const py = p.y0 + (p.y1 - p.y0) * alpha;
-    const r = Math.max(0, Math.min(rows - 1, Math.floor(py / G.C.tileUnits)));
-    (bucketP[r] || (bucketP[r] = [])).push([id, p]);
-  }
-  for (const b of G.bubbles) {
-    const r = Math.max(0, Math.min(rows - 1, b.ty));
-    (bucketB[r] || (bucketB[r] = [])).push(b);
-  }
-
-  const rowH = Art.V.TOP + T + Art.V.BOT;
   const me = G.players.get(G.myId);
 
-  // 화면에 안 걸치는 줄은 건너뛴다. 39줄이 아니라 20줄만 그린다
+  // 화면에 안 걸치는 칸은 건너뛰다. 45x39 가 아니라 눈에 보이는 만큼만 본다
+  const xStart = Math.max(0, Math.floor(view.x0 / T) - 1);
+  const xEnd   = Math.min(G.C.mapW, Math.ceil(view.x0 / T) + view.w + 2);
   const yStart = Math.max(0, Math.floor(view.y0 / T) - 1);
-  const yEnd   = Math.min(rows, Math.ceil(view.y0 / T) + view.h + 1);
+  const yEnd   = Math.min(G.C.mapH, Math.ceil(view.y0 / T) + view.h + 2);
 
+  // 바닥에 깔리는 것은 정렬에 안 넣는다. 아이템은 땅에 놓인 물건이라 그 칸을
+  // 밟고 선 사람보다 늘 뒤다. 정렬에 넣으면 발밑 y 가 엇갈려서 아이템이
+  // 사람 머리 위로 올라오는 순간이 생긴다
   for (let y = yStart; y < yEnd; ++y) {
-    ctx.drawImage(rowCv[y].cv, 0, y * T - Art.V.TOP, G.C.mapW * T, rowH);
-
-    // 아이템은 벽보다 앞, 사람보다 뒤
-    for (let x = 0; x < G.C.mapW; ++x) {
+    for (let x = xStart; x < xEnd; ++x) {
       const it = G.items[y][x];
       if (it !== ITEM.NONE) Art.drawItem(ctx, x * T + T / 2, y * T + T / 2, T, it, now);
     }
+  }
 
-    // 밀려가는 상자. 도착할 줄에서 그린다 —
-    // 아래로 밀리는 상자를 떠난 줄에서 그리면 아래 줄 물건에 가려진다
-    for (const sl of slides) {
-      if (sl.ty !== y) continue;
-      const k = Math.min(1, (now - sl.t0) / sl.ms);
+  paintReset();
 
-      // 처음에 살짝 빠르고 끝에서 느려진다. 무거운 것이 밀려서 서는 모양이다.
-      // 일정한 속도로 가면 밀리는 게 아니라 실려 가는 것처럼 보인다
-      const e = 1 - (1 - k) * (1 - k);
-      const sx = (sl.fx + (sl.tx - sl.fx) * e) * T;
-      const sy = (sl.fy + (sl.ty - sl.fy) * e) * T;
-      Art.drawCrate(ctx, sx, sy, T, sl.fx, sl.fy, true);
-    }
-
-    const bs = bucketB[y];
-    if (bs) for (const b of bs) {
-      // 터지기 직전. 예고는 임팩트만큼 중요하다 —
-      // **예고 없는 폭발은 억울하고, 예고만 있는 폭발은 시시하다.**
-      //
-      // 두 단으로 나눈다.
-      //   1초 전  숨이 가빠진다. '곧 터지겠구나'
-      //   0.3초 전 부풀어 오르고 바닥에 그림자 고리가 퍼진다. '지금 나가야 한다'
-      // 마지막 단은 반응할 시간을 주지 않을 만큼 짧아야 한다. 주면 난이도가 사라진다
-      const fuseSec = b.fuse / G.C.tickRate;
-      const near = fuseSec < 1.0;
-      const bx = b.tx * T + T / 2, by = b.ty * T + T / 2;
-
-      if (fuseSec < 0.34) {
-        // 바닥 고리. 물풍선 밑에서 밖으로 퍼진다. 캐릭터에 안 가리게 발밑에 깐다
-        const k = 1 - fuseSec / 0.34;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,240,240,' + (0.55 * (1 - k)) + ')';
-        ctx.lineWidth = Math.max(1.5, T * 0.06);
-        ctx.beginPath();
-        ctx.ellipse(bx, by + T * 0.30, T * (0.35 + k * 0.55), T * (0.14 + k * 0.22),
-                    0, 0, 7);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      Art.drawBubble(ctx, bx, by, T * 0.40, near, now,
-                     b.owner === 0xFF ? null : colorOf(b.owner));
-    }
-
-    // 사람은 자기 줄에서 그린다.
-    //
-    // 그러면 아래 줄 벽의 윗면에 발과 정강이가 가려진다. 그게 맞다 —
-    // 블록에 높이가 있고 카메라가 살짝 아래에서 보는 각도라, 뒤에 선 사람이
-    // 조금 가려져야 앞뒤가 읽힌다. 판을 다 그린 뒤에 사람을 그려봤더니
-    // 벽 위에 붕 떠 보였다
-    const ps = bucketP[y];
-    if (ps) for (const [id, p] of ps) {
-      // 죽은 사람은 안 그린다.
-      //
-      // 전에는 흐리게 남겨뒀는데 판 위에 유령이 늘어서 거슬렸다.
-      // 죽었으면 없는 것이다. 어디서 죽었는지는 킬 피드가 말해준다
-      if (!(p.flags & PF.ALIVE)) continue;
-      drawPlayer(id, p, alpha, now, T);
+  for (let y = yStart; y < yEnd; ++y) {
+    for (let x = xStart; x < xEnd; ++x) {
+      const t = G.tiles[y][x];
+      // 1 벽 · 2 부술 수 있는 블록 · 4 밀 수 있는 상자
+      if (t === 1 || t === 2 || t === 4) paint((y + 1) * T, PK.TILE, x, y);
     }
   }
 
-  // ── 사람은 판을 다 그린 뒤에 그린다 ────────────────────────
-  //
-  // 전에는 줄마다 그 줄 사람을 같이 그렸다. 앞뒤가 맞는 방식인데,
-  // 벽 바로 위에 선 사람이 아래 줄 벽의 윗면에 가려서 귀만 보였다.
-  // 벽을 반으로 낮춰도 가슴까지 묻혔다.
-  //
-  // 24명이 동시에 붙는 게임에서 **누가 어디 있는지 보이는 것**이 입체감보다
-  // 훨씬 중요하다. 크아도 사람은 늘 보인다.
-  //
-  // 세로로 정렬해서 그린다. 사람끼리는 아래에 있는 쪽이 앞이다
-  {
-    const all = [];
-    for (let y = yStart; y < yEnd; ++y) {
-      const ps = bucketP[y];
-      if (!ps) continue;
-      for (const [id, p] of ps) {
-        // 죽은 사람은 안 그린다.
-        //
-        // 전에는 흐리게 남겨뒀는데 판 위에 유령이 늘어서 거슬렸다.
-        // 죽었으면 없는 것이다. 어디서 죽었는지는 킬 피드가 말해준다
-        if (!(p.flags & PF.ALIVE)) continue;
-        all.push([id, p, p.y0 + (p.y1 - p.y0) * alpha]);
-      }
-    }
-    all.sort((a, b) => a[2] - b[2]);
-    for (const [id, p] of all) drawPlayer(id, p, alpha, now, T);
+  for (const sl of slides) {
+    const k = Math.min(1, (now - sl.t0) / sl.ms);
+    // 처음에 살짝 빠르고 끝에서 느려진다. 무거운 것이 밀려서 서는 모양이다.
+    // 일정한 속도로 가면 밀리는 게 아니라 실려 가는 것처럼 보인다
+    const e = 1 - (1 - k) * (1 - k);
+    paint((sl.fy + (sl.ty - sl.fy) * e + 1) * T, PK.SLIDE, sl, e);
   }
+
+  for (const b of G.bubbles) paint((b.ty + 1) * T, PK.BUBBLE, b, 0);
+
+  for (const [id, p] of G.players) {
+    if (p.visible === false) continue;   // AOI 로 안 온 사람. 기억만 있고 지금은 안 보인다
+    // 죽은 사람은 안 그린다. 죽었으면 없는 것이고,
+    // 어디서 죽었는지는 따로 남기는 죽은 자세가 말해준다
+    if (!(p.flags & PF.ALIVE)) continue;
+    // 몸의 아랫변이다. 몸 가운데가 아니다 — 가운데로 재면 키 큰 것이 늘 앞에 선다
+    const py = (p.y0 + (p.y1 - p.y0) * alpha) / G.C.tileUnits;
+    paint((py + 0.4) * T, PK.PLAYER, id, p);
+  }
+
+  paintSorted(ctx, alpha, now, T);
+
 
   // 죽은 자세. 사람을 다 그린 뒤에 그린다 — 죽은 자리가 벽에 묻히면
   // 누가 어디서 죽었는지가 안 보인다. 잠깐만 남았다 사라진다
@@ -1816,7 +1808,7 @@ Hooks.welcome = function () {
 };
 
 Hooks.mapRow = function (y) {
-  dirtyRows.add(y);
+  floorDirty = true;
 };
 
 Hooks.conn = function () {
@@ -1961,7 +1953,7 @@ Hooks.event = function (type, x, y, who, val) {
 
     case EVT.BLOCK:
       G.tiles[y][x] = TILE.EMPTY;
-      dirtyRows.add(y);
+      floorDirty = true;
       // 부서진 조각은 그 구역 상자 색으로 튄다
       {
         const pl = Art.placeAt(x, y);
@@ -1984,8 +1976,7 @@ Hooks.event = function (type, x, y, who, val) {
       // 미끄러지는 그림은 slides 가 그리고, 다 밀린 뒤에 떠난 칸을 비운다
       if (G.tiles[y] && G.tiles[ny]) {
         G.tiles[ny][nx] = TILE.BOX;
-        dirtyRows.add(y);
-        dirtyRows.add(ny);
+        floorDirty = true;
       }
 
       slides.push({ fx: x, fy: y, tx: nx, ty: ny, t0: now,
@@ -2002,7 +1993,7 @@ Hooks.event = function (type, x, y, who, val) {
     // 먹은 것과 나눠 그린다. 먹은 건 누가 가져간 것이라 위로 튀어오르고,
     // 이건 아무도 못 갖는 것이라 그 자리에서 흩어져 사라진다
     case EVT.ITEM_GONE: {
-      if (G.items[y]) { G.items[y][x] = 0; dirtyRows.add(y); }
+      if (G.items[y]) G.items[y][x] = 0;
       FX.gone(cx, cy, T, now);
       break;
     }

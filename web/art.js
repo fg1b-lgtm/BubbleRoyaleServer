@@ -327,24 +327,12 @@ const Art = (() => {
     // 살짝 아래에서 보는 각도이기 때문이다. 발과 정강이가 가려지는 정도가
     // 적당하고, 가슴까지 묻히면 너무 높은 것이다
     V.WH  = Math.round(ts * 0.42);
-    // 상자 높이.
-    //
-    // 0.30 이었는데, 윗면(타일에서 여백 뺀 것)에 이 높이를 더하면
-    // **타일보다 커져서 위아래 상자가 서로 겹쳤다.** 세로로 붙어 한 기둥으로 보이고,
-    // 그러면 몇 칸인지 셀 수가 없다. 폭발 사거리를 세야 하는 게임에서 치명적이다.
-    // 확대해서 찍어보기 전에는 몰랐다
     // 상자가 솟은 높이. 벽보다 조금 낮다.
     //
-    // 0.20 이었는데 0.34 로 올렸다. 재보니 상자 윗변이 위 칸 사람의 발보다
-    // 아래에 있어서 사람이 상자 위에 붕 떠 보였다. 살짝 아래에서 보는 각도라면
-    // 아래 칸에 놓인 것이 위 칸 사람의 발을 가려야 한다
+    // 벽과 상자는 이 값 하나로만 다르다. 나머지 구조는 똑같다 —
+    // 윗면을 이만큼 올리고, 그 아래를 옆면으로 채워 칸 바닥에 닿게 한다.
+    // 만질 값이 여기 둘뿐이라 판의 입체감을 이 두 줄로 조절한다
     V.CH  = Math.round(ts * 0.34);
-    // 줄 그림이 위로 삐져나오는 여유.
-    //
-    // 벽과 상자 중 더 높이 솟는 쪽에 맞춰야 한다. 여기가 모자라면 솟은 부분이
-    // 종이 밖으로 잘려서, 아래 칸 물건이 위 칸 사람을 못 가린다
-    V.TOP = Math.max(V.WH, V.CH) + 2;
-    V.BOT = Math.round(ts * 0.45);   // 아래로 삐져나오는 여유 (그림자)
   }
 
   // 서버가 준 조각 번호 아홉 개로 장소를 정하고, 씨앗으로 공기를 정한다
@@ -477,12 +465,8 @@ const Art = (() => {
     }
   }
 
-  // ── 한 줄의 벽과 상자 ────────────────────────────────────────
+  // ── 도트 지도 굽기 ───────────────────────────────────────────
   //
-  // 줄마다 따로 그려둔다. 사람을 그릴 때 줄 사이에 끼워 넣어야 하기 때문이다.
-  // 통째로 한 장에 그려두면 사람이 늘 벽 앞이나 늘 벽 뒤에 있게 된다.
-  //
-  // g 는 이 줄만 담는 종이다. 위로 V.TOP, 아래로 V.BOT 만큼 여유가 있다
   // 도트 지도 하나를 그 장소 색으로 칠해 종이에 굽는다.
   //
   // 지도의 글자는 역할이고 색은 장소가 준다. 그래서 같은 널빤지 무늬가
@@ -491,6 +475,35 @@ const Art = (() => {
   // 매 칸 도트를 찍으면 한 칸에 256번이라 판 하나에 45만 번이다. 한 번만 굽는다.
   // 종류 x 장소 x 배율이라 캐시가 백 개를 안 넘는다
   const tileCache = new Map();
+
+  // 칸 하나짜리 그림을 구워 둔다.
+  //
+  // 벽 한 칸을 그리는 데 fillRect 가 열다섯 번 들어간다. 화면에 벽이 백서른
+  // 칸이니 매 프레임 이천 번이 된다. 실제로 재보니 2099 번이었다.
+  //
+  // 전에는 줄 한 줄을 통째로 구우는 식으로 이걸 피했는데, 그러면 앞뒤 순서가
+  // 종이 안에 갇힌다. 굽는 걸 버릴 게 아니라 **굽는 단위를 줄에서 칸으로** 낮추면
+  // 둘 다 된다. 칸 하나가 붙이기 한 번이다.
+  //
+  // 열쇠에 이웃 모양까지 넣는다. 벽은 옆에 벽이 붙었느냐에 따라 테두리를
+  // 그을지 말지가 달라지기 때문이다. 열쇠가 같으면 그림도 같다
+  const propCache = new Map();
+
+  function bakeProp(key, w, h, paint) {
+    let cv = propCache.get(key);
+    if (cv) return cv;
+
+    cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.ceil(w));
+    cv.height = Math.max(1, Math.ceil(h));
+    paint(cv.getContext('2d'));
+
+    propCache.set(key, cv);
+    // 장소 열 × 무달 다섯 × 이웃 열여섯 이면 사백이 넘지만, 한 판에는
+    // 장소가 아홉 개뿐이라 실제로 차는 건 백 장 안팝이다
+    if (propCache.size > 600) propCache.clear();
+    return cv;
+  }
 
   function bakeTile(key, rows, pal, P) {
     let cv = tileCache.get(key);
@@ -1473,157 +1486,151 @@ const Art = (() => {
     g.fillRect(q(bx + V.P * 2), q(by + V.P), q(w * 0.34), V.P);
   }
 
-  function buildRow(g, tiles, W, y) {
+  // 칸 하나에 놓인 물건을 그린다. px, py 는 그 칸의 왼쪽 위 모서리다.
+  //
+  // 전에는 줄 한 줄을 통째로 종이에 구워두고 그 종이를 깔았다. 그러면 앞뒤
+  // 순서가 종이 안에 갇힌다 — 사람은 종이 사이에만 낄 수 있고, 같은 줄에 있는
+  // 상자와는 앞뒤를 못 가린다. 그래서 사람을 판 위에 한 번 더 그렸고,
+  // 상자 뒤에 선 사람이 상자 앞으로 나왔다.
+  //
+  // 칸 하나씩 그리면 벽도 상자도 사람도 같은 목록에 들어가서 발밑 y 하나로
+  // 줄을 선다. 부순 벽이 남아 있는 문제도 같이 없어진다 — 다시 구울 종이가 없다
+  function drawProp(g, tiles, W, x, y, px, py) {
     const T = V.TS;
+    const t = tiles[y][x];
 
-    const isWall = (x, yy) => (yy < 0 || yy >= tiles.length || x < 0 || x >= W)
-                              ? true : tiles[yy][x] === 1;
+    if (t === 2 || t === 4) { paintCrate(g, px, py, T, x, y, t === 4); return; }
+    if (t !== 1) return;
 
-    // 이 종이 안에서의 y 좌표. 줄의 윗변이 V.TOP 자리에 온다
-    const Y = V.TOP;
+    const isWall = (xx, yy) => (yy < 0 || yy >= tiles.length || xx < 0 || xx >= W)
+                               ? true : tiles[yy][xx] === 1;
 
-    for (let x = 0; x < W; ++x) {
-      const t = tiles[y][x];
-      const px = x * T;
-      // 4 = 밀 수 있는 상자. 이 줄에 4 가 빠져 있어서 **한 판에 200개쯤이 통째로
-      // 안 그려지고 있었다.** 보이지도 않는데 길은 막는다.
-      // 아래에 쇠테와 못을 그리는 코드가 멀쩡히 있는데 여기서 걸러지고 있었다
-      if (t !== 1 && t !== 2 && t !== 4) continue;
+    const th = placeAt(x, y);
+    const dp = Math.max(1, Math.round(T / 16));
 
-      const th = placeAt(x, y);
-      const top = rgb(th.wallTop), side = rgb(th.wallSide), edge = rgb(th.wallEdge);
+    // **한 조각 안에서도 무늬를 섞는다.**
+    //
+    // 종류를 장소마다 하나로 뒀더니, 확대해 보면 같은 그림이 줄줄이 붙어서
+    // 물건이 아니라 벽지로 보였다. 판이 지루하지 않은 건 색이 화려해서가
+    // 아니라 같은 게 두 번 연속 안 나오기 때문이다.
+    //
+    // 자리로 정한다. 무작위면 매 프레임 바뀌고 시간이면 깜빡인다.
+    // 같은 칸은 언제 봐도 같은 무늬여야 판이 기억되는 장소가 된다
+    const kinds = th.wallKinds || [th.wallKind || 'rock'];
+    const wk = kinds[tileHash(x, y) % kinds.length];
 
-      // 밀 수 있는 상자는 **색이 아니라 모양으로** 다르다.
-      // 색만 바꾸면 장소 팔레트에 묻혀서 못 알아본다.
-      // 쇠테를 두르고 네 귀퉁이에 못을 박아서, 무겁고 미는 것처럼 보이게 한다
-      const box = (t === 4);
-      // rgb() 를 두 번 걸고 있었다. 안쪽이 이미 [r,g,b] 배열인데 바깥에서 또 불러서
-      // parseInt('106', 16) 로 읽혔고, **모든 상자의 윗면이 짙은 남색**이 됐다.
-      // 상자가 나무 궤짝이 아니라 젤리처럼 보이던 게 이 한 줄이다.
-      // 위가 어둡고 아래가 밝아서 빛이 아래에서 오는 것처럼도 보였다
-      const ct = box ? lighter(rgb(th.crate), 0.10) : rgb(th.crateTop);
-      const cs = rgb(th.crateSide), cc = rgb(th.crate);
+    // 이웃에 벽이 붙었는지를 네 비트로 묶는다. 이게 같으면 그림이 같다
+    const m = (isWall(x, y - 1) ? 1 : 0) | (isWall(x - 1, y) ? 2 : 0)
+            | (isWall(x + 1, y) ? 4 : 0) | (isWall(x, y + 1) ? 8 : 0);
 
-      if (t === 1) {
-        // 앞면. 아래로 V.WH 만큼 두께가 보인다
-        g.fillStyle = css(side);
-        g.fillRect(px, Y + T - V.WH, T, V.WH);
+    g.drawImage(bakeWall(th, wk, m, dp), px, py - V.WH);
 
-        // 앞면 아래쪽을 더 어둡게. 바닥과 만나는 데가 제일 어둡다.
-        // 그라데이션이 아니라 두 단이다. 픽셀 아트는 색이 번지지 않는다
-        g.fillStyle = 'rgba(0,0,0,0.18)';
-        pr(g, px, Y + T - V.WH * 0.55, T, V.WH * 0.55);
-        g.fillStyle = 'rgba(0,0,0,0.34)';
-        pr(g, px, Y + T - V.WH * 0.25, T, V.WH * 0.25);
+    // 조형물은 굽지 않는다. 어느 칸에 걸리느냐가 자리마다 달라서
+    // 열쇠에 넣으면 캐시가 칸 수만큼 늘어난다. 이것도 붙이기 한 번이다.
+    //
+    // 넷이 붙었으면 그 위에 물건을 덮는다. 짝수 자리에서만 묶는다 —
+    // 아무 데서나 묶으면 벽 하나가 여러 묶음에 동시에 속해서 어느 쪽으로
+    // 그릴지가 안 정해진다. 짝수 격자면 하나뿐이다.
+    // 넷 -> 가로 둘 -> 세로 둘 순으로 본다. 넷이 붙은 자리는 가로 둘이기도 해서,
+    // 가로를 먼저 보면 큰 물건이 영영 안 나온다. **큰 것부터 집어야** 한다
+    const qx = x & ~1, qy = y & ~1;
+    const quad = isWall(qx, qy) && isWall(qx + 1, qy)
+              && isWall(qx, qy + 1) && isWall(qx + 1, qy + 1);
 
-        // 윗면. V.WH 만큼 위로 올라가 있다. 이 어긋남이 곧 높이다.
-        //
-        // **도트 지도를 그대로 붙인다.** 전에는 바탕을 칠하고 그 위에 비율로 계산한
-        // 선을 얹었다. 그러면 줄눈이 배율에 따라 반 픽셀에 걸려 흐려지고,
-        // 확대하면 반듯한 사각형만 나와서 도형처럼 보인다.
-        // 16x16 을 한 번 구워서 붙이면 어느 배율에서든 도트가 도트로 남는다
-        {
-          const dp = Math.max(1, Math.round(T / 16));
-          // **한 조각 안에서도 무늬를 섞는다.**
-          //
-          // 종류를 장소마다 하나로 뒀더니, 확대해 보면 같은 그림이 줄줄이 붙어서
-          // 물건이 아니라 **벽지**로 보였다. 판이 지루하지 않은 건 색이 화려해서가
-          // 아니라 같은 게 두 번 연속 안 나오기 때문이다.
-          //
-          // 자리로 정한다. 무작위면 매 프레임 바뀌고 시간이면 깜빡인다.
-          // 같은 칸은 언제 봐도 같은 무늬여야 판이 기억되는 장소가 된다
-          const kinds = th.wallKinds || [th.wallKind || 'rock'];
-          const wk = kinds[tileHash(x, y) % kinds.length];
-          const rows = WALL_DOTS[wk] || WALL_DOTS.rock;
-          // 무늬 대비를 세게 준다.
-          //
-          // 처음엔 밝은 면을 원래 색에서 조금만 올렸더니 무늬가 거의 안 보였다.
-          // 낮은 해상도에서는 **한 점이 곧 정보**라, 옆 점과 명도가 비슷하면
-          // 그 점은 없는 것과 같다. 픽셀 아트가 색을 적게 쓰면서도 또렷한 이유가
-          // 색마다 명도를 확실히 벌려놓기 때문이다
-          const cv = bakeTile('w:' + wk + ':' + th.name + ':' + dp, rows,
-                              tonePal(th.wallTop, true), dp);
-          blitTile(g, cv, px, Y - V.WH, dp);
+    // **다 놓지 않는다.** 짝이 되는 자리마다 자동차를 놓았더니 부두가
+    // 주차장이 됐다. 물건이 흔해지면 그건 더는 눈에 띄는 물건이 아니다.
+    //
+    // 넷짜리는 원래 드물어서 다 놓고, 둘짜리는 셋 중 하나만 놓는다.
+    // 묶음의 왼쪽 위 자리로 정하므로 한 묶음의 네 칸이 같은 답을 낸다 —
+    // 칸마다 따로 던지면 물건이 반만 그려진다
+    const hq = tileHash(qx, qy);
 
-          // 넷이 붙었으면 그 위에 물건을 덮는다.
-          //
-          // 짝수 자리에서만 묶는다. 아무 데서나 묶으면 벽 하나가 여러 묶음에
-          // 동시에 속해서 어느 쪽으로 그릴지가 안 정해진다. 짝수 격자면 하나뿐이다.
-          //
-          // 칸마다 자기 몫(16x16)만 오려 붙인다. 줄 단위로 그리는 구조라
-          // 두 줄짜리 그림을 한 번에 그리면 앞뒤 순서가 무너진다
-          // 넷 -> 가로 둘 -> 세로 둘 순으로 본다.
-          //
-          // 순서가 중요하다. 넷이 붙은 자리는 가로 둘이기도 하고 세로 둘이기도 해서,
-          // 가로를 먼저 보면 큰 물건이 영영 안 나온다. **큰 것부터 집어야** 한다
-          const qx = x & ~1, qy = y & ~1;
-          const quad = isWall(qx, qy) && isWall(qx + 1, qy)
-                    && isWall(qx, qy + 1) && isWall(qx + 1, qy + 1);
-
-          // **다 놓지 않는다.** 짝이 되는 자리마다 자동차를 놓았더니 부두가
-          // 주차장이 됐다. 물건이 흔해지면 그건 더는 눈에 띄는 물건이 아니다.
-          //
-          // 넷짜리는 원래 드물어서 다 놓고, 둘짜리는 셋 중 하나만 놓는다.
-          // 묶음의 왼쪽 위 자리로 정하므로 한 묶음의 네 칸이 같은 답을 낸다 —
-          // 칸마다 따로 던지면 물건이 반만 그려진다
-          const hq = tileHash(qx, qy);
-
-          if (th.mark && LANDMARK[th.mark] && quad) {
-            stampMark(g, bakeLandmark(th, dp), (x - qx), (y - qy), px, Y, T, dp);
-          }
-          else if (th.markH && LANDMARK_H[th.markH] && hq % 3 === 0
-                   && isWall(qx, y) && isWall(qx + 1, y)) {
-            // 좌우를 뒤집어 섞는다. 자동차가 전부 같은 쪽을 보고 서 있으면
-            // 그건 세워둔 차가 아니라 무늬다
-            stampMark(g, bakeMark2(th, dp, 'H', (hq & 4) !== 0),
-                      (x - qx), 0, px, Y, T, dp);
-          }
-          else if (th.markV && LANDMARK_V[th.markV] && tileHash(x, qy) % 3 === 0
-                   && isWall(x, qy) && isWall(x, qy + 1)) {
-            stampMark(g, bakeMark2(th, dp, 'V', (tileHash(x, qy) & 4) !== 0),
-                      0, (y - qy), px, Y, T, dp);
-          }
-
-          // 윗변 림. 물건이 바닥에서 떠 보이게 하는 한 줄이다.
-          // 위쪽에 벽이 이어져 있으면 안 긋는다 — 덩어리 한가운데에 줄이 생기면
-          // 하나짜리 벽이 여럿 붙어 있는 것처럼 보인다
-          if (!isWall(x, y - 1)) {
-            g.fillStyle = 'rgba(255,255,255,0.26)';
-            g.fillRect(px, Y - V.WH, T, dp);
-          }
-        }
-
-        // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘.
-        //
-        // 빛을 0.20 으로 얹었더니 **벽 윗줄이 바닥보다 밝아졌다.**
-        // 벽은 판에서 제일 어두워야 하는데 한 줄이 제일 밝으면 그 줄이 눈을 끈다.
-        // 법칙 1(바닥 > 상자 > 벽)을 한 줄이 깨는 셈이다. 절반으로 낮추고
-        // 대신 그늘을 키운다 — 어두워지는 쪽으로는 위계가 안 깨진다
-        g.fillStyle = 'rgba(255,255,255,0.10)';
-        g.fillRect(px, Y - V.WH, T, V.P);
-        g.fillRect(px, Y - V.WH, V.P, T);
-        g.fillStyle = 'rgba(0,0,0,0.26)';
-        g.fillRect(px, Y - V.WH + T - V.P, T, V.P);
-        g.fillRect(px + T - V.P, Y - V.WH, V.P, T);
-
-        // 벽끼리 붙은 쪽에는 테두리를 안 긋는다. 그래야 벽이 덩어리로 보인다.
-        // 칸마다 테두리를 그으면 바둑판이 된다
-        g.fillStyle = css(edge);
-        if (!isWall(x, y - 1)) g.fillRect(px, Y - V.WH, T, 1);
-        if (!isWall(x - 1, y)) g.fillRect(px, Y - V.WH, 1, T + V.WH);
-        if (!isWall(x + 1, y)) g.fillRect(px + T - 1, Y - V.WH, 1, T + V.WH);
-        if (!isWall(x, y + 1)) g.fillRect(px, Y + T - 1, T, 1);
-      }
-      else if (t === 2 || t === 4) {
-        paintCrate(g, px, Y, T, x, y, t === 4);
-      }
+    if (th.mark && LANDMARK[th.mark] && quad) {
+      stampMark(g, bakeLandmark(th, dp), (x - qx), (y - qy), px, py, T, dp);
+    }
+    else if (th.markH && LANDMARK_H[th.markH] && hq % 3 === 0
+             && isWall(qx, y) && isWall(qx + 1, y)) {
+      // 좌우를 뒤집어 섞는다. 자동차가 전부 같은 쪽을 보고 서 있으면
+      // 그건 세워둔 차가 아니라 무늬다
+      stampMark(g, bakeMark2(th, dp, 'H', (hq & 4) !== 0),
+                (x - qx), 0, px, py, T, dp);
+    }
+    else if (th.markV && LANDMARK_V[th.markV] && tileHash(x, qy) % 3 === 0
+             && isWall(x, qy) && isWall(x, qy + 1)) {
+      stampMark(g, bakeMark2(th, dp, 'V', (tileHash(x, qy) & 4) !== 0),
+                0, (y - qy), px, py, T, dp);
     }
   }
 
+  // 벽 한 칸을 구워 둔다. 종이 안에서 윗변이 0, 칸의 윗변이 V.WH 자리다
+  function bakeWall(th, wk, m, dp) {
+    const T = V.TS;
+    return bakeProp('W:' + th.name + ':' + wk + ':' + m + ':' + dp + ':' + T,
+                    T, T + V.WH, (g) => {
+      const side = rgb(th.wallSide), edge = rgb(th.wallEdge);
+      const up = (m & 1), left = (m & 2), right = (m & 4), down = (m & 8);
+      const Y = V.WH;                       // 칸의 윗변
+
+      // 앞면. 아래로 V.WH 만큼 두께가 보인다
+      g.fillStyle = css(side);
+      g.fillRect(0, Y + T - V.WH, T, V.WH);
+
+      // 앞면 아래쪽을 더 어둡게. 바닥과 만나는 데가 제일 어둡다.
+      // 그라데이션이 아니라 두 단이다. 픽셀 아트는 색이 번지지 않는다
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      pr(g, 0, Y + T - V.WH * 0.55, T, V.WH * 0.55);
+      g.fillStyle = 'rgba(0,0,0,0.34)';
+      pr(g, 0, Y + T - V.WH * 0.25, T, V.WH * 0.25);
+
+      // 윗면. V.WH 만큼 위로 올라가 있다. 이 어긋남이 곧 높이다.
+      //
+      // **도트 지도를 그대로 붙인다.** 전에는 바탕을 칠하고 그 위에 비율로 계산한
+      // 선을 얹었다. 그러면 줄눈이 배율에 따라 반 픽셀에 걸려 흐려지고,
+      // 확대하면 반듯한 사각형만 나와서 도형처럼 보인다.
+      // 16x16 을 한 번 구워서 붙이면 어느 배율에서든 도트가 도트로 남는다
+      //
+      // 무늬 대비를 세게 준다. 낮은 해상도에서는 한 점이 곧 정보라,
+      // 옆 점과 명도가 비슷하면 그 점은 없는 것과 같다
+      const rows = WALL_DOTS[wk] || WALL_DOTS.rock;
+      blitTile(g, bakeTile('w:' + wk + ':' + th.name + ':' + dp, rows,
+                           tonePal(th.wallTop, true), dp), 0, 0, dp);
+
+      // 윗변 림. 물건이 바닥에서 떠 보이게 하는 한 줄이다.
+      // 위쪽에 벽이 이어져 있으면 안 긋는다 — 덩어리 한가운데에 줄이 생기면
+      // 하나짜리 벽이 여럿 붙어 있는 것처럼 보인다
+      if (!up) {
+        g.fillStyle = 'rgba(255,255,255,0.26)';
+        g.fillRect(0, 0, T, dp);
+      }
+
+      // 왼쪽 위 모서리에 빛. 오른쪽 아래에 그늘.
+      //
+      // 빛을 0.20 으로 얹었더니 **벽 윗줄이 바닥보다 밝아졌다.**
+      // 벽은 판에서 제일 어두워야 하는데 한 줄이 제일 밝으면 그 줄이 눈을 끈다.
+      // 법칙 1(바닥 > 상자 > 벽)을 한 줄이 깨는 셈이다. 절반으로 낮추고
+      // 대신 그늘을 키운다 — 어두워지는 쪽으로는 위계가 안 깨진다
+      g.fillStyle = 'rgba(255,255,255,0.10)';
+      g.fillRect(0, 0, T, V.P);
+      g.fillRect(0, 0, V.P, T);
+      g.fillStyle = 'rgba(0,0,0,0.26)';
+      g.fillRect(0, T - V.P, T, V.P);
+      g.fillRect(T - V.P, 0, V.P, T);
+
+      // 벽끼리 붙은 쪽에는 테두리를 안 긋는다. 그래야 벽이 덩어리로 보인다.
+      // 칸마다 테두리를 그으면 바둑판이 된다
+      g.fillStyle = css(edge);
+      if (!up)    g.fillRect(0, 0, T, 1);
+      if (!left)  g.fillRect(0, 0, 1, T + V.WH);
+      if (!right) g.fillRect(T - 1, 0, 1, T + V.WH);
+      if (!down)  g.fillRect(0, Y + T - 1, T, 1);
+    });
+  }
+
+
   // 상자 하나를 그린다.
   //
-  // 줄 단위 종이에 굽는 쪽과 **밀려가는 상자를 매 프레임 그리는 쪽**이 같은 그림을
-  // 써야 한다. 두 군데에 따로 그리면 밀리기 시작하는 순간 상자가 다른 물건으로 바뀐다.
+  // 판에 놓인 상자와 **밀려가는 상자**가 같은 그림을 써야 한다.
+  // 두 군데에 따로 그리면 밀리기 시작하는 순간 상자가 다른 물건으로 바뀐다.
   //
   // 밀 수 있는 상자는 모양이 아니라 덧그린 쇠테로 구분한다. 실루엣까지 바꾸면
   // 어느 것이 밀리는지 외워야 하는데, 그건 규칙이 아니라 암기다.
@@ -1633,37 +1640,74 @@ const Art = (() => {
   function paintCrate(g, px, py, T, gx, gy, box) {
     const th = placeAt(gx, gy);
     const dp = Math.max(1, Math.round(T / 16));
-
-    // 그림자. 물건에 붙어 있어야 그 물건의 그림자로 읽힌다
-    g.fillStyle = 'rgba(0,0,0,0.30)';
-    pr(g, px + T * 0.14, py + T * 0.80, T * 0.74, T * 0.10);
-
     const kinds = th.crateKinds || [th.crateKind || 'crate'];
     const ck = kinds[tileHash(gx, gy) % kinds.length];
-    const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
-    const cv = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
-                        tonePal(th.crate), dp);
-    blitTile(g, cv, px, py - V.CH, dp);
 
-    if (!box) return;
-
-    // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
-    const bx = Math.round((px + dp) / dp) * dp;
-    const by = Math.round((py - V.CH + dp * 4) / dp) * dp;
-    const bw = dp * 14;
-
-    g.fillStyle = 'rgba(84,94,110,0.95)';
-    g.fillRect(bx, by, bw, dp);
-    g.fillRect(bx, by + dp * 5, bw, dp);
-    g.fillStyle = 'rgba(150,162,182,0.95)';
-    g.fillRect(bx, by - dp, bw, dp);
-    g.fillRect(bx, by + dp * 4, bw, dp);
-
-    g.fillStyle = 'rgba(228,236,248,0.95)';
-    for (let i = 0; i < 4; ++i) {
-      g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
-    }
+    g.drawImage(bakeCrate(th, ck, box, dp), px, py - V.CH);
   }
+
+  // 종이 안에서 윗변이 0, 칸의 윗변이 V.CH 자리다
+  function bakeCrate(th, ck, box, dp) {
+    const T = V.TS;
+    // 종이는 위로 V.CH 올라가고 아래는 칸 바닥에서 끝난다
+    return bakeProp('C:' + th.name + ':' + ck + ':' + (box ? 1 : 0) + ':' + dp + ':' + T,
+                    T, V.CH + T, (g) => {
+      const Y = V.CH;                       // 칸의 윗변
+
+      // 바닥에 떨어뜨리는 그림자는 없앴다. 옆면이 생기기 전에는 그게 물건을
+      // 땅에 붙여 보이게 하는 유일한 수단이었는데, 정작 물건과 그림자 사이가
+      // 떠 있어서 반대 효과가 났다. 벽도 그림자 없이 옆면만으로 서 있다
+      const rows = CRATE_DOTS[ck] || CRATE_DOTS.crate;
+      const top = bakeTile('c:' + ck + ':' + th.name + ':' + dp, rows,
+                           tonePal(th.crate), dp);
+      blitTile(g, top, 0, 0, dp);
+
+      // 옆면. **이게 없어서 상자가 공중에 떠 있었다.**
+      //
+      // 벽은 윗면을 V.WH 만큼 올리고 그 아래를 옆면으로 채워서 칸 바닥에 닿는다.
+      // 상자는 윗면만 올리고 아래를 안 채웠다. 그래서 상자 아랫변이 칸 바닥보다
+      // V.CH 만큼 위에 있었고, 그림자만 저 밑에 따로 깔려 있었다.
+      // 물건과 그림자 사이가 비면 눈은 그걸 '떠 있다' 로 읽는다.
+      //
+      // 옆면 색을 팔레트에서 따로 가져와 네모로 칠했더니 두 가지가 어긋났다.
+      // 색이 상자와 안 맞아 형광 띠가 됐고, 상자는 모서리가 깎여 있는데 네모는
+      // 안 깎여서 좌우로 삐져나왔다.
+      //
+      // **그림의 맨 아랫줄을 아래로 늘린다.** 실루엣도 색도 저절로 맞는다.
+      // 상자 무늬가 몇 가지든, 나중에 그림을 바꾸든 따로 손볼 게 없다
+      g.imageSmoothingEnabled = false;
+      g.drawImage(top, 0, 16 * dp - dp, 16 * dp, dp, 0, Y + T - V.CH, T, V.CH);
+
+      // 늘린 자리를 어둡게. 옆면은 빛을 덜 받고, 바닥과 만나는 데가 제일 어둡다.
+      // source-atop 이라 그림이 있는 데만 칠해진다 — 깎인 모서리 밖으로 안 샌다
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = 'rgba(0,0,0,0.28)';
+      g.fillRect(0, Y + T - V.CH, T, V.CH);
+      g.fillStyle = 'rgba(0,0,0,0.22)';
+      pr(g, 0, Y + T - V.CH * 0.45, T, V.CH * 0.45);
+      g.globalCompositeOperation = 'source-over';
+
+      if (!box) return;
+
+      // 쇠테 두 줄과 못 넷. 도트 자리에 맞춰 찍는다
+      const bx = dp;
+      const by = dp * 4;
+      const bw = dp * 14;
+
+      g.fillStyle = 'rgba(84,94,110,0.95)';
+      g.fillRect(bx, by, bw, dp);
+      g.fillRect(bx, by + dp * 5, bw, dp);
+      g.fillStyle = 'rgba(150,162,182,0.95)';
+      g.fillRect(bx, by - dp, bw, dp);
+      g.fillRect(bx, by + dp * 4, bw, dp);
+
+      g.fillStyle = 'rgba(228,236,248,0.95)';
+      for (let i = 0; i < 4; ++i) {
+        g.fillRect(bx + (i & 1 ? bw - dp * 2 : dp), by + (i < 2 ? 0 : dp * 5), dp, dp);
+      }
+    });
+  }
+
 
   // 밀려가는 상자. 화면 자리는 칸 사이 어디든 될 수 있다
   function drawCrate(g, sx, sy, T, gx, gy, box) {
@@ -3144,7 +3188,7 @@ const Art = (() => {
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
     loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
-    buildFloor, buildRow, water, foamEdge,
+    buildFloor, drawProp, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,

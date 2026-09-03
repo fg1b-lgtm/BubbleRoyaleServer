@@ -120,7 +120,7 @@ const PEEK = '(function(){ try {'
   + ' var mx = me ? me.x1 : 0, my = me ? me.y1 : 0;'
   + ' return JSON.stringify({ phase:G.phase, alive:G.aliveCount, round:G.roundNo,'
   + '   me:G.myId, walls:w, blocks:b, boxes:x2, drawn:np, dash:dash, mx:mx, my:my,'
-  + '   TS:V.TS, WH:V.WH, TOP:V.TOP, BOT:V.BOT, P:V.P,'
+  + '   TS:V.TS, WH:V.WH, CH:V.CH, P:V.P,'
   + '   alive:(me ? ((me.flags & 1) ? 1 : 0) : -1),'
   + '   bubbles:(G.bubbles||[]).length });'
   + ' } catch(e) { return JSON.stringify({err:String(e)}); } })()';
