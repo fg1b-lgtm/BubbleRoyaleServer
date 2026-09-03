@@ -118,6 +118,7 @@ static void SendWelcome(Session* s, int slot)
     w.trap_speed         = (uint8_t)TRAP_MOVE_SPEED;
     w.lane_snap          = (uint8_t)LANE_SNAP_PERCENT;
     w.push_slide         = (uint8_t)PUSH_SLIDE_TICKS;
+    w.flood_warn_sec     = (uint8_t)FLOOD_WARN_SECONDS;
 
     // 아홉 자리에 어떤 조각이 깔렸는지. 화면이 구역마다 다르게 그리는 데 쓴다
     for (int i = 0; i < SECTOR_SLOTS; ++i) {

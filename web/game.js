@@ -336,8 +336,7 @@ function rebuildFoam() {
   const T = Art.V.TS;
   const wet = (x, y) => {
     if (x < 0 || y < 0 || x >= G.C.mapW || y >= G.C.mapH) return true;
-    const s = Math.min(2, Math.floor(y / G.C.sectorH)) * 3 + Math.min(2, Math.floor(x / G.C.sectorW));
-    if (G.sectors[s] === SECT.FLOODED) return true;
+    if (G.sectors[sectorOf(x, y)] === SECT.FLOODED) return true;
     if (G.ring.on && (x < G.ring.x0 || x > G.ring.x1 || y < G.ring.y0 || y > G.ring.y1)) return true;
     return false;
   };
@@ -483,6 +482,7 @@ function frame(ts) {
   rebuild();
   rebuildFoam();
   updateCamera(dt);
+  tickWarnSound(gameTime);
   drawWorld(gameTime, dt);
   drawHUD(gameTime);
   drawFirstHints(gameTime);
@@ -586,6 +586,77 @@ function drawBubble(ctx, b, now, T) {
                  b.owner === 0xFF ? null : colorOf(b.owner));
 }
 
+// ── 침수 예고 ────────────────────────────────────────────────
+//
+// 남은 시간을 초로 읽게 하지 않는다. **뛰는 속도**로 알려준다.
+// 30초 남았을 때는 천천히, 코앞이면 정신없이 뛴다.
+//
+// 사람은 "17초 남았다" 를 계산해서 움직이지 않는다. 급해 보이면 급하게 움직인다.
+// 시계를 화면에 띄우는 것보다 이쪽이 손을 빨리 움직이게 만든다.
+//
+// 예고를 못 받았으면 (판 도중에 들어왔다) 중간 속도로 뛴다.
+// 아무것도 안 뛰는 것보다 낫다 — 위험한 건 사실이기 때문이다
+const WARN_SLOW_MS = 1100;   // 30초 남았을 때 한 번 뛰는 데 걸리는 시간
+const WARN_FAST_MS = 190;    // 코앞일 때
+
+function warnLeft(s, now) {
+  const at = G.floodAt[s];
+  return at > 0 ? Math.max(0, at - now) : -1;
+}
+
+function warnBeat(s, now) {
+  const left = warnLeft(s, now);
+  // 남은 시간이 0 에 가까울수록 1 에 가깝다
+  const urge = left < 0 ? 0.5
+             : 1 - Math.min(1, left / (G.C.floodWarnSeconds * 1000));
+  const period = WARN_SLOW_MS + (WARN_FAST_MS - WARN_SLOW_MS) * urge * urge;
+
+  // 사인이 아니라 **한쪽으로 치우친 파형**이다.
+  // 사인은 밝은 시간과 어두운 시간이 같아서 숨쉬기처럼 보인다.
+  // 짧게 번쩍하고 오래 어두운 쪽이 경고등으로 읽힌다
+  const k = (now % period) / period;
+  return k < 0.34 ? (1 - k / 0.34) : 0;
+}
+
+// 경고음.
+//
+// 30초 내내 울리면 그건 소음이고, 사람은 소음을 무시하는 법을 금방 배운다.
+// **마지막 10초에만** 울린다. 그때부터는 무시할 수 없어야 한다.
+//
+// 내가 그 구역에 있을 때만 낸다. 남의 구역이 잠기는 소리까지 다 들리면
+// 아홉 구역이 돌아가며 삑삑거려서 어느 게 내 얘기인지 모른다
+const WARN_BEEP_FROM_MS = 10000;
+let warnBeepAt = 0;
+
+function tickWarnSound(now) {
+  const me = G.players.get(G.myId);
+  if (!me || !(me.flags & PF.ALIVE)) return;
+
+  const s = sectorOf(me.jtx, me.jty);
+  if (G.sectors[s] !== SECT.WARNING) return;
+
+  const left = warnLeft(s, now);
+  if (left < 0 || left > WARN_BEEP_FROM_MS) return;
+
+  // 뛰는 것과 같은 박자로 울린다. 눈과 귀가 따로 놀면 둘 다 무시된다
+  const urge = 1 - Math.min(1, left / (G.C.floodWarnSeconds * 1000));
+  const period = WARN_SLOW_MS + (WARN_FAST_MS - WARN_SLOW_MS) * urge * urge;
+  if (now - warnBeepAt < period) return;
+
+  warnBeepAt = now;
+  Sound.warnBeep(left / WARN_BEEP_FROM_MS);
+}
+
+// 이 칸이 아홉 구역 중 어디인가.
+//
+// 같은 식을 세 군데에 적어놨었다. 판 크기가 구역의 정확한 배수가 아니라
+// 가장자리에서 3 이 나올 수 있어서 min 을 씌우는데, 그걸 한 군데서 빠뜨리면
+// 그 자리에서만 배열 밖을 읽는다. 한 줄로 모은다
+function sectorOf(tx, ty) {
+  return Math.min(2, Math.floor(ty / G.C.sectorH)) * 3
+       + Math.min(2, Math.floor(tx / G.C.sectorW));
+}
+
 function drawWorld(now, dt) {
   const T = Art.V.TS;
   const th = Art.V.world;
@@ -619,21 +690,23 @@ function drawWorld(now, dt) {
       Art.water(ctx, sx, sy, w, h, now);
     }
     else if (G.sectors[s] === SECT.WARNING) {
-      // 예고를 붉은 테두리로만 하면 그건 UI 다.
+      // 비가 먼저 내린다. 테두리를 그으면 그건 UI 인데,
       // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
       if (Math.random() < 0.55) FX.rain(sx, sy, w, h, T, now, 2);
 
-      const beat = 0.5 + 0.5 * Math.sin(now / 150);
-      ctx.fillStyle = 'rgba(20,60,110,' + (0.05 + 0.05 * beat) + ')';
+      ctx.fillStyle = 'rgba(20,60,110,' + (0.05 + 0.05 * warnBeat(s, now)) + ')';
       ctx.fillRect(sx, sy, w, h);
 
-      // 위험 표시. 빗금이 흐른다
-      ctx.save();
-      ctx.beginPath(); ctx.rect(sx, sy, w, h); ctx.clip();
-      ctx.strokeStyle = 'rgba(255,90,70,' + (0.18 + 0.20 * beat) + ')';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(sx + 2, sy + 2, w - 4, h - 4);
-      ctx.restore();
+      // **구역 전체가 붉게 뛴다.**
+      //
+      // 전에는 구역 둘레에 붉은 네모를 그렸다. 그건 지도에 친 표시지
+      // 여기 있으면 안 된다는 말이 아니다. 판 위에 겹쳐서 뛰게 하면
+      // 눈을 감아도 보이는 종류의 신호가 된다.
+      //
+      // 색을 옅게(0.30 까지) 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
+      // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다
+      ctx.fillStyle = 'rgba(210,40,30,' + (0.30 * warnBeat(s, now)) + ')';
+      ctx.fillRect(sx, sy, w, h);
     }
   }
 
@@ -1101,11 +1174,29 @@ function drownLeft(p) {
 }
 
 function inWater(tx, ty) {
-  const s = Math.min(2, Math.floor(ty / G.C.sectorH)) * 3 + Math.min(2, Math.floor(tx / G.C.sectorW));
-  if (G.sectors[s] === SECT.FLOODED) return true;
+  if (G.sectors[sectorOf(tx, ty)] === SECT.FLOODED) return true;
   if (G.ring.on && (tx < G.ring.x0 || tx > G.ring.x1 || ty < G.ring.y0 || ty > G.ring.y1)) return true;
   return false;
 }
+
+// 내가 지금 어느 구역에 있나.
+//
+// 죽어서 관전 중이면 보고 있는 구역이 내 구역이다. 남의 판을 보면서
+// 내가 죽은 자리의 소리를 듣는 건 말이 안 된다
+function mySector() {
+  const me = G.players.get(G.myId);
+  if (me && (me.flags & PF.ALIVE)) return sectorOf(me.jtx, me.jty);
+
+  const T = Art.V.TS;
+  return sectorOf(Math.floor((view.x0 + view.w * T / 2) / T),
+                  Math.floor((view.y0 + view.h * T / 2) / T));
+}
+
+// 소리를 안 내는 Sound. 구역 밖 일에 이걸 대신 넣는다.
+//
+// 호출하는 쪽에 if 를 열세 개 다는 대신 여기서 한 번 고른다.
+// 그러면 이벤트마다 '이건 들리나' 를 다시 판단할 일이 없다
+const QUIET = new Proxy({}, { get: () => () => {} });
 
 // 화면에서 난 자리를 좌우 어디로 들리게 할지
 function panOf(px) { return Math.max(-1, Math.min(1, (px / W) * 2 - 1)) * 0.8; }
@@ -1411,8 +1502,7 @@ function drawHUD(now) {
 
     for (const [id, p] of G.players) {
       if (!(p.flags & PF.ALIVE) || p.visible === false) continue;
-      const s = Math.min(2, Math.floor(p.jty / G.C.sectorH)) * 3
-              + Math.min(2, Math.floor(p.jtx / G.C.sectorW));
+      const s = sectorOf(p.jtx, p.jty);
       const gx = mx + (s % 3) * (cell + gap) + cell / 2;
       const gy = my + Math.floor(s / 3) * (cell + gap) + cell / 2;
 
@@ -1446,37 +1536,39 @@ function drawHUD(now) {
     ctx.restore();
   }
 
-  // ── 침수 예고 띠 ───────────────────────────────────────────
+  // ── 알림 ───────────────────────────────────────────────────
+  //
+  // 전에는 화면 폭 전체에 붉은 띠를 깔고 그 위에 빗금이 흐르게 했다.
+  // 그게 화면을 계속 왔다 갔다 하는 붉은 네모의 정체였다.
+  //
+  // 세 가지가 틀렸다.
+  //   1) 화면 폭을 쓴다. 판은 가운데 일부뿐이라 검은 여백까지 붉게 물들었다
+  //   2) 빗금이 흐른다. 급한 건 판이지 알림 띠가 아니다
+  //   3) HUD 의 다른 판때기와 재료가 다르다. 혼자 다른 세계에서 온 것처럼 보인다
+  //
+  // 지금은 판 폭에 맞춘 판때기 하나다. 급한 것은 판이 붉게 뛰어서 말한다.
+  // 여기는 **뭐가 일어났는지 한 줄로** 알려주기만 한다
   if (banner && banner.until > now && G.phase !== PHASE.OVER) {
     const t = 1 - (banner.until - now) / banner.life;
     const inn = Art.easeOut(Math.min(1, (now - (banner.until - banner.life)) / 200));
-    const h = 34;
-    const y = 66;
+    const P = Art.V.P;
+
+    // 위쪽 HUD(처치·생존) 아래에 둔다. 46 에 뒀더니 그 판때기와 겹쳤다
+    const bw = Math.min(BW - 40, 300), bh = 30;
+    const bx = BX + (BW - bw) / 2;
+    const by = BY + 84;
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, (1 - t) * 4) * inn;
 
-    const g = ctx.createLinearGradient(0, y, W, y);
-    g.addColorStop(0, 'rgba(150,30,20,0)');
-    g.addColorStop(0.5, 'rgba(170,40,25,0.88)');
-    g.addColorStop(1, 'rgba(150,30,20,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, y, W, h);
+    panel(bx, by, bw, bh);
 
-    // 흐르는 빗금. 위험 표시는 움직여야 위험해 보인다
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, y, W, h); ctx.clip();
-    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = 10;
-    for (let x = -h; x < W + h; x += 26) {
-      const off = (now / 22) % 26;
-      ctx.beginPath();
-      ctx.moveTo(x + off, y + h); ctx.lineTo(x + off + h, y);
-      ctx.stroke();
-    }
-    ctx.restore();
+    // 왼쪽 끝에 위험색 한 줄. 판때기 재료는 그대로 두고 색만 얹는다
+    ctx.fillStyle = '#d94a32';
+    ctx.fillRect(Math.round(bx / P) * P, Math.round((by + P) / P) * P,
+                 P * 2, Math.round((bh - P * 2) / P) * P);
 
-    label(banner.text, W / 2, y + 22, 15, '#fff', 'center', 1);
+    label(banner.text, bx + bw / 2 + P, by + bh / 2 + 5, 13, '#fff', 'center', 1);
     ctx.restore();
   }
 
@@ -1852,6 +1944,16 @@ Hooks.event = function (type, x, y, who, val) {
   const far = farOf(cx, cy);
   const mine = (who === G.myId);
 
+  // 소리는 **내 구역 것만** 낸다.
+  //
+  // AOI 는 구역 밖 세 칸까지 보내준다. 벽 너머에서 뭐가 오는지 보이라고 그렇게
+  // 만든 것이고, 그건 눈으로 보라는 뜻이다. 그 소리까지 전부 들으면 아홉 구역이
+  // 있으나 마나고, 스물넷이 한 방에서 동시에 떠드는 것이 된다.
+  //
+  // 침수 예고처럼 판 전체에 대고 하는 알림은 아래에서 Sound 를 그대로 쓴다.
+  // 내 일(mine)은 어디서 나든 들린다 - 내가 죽는 소리를 못 들으면 안 된다
+  const S = (mine || sectorOf(x, y) === mySector()) ? Sound : QUIET;
+
   switch (type) {
     // 물줄기가 이 칸을 덮었다. 폭발 하나에 칸 수만큼 온다.
     // 그래서 **중심에서만** 크게 터뜨린다. 칸마다 터뜨리면 사거리보다 넓어 보이고
@@ -1881,7 +1983,7 @@ Hooks.event = function (type, x, y, who, val) {
       if (isCenter) {
         FX.burstWater(cx, cy, T, now, false);
         FX.shake(0.16);
-        Sound.boom(pan, far);
+        S.boom(pan, far);
       } else {
         // 뻗어나간 칸도 제 시각에 튄다. 물보라가 물줄기보다 먼저 나면 앞뒤가 안 맞는다
         FX.splash(cx, cy, T, now + lead);
@@ -1891,7 +1993,7 @@ Hooks.event = function (type, x, y, who, val) {
 
     case EVT.BUBBLE:
       FX.pickup(cx, cy, T, now, '#8fd8ff');
-      Sound.place(pan, far);
+      S.place(pan, far);
       break;
 
     case EVT.BLOCK:
@@ -1902,7 +2004,7 @@ Hooks.event = function (type, x, y, who, val) {
         const pl = Art.placeAt(x, y);
         FX.breakCrate(cx, cy, T, now, pl.crate, pl.crateSide);
       }
-      Sound.crack(pan, far);
+      S.crack(pan, far);
       break;
 
     // 상자를 밀었다. x,y 가 밀리기 전 자리, val 이 방향
@@ -1927,7 +2029,7 @@ Hooks.event = function (type, x, y, who, val) {
 
       // 밀린 방향으로 먼지가 인다. 밀었다는 게 보여야 다음에도 민다
       FX.push(cx, cy, PX[val], PY[val], T, now, Art.placeAt(x, y).crate);
-      Sound.push(pan, far);
+      S.push(pan, far);
       break;
     }
 
@@ -1947,7 +2049,7 @@ Hooks.event = function (type, x, y, who, val) {
         FX.kill(cx, cy, T, now, '#ffd166');
         FX.shake(0.12);
       }
-      Sound.drop(pan, far);
+      S.drop(pan, far);
       break;
 
     case EVT.ITEM: {
@@ -1972,7 +2074,7 @@ Hooks.event = function (type, x, y, who, val) {
       if (mine) {
         // 뭘 먹었는지 HUD 의 그 칸이 튀어오른다. 먹은 순간에만 눈이 간다
         pickFlash[val === ITEM.ULTRA ? ITEM.POWER : val] = now;
-        (val === ITEM.ULTRA ? Sound.ultra(pan, far) : Sound.item(pan, far));
+        (val === ITEM.ULTRA ? S.ultra(pan, far) : S.item(pan, far));
       }
       break;
     }
@@ -1991,7 +2093,7 @@ Hooks.event = function (type, x, y, who, val) {
     // '네 몸은 여기 걸쳐 있었고 판정은 이 칸이었다' 가 그림 하나로 전해진다
     case EVT.GRAZE:
       FX.graze(cx, cy, T, now, val);
-      Sound.graze(val, pan, far);
+      S.graze(val, pan, far);
       if (mine) {
         grazeCell = { x: x, y: y, at: now, n: val };
         FX.punch(0.4 + Math.min(val, 4) * 0.2);
@@ -2010,7 +2112,7 @@ Hooks.event = function (type, x, y, who, val) {
       FX.burstWater(cx, cy, T, now, true);
       FX.ring(cx, cy, T * (0.5 + step * 0.28), now, '#bfe9ff');
       FX.shake(0.10 + step * 0.03);
-      Sound.chain(val, pan, far);
+      S.chain(val, pan, far);
       break;
     }
 
@@ -2024,7 +2126,7 @@ Hooks.event = function (type, x, y, who, val) {
     // 벌 받는 느낌이 든다. 알리기만 하고 곧바로 돌려준다
     case EVT.TRAP:
       FX.graze(cx, cy, T, now, 1);
-      Sound.trap(pan, far);
+      S.trap(pan, far);
       if (mine) {
         FX.stop(70, performance.now());
         FX.shake(0.45);
@@ -2037,7 +2139,7 @@ Hooks.event = function (type, x, y, who, val) {
       const me2 = G.players.get(who);
       if (me2) me2.freeUntil = now + 380;
       FX.burstWater(cx, cy, T, now, false);
-      Sound.breaks(pan, far);
+      S.breaks(pan, far);
       break;
     }
 
@@ -2058,7 +2160,7 @@ Hooks.event = function (type, x, y, who, val) {
       markDead(who);
       killFeed.unshift({ killer: val, victim: who, born: now });
       killFeed = killFeed.slice(0, 5);
-      Sound.pop(pan, far);
+      S.pop(pan, far);
 
       if (val === G.myId) {
         // 내가 잡았다. 여기만 아끼지 않는다
@@ -2092,7 +2194,7 @@ Hooks.event = function (type, x, y, who, val) {
       FX.ring(cx, cy, T, now, col);
       alivePop = now;
 
-      Sound.death(pan, far);
+      S.death(pan, far);
       if (mine) { FX.shake(0.6); FX.flashOut('rgba(180,30,30,0.6)', 300, now); }
       break;
     }
@@ -2101,12 +2203,18 @@ Hooks.event = function (type, x, y, who, val) {
       if (mine) Sound.drown();
       break;
 
+    // 예고. x 에 구역 번호가, val 에 몇 초 뒤인지가 들어 있다.
+    //
+    // 이 한 줄이 30초짜리 시계를 켠다. 그 뒤로는 서버가 아무것도 안 보내고
+    // 화면이 알아서 붉게 뛴다 — 남은 시간이 줄수록 빨리 뛴다
     case EVT.FLOOD_WARN:
+      G.floodAt[x] = now + val * 1000;
       banner = { text: val + '초 뒤 이 구역에 물이 찬다', until: now + 2600, life: 2600 };
       Sound.warn();
       break;
 
     case EVT.FLOOD:
+      G.floodAt[x] = 0;
       banner = { text: '물이 찼다', until: now + 1600, life: 1600 };
       FX.shake(0.35);
       Sound.flood();

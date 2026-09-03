@@ -252,11 +252,11 @@ function pkt(id, bodyLen, fillBody) {
 }
 const feed = (v) => api.onPacket(v);
 
-// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로
-// (23 + 조각 9 + 시작값·상한 5 + 이동 규칙 4 = 41 바이트)
-// WELCOME 몸통이 몇 바이트인가. Protocol.h 의 WelcomeBody 와 같아야 한다.
+// WELCOME. Common/Protocol.h 의 WelcomeBody 순서 그대로.
+//
+// 몸통이 몇 바이트인가. Protocol.h 의 WelcomeBody 와 같아야 한다.
 // 필드를 붙일 때마다 여기도 늘려야 하는데, 안 늘리면 화면이 없는 바이트를 읽는다
-const WELCOME_BODY = 42;
+const WELCOME_BODY = 43;
 
 feed(pkt(5, WELCOME_BODY, (v, o) => {
     v.setUint8(o + 0, 0);            // your_id
@@ -292,6 +292,7 @@ feed(pkt(5, WELCOME_BODY, (v, o) => {
     v.setUint8(o + 39, 6);   // trap_speed
     v.setUint8(o + 40, 50);  // lane_snap
     v.setUint8(o + 41, 15);  // push_slide — 상자가 밀려가는 데 걸리는 틱
+    v.setUint8(o + 42, 30);  // flood_warn_sec — 예고부터 물이 차기까지
 }));
 
 check(api.G.C !== null, 'WELCOME 을 읽고 상수를 받았다');

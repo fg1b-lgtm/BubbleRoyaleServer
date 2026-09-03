@@ -36,6 +36,14 @@ const G = {
   myId: -1,
   tiles: null, items: null,
   sectors: new Array(9).fill(SECT.OPEN),
+
+  // 이 구역에 물이 차는 시각. 예고를 받은 순간 화면 시계로 적어둔다.
+  // 0 이면 예고를 못 받은 것이다 — 판 도중에 들어오면 그럴 수 있다.
+  //
+  // 서버가 남은 틱을 스냅샷마다 보내주면 더 정확하지만, 초당 25장에
+  // 아홉 바이트를 더 얹어서 얻는 게 화면 깜빡임의 정확도뿐이다.
+  // 예고는 한 번만 오고 그 뒤로는 시계가 알아서 흐른다
+  floodAt: new Array(9).fill(0),
   players: new Map(),
   bubbles: [],
   blasts: [],                 // {x,y,born,until}
@@ -100,6 +108,7 @@ function onWelcome(v) {
   G.C.trapSpeed = u8();
   G.C.laneSnap  = u8();
   G.C.pushSlide = u8();   // 상자가 밀려가는 데 걸리는 틱
+  G.C.floodWarnSeconds = u8();   // 예고부터 물이 차기까지 (초)
   G.myId = G.C.myId;
   G.snapInterval = 1000 / G.C.tickRate;
 
@@ -108,6 +117,7 @@ function onWelcome(v) {
   G.blasts  = [];
   G.players.clear();
   G.sectors.fill(SECT.OPEN);
+  G.floodAt.fill(0);
   G.ring.on = false;
 
   G.tiles = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));

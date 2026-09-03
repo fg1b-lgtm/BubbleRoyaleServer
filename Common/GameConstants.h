@@ -269,11 +269,24 @@ constexpr int FLOOD_STAGES = 3;
 // 사람은 봇보다 오래 버틸 것이므로 봇 평균에 딱 맞추지 않고 조금 뒤에 둔다.
 // 봇 판에서 1·2단계는 확실히 오고 3단계는 절반쯤 온다.
 // **이 값은 사람이 한 판 해보고 다시 정해야 한다.** 봇에게 맞춘 값이기 때문이다
-constexpr int FLOOD_WARN_TICKS[FLOOD_STAGES] = {
-    TICK_RATE * 50, TICK_RATE * 110, TICK_RATE * 170,
-};
+//
+// 예고와 침수 사이가 20초였는데 30초로 늘렸다.
+//
+// 20초는 **예고를 보고 나서 판단할 시간이 아니라 뛸 시간만** 됐다.
+// 구역 하나가 15x13 이라 끝에서 끝까지가 걸어서 열댓 초다. 아이템을 하나 더
+// 먹고 나갈지, 지금 바로 나갈지, 옆 구역 사람과 마주칠 각오를 할지를
+// 고르려면 그만큼이 더 있어야 한다.
+//
+// 그 30초 동안 화면이 계속 붉게 뛴다. 남은 시간이 줄수록 빨라진다.
+// 시계를 읽게 하는 게 아니라 **몸이 급해지게** 만드는 것이 목적이다
 constexpr int FLOOD_FILL_TICKS[FLOOD_STAGES] = {
     TICK_RATE * 70, TICK_RATE * 130, TICK_RATE * 190,
+};
+constexpr int FLOOD_WARN_SECONDS = 30;
+constexpr int FLOOD_WARN_TICKS[FLOOD_STAGES] = {
+    FLOOD_FILL_TICKS[0] - TICK_RATE * FLOOD_WARN_SECONDS,
+    FLOOD_FILL_TICKS[1] - TICK_RATE * FLOOD_WARN_SECONDS,
+    FLOOD_FILL_TICKS[2] - TICK_RATE * FLOOD_WARN_SECONDS,
 };
 constexpr int FLOOD_COUNT[FLOOD_STAGES] = { 3, 3, 2 };
 
