@@ -400,13 +400,17 @@ static void Test8_Ring()
            w1, g_game.ring_y1 - g_game.ring_y0 + 1);
     Check(w1 < w0, "시간이 지나면 좁아진다");
 
-    // 끝까지 좁혀본다
+    // 끝까지 좁혀본다.
+    //
+    // 최소 크기를 두고 멈추게 했더니 봇 60판 중 아홉이 10분을 넘겼다.
+    // 줄어들다 멈추면 그 판은 끝날 이유가 없어진다.
+    // 안전한 칸이 하나도 안 남을 때까지 간다
     for (int t = 0; t < g_game.ring_step * 12; ++t) Tick();
     int w2 = g_game.ring_x1 - g_game.ring_x0 + 1;
     int h2 = g_game.ring_y1 - g_game.ring_y0 + 1;
-    printf("  끝까지 좁히면 %d x %d = %d 칸\n", w2, h2, w2 * h2);
-    Check(w2 == RING_MIN_W && h2 == RING_MIN_H, "최소 크기에서 멈춘다");
-    Check(w2 * h2 <= 40, "둘이 남으면 반드시 만날 만큼 좁다");
+    printf("  끝까지 좁히면 %d x %d\n", w2, h2);
+    Check(w2 <= 0 || h2 <= 0, "끝에는 안전한 칸이 하나도 안 남는다");
+    Check(IsUnderWater(MAP_W / 2, MAP_H / 2), "판 한가운데도 물에 잠긴다");
 }
 
 // ── 시험 9 : 잠긴 구역의 아이템은 남는가 ─────────────────────

@@ -714,14 +714,23 @@ function drawWorld(now, dt) {
     }
   }
 
-  // 최종 구역 안에서 차오르는 물. 안전한 사각형 바깥이 전부 물이다
+  // 최종 구역 안에서 차오르는 물. 안전한 사각형 바깥이 전부 물이다.
+  //
+  // 사각형은 끝까지 줄어들어서 마지막에는 뒤집힌다 (x0 > x1). 그때는
+  // 안전한 칸이 하나도 없다는 뜻이라 판 전체가 물이다.
+  // 뒤집힌 사각형을 그대로 네 조각으로 나누면 높이가 음수인 조각이 나온다
   if (G.ring.on) {
-    const x0 = G.ring.x0 * T, y0 = G.ring.y0 * T;
-    const x1 = (G.ring.x1 + 1) * T, y1 = (G.ring.y1 + 1) * T;
-    Art.water(ctx, 0, 0, W, y0, now);
-    Art.water(ctx, 0, y1, W, H - y1, now);
-    Art.water(ctx, 0, y0, x0, y1 - y0, now);
-    Art.water(ctx, x1, y0, W - x1, y1 - y0, now);
+    const empty = G.ring.x0 > G.ring.x1 || G.ring.y0 > G.ring.y1;
+    if (empty) {
+      Art.water(ctx, 0, 0, W, H, now);
+    } else {
+      const x0 = G.ring.x0 * T, y0 = G.ring.y0 * T;
+      const x1 = (G.ring.x1 + 1) * T, y1 = (G.ring.y1 + 1) * T;
+      Art.water(ctx, 0, 0, W, y0, now);
+      Art.water(ctx, 0, y1, W, H - y1, now);
+      Art.water(ctx, 0, y0, x0, y1 - y0, now);
+      Art.water(ctx, x1, y0, W - x1, y1 - y0, now);
+    }
   }
 
   Art.foamEdge(ctx, foamSegs, now);

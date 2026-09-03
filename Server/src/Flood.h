@@ -82,14 +82,16 @@ inline void UpdateRing()
     }
     g_game.ring_next = (int)g_game.tick + g_game.ring_step;
 
+    // 최소 크기를 두지 않는다. 줄어들다 멈추면 그 판은 끝날 이유가 없어진다.
+    // 마지막에는 x0 이 x1 을 넘어서 안전한 칸이 하나도 안 남는다
     bool shrank = false;
 
-    if (g_game.ring_x1 - g_game.ring_x0 + 1 > RING_MIN_W) {
+    if (g_game.ring_x0 <= g_game.ring_x1) {
         ++g_game.ring_x0;
         --g_game.ring_x1;
         shrank = true;
     }
-    if (g_game.ring_y1 - g_game.ring_y0 + 1 > RING_MIN_H) {
+    if (g_game.ring_y0 <= g_game.ring_y1) {
         ++g_game.ring_y0;
         --g_game.ring_y1;
         shrank = true;
