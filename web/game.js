@@ -1040,7 +1040,9 @@ function drawPlayer(id, p, alpha, now, T) {
                   && Art.drawPose(ctx, px, py, r, animalOf(id), 'free');
 
   if (!freeing) Art.drawChar(ctx, px, py, r, colorOf(id), {
-    face: p.face | 0,
+    // 내 얼굴만 미리 돌린다. 남의 것은 서버가 준 그대로다 —
+    // 남이 뭘 누르고 있는지는 여기서 알 길이 없다
+    face: (id === G.myId && myFace >= 0) ? myFace : (p.face | 0),
     animal: animalOf(id),
     moving: !!p.moving && !dead,
     walk: p.walk || 0,
@@ -1214,13 +1216,24 @@ function farOf(cx, cy) {
 // 판때기를 깔고, 크기로 위아래를 나누고, 숫자는 크게, 이름표는 작고 넓게 쓴다
 // 판때기. **판과 같은 재료로 만든다.**
 //
-// 9/2 까지 둥근 모서리에 반투명 검정에 그림자에 흐린 테두리였다.
-// 판은 픽셀 아트인데 그 위에 웹 대시보드가 떠 있는 꼴이었다.
-// 두 개가 다른 게임처럼 보이면 어느 쪽이 잘 만들어졌든 싸구려로 보인다.
+// 도트로 찍은 판 옆에 매끈한 상자를 놓으면 그 상자만 다른 세계에서 온 것으로
+// 보인다. 판이 쓰는 규칙 셋을 그대로 가져온다.
 //
-// 규칙은 상자를 그릴 때와 같다 — 모서리는 곡선이 아니라 한 칸씩 깎고,
-// 반투명 대신 단색이고, 테두리는 1픽셀이고, 좌표는 격자에 맞는다.
-// 그림자도 흐리지 않고 한 단 어긋난 실루엣이다
+//   1) 바깥에 어두운 윤곽선 한 줄. 판 위의 모든 스프라이트가 갖고 있는 것이다
+//   2) 그늘은 파랑 쪽으로, 빛은 노랑 쪽으로 돌린다. 밝기만 바꾸면 납작해진다
+//   3) 모서리를 한 칸 깎는다. 둥글리면 아무리 작아도 흐려진다
+//
+// 반투명을 안 쓴다. 뒤가 비치면 글자가 배경과 싸우고, 판이 움직일 때마다
+// 판때기 색이 같이 흔들려서 읽는 데 힘이 든다
+const PANEL = {
+  line: '#080b12',   // 윤곽
+  low:  '#19202e',   // 아래 몸통. 파랑 쪽으로 돌아가 있다
+  mid:  '#242e3d',
+  top:  '#2f3a4b',   // 위 몸통
+  rim:  '#5c6270',   // 윗변 림. 노랑 쪽으로 살짝 돌렸다
+  foot: '#0d1119',   // 아랫변
+};
+
 function panel(x, y, w, h) {
   const P = Art.V.P;
   const q = (v) => Math.round(v / P) * P;
@@ -1231,19 +1244,25 @@ function panel(x, y, w, h) {
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   pxBox(x0 + P, y0 + P, w0, h0, P);
 
-  // 몸통. 반투명이 아니라 단색이다 — 뒤가 비치면 글자가 배경과 싸운다
-  ctx.fillStyle = '#141a24';
-  pxBox(x0, y0, w0, h0, P);
+  // 윤곽선. 몸통보다 한 칸 크게 깔고 그 위에 몸통을 얹는다
+  ctx.fillStyle = PANEL.line;
+  pxBox(x0 - P, y0 - P, w0 + P * 2, h0 + P * 2, P);
 
-  // 위쪽 한 줄만 밝게. 빛은 판 전체와 같은 왼쪽 위에서 온다
-  ctx.fillStyle = '#2b3546';
+  // 몸통. 위가 밝고 아래가 어둡다. 세 단으로 끊는다 —
+  // 그러데이션을 쓰면 배율에 따라 반 픽셀에 걸려서 흐려진다
+  const b = Math.max(P, q(h0 / 3));
+  ctx.fillStyle = PANEL.top; pxBox(x0, y0, w0, h0, P);
+  ctx.fillStyle = PANEL.mid; ctx.fillRect(x0, y0 + b, w0, h0 - b - P);
+  ctx.fillStyle = PANEL.low; ctx.fillRect(x0, y0 + b * 2, w0, h0 - b * 2 - P);
+
+  // 윗변과 왼쪽에 빛, 아랫변과 오른쪽에 그늘. 광원은 판 전체와 같은 왼쪽 위다
+  ctx.fillStyle = PANEL.rim;
   ctx.fillRect(x0 + P, y0, w0 - P * 2, P);
   ctx.fillRect(x0, y0 + P, P, h0 - P * 2);
 
-  ctx.fillStyle = '#0a0e15';
+  ctx.fillStyle = PANEL.foot;
   ctx.fillRect(x0 + P, y0 + h0 - P, w0 - P * 2, P);
   ctx.fillRect(x0 + w0 - P, y0 + P, P, h0 - P * 2);
-
 }
 
 // 모서리를 한 칸씩 깎은 네모. 곡선을 쓰면 아무리 작아도 흐려진다
@@ -1821,6 +1840,8 @@ Hooks.welcome = function () {
   killFeed = [];
   banner = null;
   lastBeep = -1;
+  myFace = -1;         // 새 판에서는 다시 앞을 본다. 서버도 FACE_DOWN 으로 앉힌다
+  warnBeepAt = 0;
   const el = document.getElementById('theme');
   if (el) el.textContent = Art.placeNames().join(' · ');
 };
@@ -2226,6 +2247,27 @@ function inputDir() {
 
 // 방향이 **바뀔 때만** 보낸다. 누르고 있는 동안 매 프레임 보내면
 // 30Hz 서버에 60Hz 로 같은 말을 하는 셈이라 그냥 낭비다
+// 내가 보는 쪽. 서버 답을 안 기다린다.
+//
+// 방향은 서버가 정해서 스냅샷에 실어 보낸다. 그런데 그건 왕복 한 번 뒤라,
+// 오른쪽을 눌러도 두어 프레임은 아까 보던 쪽을 보고 있다. 손으로는
+// **"가끔 내가 누른 쪽을 안 본다"** 로 느껴진다. 자리는 이미 미리 옮기고
+// 있었는데 얼굴만 안 옮기고 있었던 셈이다.
+//
+// -1 은 아직 한 번도 안 눌렀다는 뜻이다. 그때는 서버 것을 쓴다.
+// 손을 떼도 마지막으로 본 쪽을 그대로 둔다 — 서버도 그렇게 한다
+let myFace = -1;
+
+// 서버의 MovePlayer 와 **같은 규칙**이다. 두 방향을 같이 누르면 가로를 쓴다 —
+// 옆모습이 앞뒤보다 알아보기 쉽다. 규칙이 같아야 미리 그린 것과 서버 답이 안 갈린다
+function faceOf(dx, dy) {
+  if (dx > 0) return FACE.RIGHT;
+  if (dx < 0) return FACE.LEFT;
+  if (dy > 0) return FACE.DOWN;
+  if (dy < 0) return FACE.UP;
+  return -1;
+}
+
 function pushInput() {
   const [dx, dy] = inputDir();
   if (dx !== sentX || dy !== sentY) {
@@ -2233,6 +2275,9 @@ function pushInput() {
     sendMove(dx, dy);
     if (dx !== 0 || dy !== 0) hasMoved = true;   // 한 발짝이라도 뗐으면 안내를 지운다
   }
+
+  const f = faceOf(dx, dy);
+  if (f >= 0) myFace = f;
 }
 
 addEventListener('keydown', (e) => {
