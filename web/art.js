@@ -2172,6 +2172,34 @@ const Art = (() => {
     if (spriteCache.size > 900) spriteCache.clear();
     return cv;
   }
+  // 물방울에 갇힌 사람.
+  //
+  // 물줄기에 맞으면 바로 안 죽고 갇힌다. 7초 동안 갇혀 있다가 누가 몸으로
+  // 부딪치면 터지고 아니면 풀린다. 그 7초가 이 게임에서 제일 긴장되는 시간이라
+  // 캔버스로 그린 물방울 대신 제대로 그린 그림을 쓴다.
+  //
+  // 세 프레임을 천천히 돌린다. 물방울이 살아 있는 것처럼 흔들려야
+  // '아직 갇혀 있다' 가 계속 읽힌다
+  function drawTrapped(g, cx, cy, r, animal, t) {
+    if (!hasAtlas('trap')) return false;
+
+    const idx = ((animal | 0) % CHAR_NAMES.length + CHAR_NAMES.length)
+                % CHAR_NAMES.length;
+    const name = CHAR_NAMES[idx] + '_trap' + (((t / 220) | 0) % 3);
+
+    // 물방울은 사람보다 크다. 칸을 넘겨야 갇힌 것으로 보인다
+    const h  = Math.max(10, Math.round(r * 2 * 1.55 / 2) * 2);
+    const cv = bakeFromAtlas('T:' + name + ':' + h, 'trap', name, h);
+    if (!cv) return false;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(cv, Math.round(cx - cv.width / 2),
+                    Math.round(cy + r * 0.5 - cv.height * 0.62));
+    g.imageSmoothingEnabled = smooth;
+    return true;
+  }
+
   // 물줄기 한 칸을 그린다.
   //
   // 통짜 십자 그림 하나로는 못 그린다. 사거리가 아이템으로 1칸에서 6칸까지
@@ -3066,7 +3094,7 @@ const Art = (() => {
   }
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
-    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile,
+    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped,
     buildFloor, buildRow, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,

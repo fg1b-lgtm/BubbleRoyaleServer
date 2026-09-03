@@ -445,6 +445,7 @@ function updateCamera(dt) {
 // 못 받아도 게임은 그대로 돈다 — 그때는 도트로 그린다
 Art.loadAtlas('chars', 'art/chars.png', 'art/chars.json');
 Art.loadAtlas('fx',    'art/fx.png',    'art/fx.json');
+Art.loadAtlas('trap',  'art/trap.png',  'art/trap.json');
 
 function frame(ts) {
   requestAnimationFrame(frame);
@@ -987,24 +988,32 @@ function drawPlayer(id, p, alpha, now, T) {
     ctx.stroke();
     ctx.restore();
 
+    // 그림이 있으면 그림으로. 없으면 아래 캔버스 물방울로 내려간다.
+    // 여기서 return 하면 안 된다 — 뒤에 익사 표시가 남아 있다
+    const drawn = Art.drawTrapped(ctx, px, py, r, animalOf(id), now);
+
     const wob = Math.sin(now / 140) * 0.07;
-    const g = ctx.createRadialGradient(px - r * 0.4, py - r * 0.55, r * 0.2, px, py, r * 1.45);
-    g.addColorStop(0, 'rgba(255,255,255,0.40)');
-    g.addColorStop(0.7, 'rgba(140,210,255,0.28)');
-    g.addColorStop(1, 'rgba(80,170,240,0.42)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(px, py - r * 0.1, r * (1.30 + wob), r * (1.30 - wob), 0, 0, 7);
-    ctx.fill();
+    if (!drawn) {
+      const g = ctx.createRadialGradient(px - r * 0.4, py - r * 0.55, r * 0.2, px, py, r * 1.45);
+      g.addColorStop(0, 'rgba(255,255,255,0.40)');
+      g.addColorStop(0.7, 'rgba(140,210,255,0.28)');
+      g.addColorStop(1, 'rgba(80,170,240,0.42)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(px, py - r * 0.1, r * (1.30 + wob), r * (1.30 - wob), 0, 0, 7);
+      ctx.fill();
 
-    ctx.strokeStyle = 'rgba(215,245,255,0.95)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+      ctx.strokeStyle = 'rgba(215,245,255,0.95)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
-    ctx.beginPath();
-    ctx.ellipse(px - r * 0.52, py - r * 0.68, r * 0.24, r * 0.15, -0.6, 0, 7);
-    ctx.fill();
+    if (!drawn) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.ellipse(px - r * 0.52, py - r * 0.68, r * 0.24, r * 0.15, -0.6, 0, 7);
+      ctx.fill();
+    }
   }
 
   ctx.globalAlpha = 1;

@@ -13,7 +13,7 @@ import os, sys, json
 from PIL import Image
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cutsheet import cut
+from cutsheet import cut, cut_even
 from atlas import build
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -97,6 +97,37 @@ def main():
                     os.path.join(OUT, 'fx.json'),
                     96, 96, cols=6, fit='center')
     print('물 아틀라스 %s, %d칸' % (size, n))
+
+    # ── 갇힌 모습 ────────────────────────────────────────────
+    #
+    # 물줄기에 맞으면 바로 안 죽고 물방울에 갇힌다. 7초 동안 갇혀 있다가
+    # 누가 몸으로 부딪치면 터지고 아니면 풀린다. 그 7초가 이 게임에서
+    # 제일 긴장되는 시간인데 그림이 없었다.
+    #
+    # 한 줄이 한 사람, 여섯 칸이 상태다.
+    #   0 1 2  갇혀 있다 (세 프레임)   3 빠져나온다   4 터진다   5 뻗었다
+    #
+    # 시트 순서가 걷기 시트와 다르다. 그림을 보고 맞췄다
+    TRAP_ORDER = {'trap_b': 0, 'trap_c': 1, 'trap_a': 2}
+    TRAP_COL = ['trap0', 'trap1', 'trap2', 'free', 'pop', 'ko']
+
+    tp = []
+    for sheet, si in sorted(TRAP_ORDER.items(), key=lambda kv: kv[1]):
+        d = os.path.join(TMP, sheet)
+        meta = cut_even(os.path.join(SRC, sheet + '.png'), d, rows=8)
+        if len(meta) != 48:
+            print('!! %s 가 48칸이 아니다 (%d)' % (sheet, len(meta)))
+        for m in meta:
+            if m['col'] >= len(TRAP_COL):
+                continue
+            name = NAMES[si][m['row']] + '_' + TRAP_COL[m['col']]
+            tp.append((name, Image.open(os.path.join(d, m['file'])).convert('RGBA')))
+
+    size, n = build(tp,
+                    os.path.join(OUT, 'trap.png'),
+                    os.path.join(OUT, 'trap.json'),
+                    88, 88, cols=24, fit='center')
+    print('갇힘 아틀라스 %s, %d칸' % (size, n))
 
 
 if __name__ == '__main__':

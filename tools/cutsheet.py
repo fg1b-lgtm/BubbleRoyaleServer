@@ -128,6 +128,133 @@ def cut(path, out_dir, alpha_min=ALPHA_MIN, min_cells=MIN_CELLS,
         json.dump(meta, f, ensure_ascii=False, indent=1)
     return meta
 
+def cut_grid(path, out_dir, alpha_min=ALPHA_MIN, gap=3):
+    """빈 띠를 찾아 격자로 자른다.
+
+    덩어리로 자르는 방식이 안 맞는 시트가 있다. 물방울처럼 본체에서 떨어져
+    나온 점이 있으면 한 스프라이트가 여러 조각으로 갈린다 — 갇힌 모습 시트가
+    48칸인데 121개로 잘렸다.
+
+    그런 시트는 스프라이트 사이가 **완전히 비어 있다.** 그 빈 띠를 경계로 쓴다.
+    먼저 세로로 빈 띠를 찾아 칸을 가르고, 각 칸 안에서 다시 가로로 빈 띠를 찾는다.
+    가로 띠를 시트 전체에서 찾으면 안 된다 — 옆 칸의 물방울이 걸쳐 있으면
+    그 줄은 안 비어서 못 찾는다"""
+    im = Image.open(path).convert('RGBA')
+    W, H = im.size
+    px = im.load()
+
+    solid = [[px[x, y][3] >= alpha_min for x in range(W)] for y in range(H)]
+
+    def bands(mask_len, filled):
+        """비어 있는 구간들 사이의 알맹이 구간을 돌려준다"""
+        out, s = [], None
+        run = 0
+        for i in range(mask_len):
+            if filled(i):
+                if s is None:
+                    s = i
+                run = 0
+            else:
+                run += 1
+                if s is not None and run >= gap:
+                    out.append((s, i - run))
+                    s = None
+        if s is not None:
+            out.append((s, mask_len - 1))
+        return out
+
+    colspan = bands(W, lambda x: any(solid[y][x] for y in range(H)))
+
+    os.makedirs(out_dir, exist_ok=True)
+    meta = []
+    for (x0, x1) in colspan:
+        rowspan = bands(H, lambda y: any(solid[y][x] for x in range(x0, x1 + 1)))
+        for (y0, y1) in rowspan:
+            sub = im.crop((x0, y0, x1 + 1, y1 + 1))
+            bb = sub.getbbox()
+            if not bb:
+                continue
+            sub = sub.crop(bb)
+            d = sub.load()
+            for yy in range(sub.height):
+                for xx in range(sub.width):
+                    r, g, b, aa = d[xx, yy]
+                    d[xx, yy] = (r, g, b, 0) if aa < alpha_min else (r, g, b, 255)
+            meta.append({'sub': sub, 'x': x0 + bb[0], 'y': y0 + bb[1],
+                         'w': sub.width, 'h': sub.height})
+
+    # 읽는 순서대로. 세로로 가까우면 같은 줄로 본다
+    meta.sort(key=lambda m: (m['y'] // 60, m['x']))
+    for i, m in enumerate(meta):
+        m['file'] = '%03d.png' % i
+        m.pop('sub').save(os.path.join(out_dir, m['file']))
+
+    with open(os.path.join(out_dir, 'index.json'), 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    return meta
+
+def cut_even(path, out_dir, rows=8, alpha_min=ALPHA_MIN, gap=3):
+    """세로는 빈 띠로, 가로는 등분해서 자른다.
+
+    갇힌 모습 시트가 이렇다. 칸 사이가 세로로는 비어 있는데 가로로는 안 비어
+    있다 — 물방울에서 떨어져 나온 점이 위아래 칸에 걸쳐 있기 때문이다.
+    덩어리로 자르면 48칸이 121개로 갈리고, 빈 띠로만 자르면 36개로 뭉친다.
+
+    줄 간격이 고르므로 세로만 빈 띠로 가르고 가로는 등분한다.
+    등분한 뒤 각 칸에서 알맹이만 다시 오려내므로 몇 픽셀 어긋나도 괜찮다"""
+    im = Image.open(path).convert('RGBA')
+    W, H = im.size
+    px = im.load()
+
+    solid = [[px[x, y][3] >= alpha_min for x in range(W)] for y in range(H)]
+
+    spans, s, run = [], None, 0
+    for x in range(W):
+        if any(solid[y][x] for y in range(H)):
+            if s is None:
+                s = x
+            run = 0
+        else:
+            run += 1
+            if s is not None and run >= gap:
+                spans.append((s, x - run))
+                s = None
+    if s is not None:
+        spans.append((s, W - 1))
+
+    ys = [y for y in range(H) if any(solid[y][x] for x in range(W))]
+    if not ys:
+        return []
+    y0, y1 = min(ys), max(ys)
+    step = (y1 - y0 + 1) / rows
+
+    os.makedirs(out_dir, exist_ok=True)
+    meta = []
+    for ci, (x0, x1) in enumerate(spans):
+        for r in range(rows):
+            a0 = int(y0 + r * step)
+            a1 = int(y0 + (r + 1) * step) - 1
+            sub = im.crop((x0, a0, x1 + 1, a1 + 1))
+            bb = sub.getbbox()
+            if not bb:
+                continue
+            sub = sub.crop(bb)
+            if sub.width < 20 or sub.height < 20:
+                continue
+            d = sub.load()
+            for yy in range(sub.height):
+                for xx in range(sub.width):
+                    rr, gg, bb2, aa = d[xx, yy]
+                    d[xx, yy] = (rr, gg, bb2, 0) if aa < alpha_min else (rr, gg, bb2, 255)
+            f = '%d_%d.png' % (r, ci)
+            sub.save(os.path.join(out_dir, f))
+            meta.append({'file': f, 'row': r, 'col': ci,
+                         'w': sub.width, 'h': sub.height})
+
+    with open(os.path.join(out_dir, 'index.json'), 'w', encoding='utf-8') as f:
+        json.dump(meta, f, ensure_ascii=False, indent=1)
+    return meta
+
 if __name__ == '__main__':
     src = sys.argv[1]
     dst = sys.argv[2]
