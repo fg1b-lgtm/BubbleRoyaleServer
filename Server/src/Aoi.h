@@ -270,9 +270,6 @@ inline void RouteEvent(uint8_t type, int x, int y, int who, const char* data, in
         case EVT_BUBBLE:
         case EVT_BLAST:
         case EVT_CHAIN:
-        // 대쉬도 여기다. 세 칸 밖에서 튀어나오는 사람이 보이면
-        // 놀랄 시간이 생긴다. 자기 구역 안에서만 보이면 이미 옆에 와 있다
-        case EVT_DASH:
             SendToWatchers(x, y, PEEK_TILES, data, len);
             return;
 

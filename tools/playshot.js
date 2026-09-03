@@ -116,10 +116,9 @@ const PEEK = '(function(){ try {'
   + ' var np = G.players ? G.players.size : 0;'
   + ' var me = G.players ? G.players.get(G.myId) : null;'
   + ' var V = Art.V;'
-  + ' var dash = me ? (me.has_dash ? me.dash_cd : -1) : -2;'
   + ' var mx = me ? me.x1 : 0, my = me ? me.y1 : 0;'
   + ' return JSON.stringify({ phase:G.phase, alive:G.aliveCount, round:G.roundNo,'
-  + '   me:G.myId, walls:w, blocks:b, boxes:x2, drawn:np, dash:dash, mx:mx, my:my,'
+  + '   me:G.myId, walls:w, blocks:b, boxes:x2, drawn:np, mx:mx, my:my,'
   + '   TS:V.TS, WH:V.WH, CH:V.CH, P:V.P,'
   + '   alive:(me ? ((me.flags & 1) ? 1 : 0) : -1),'
   + '   bubbles:(G.bubbles||[]).length });'
@@ -209,68 +208,6 @@ async function peek() {
     await keyDown('d', 'KeyD');
     await sleep(700);
     await shot('02-걷는중');
-
-    // ── 대쉬가 실제로 나가나 ────────────────────────────────
-    //
-    // **판이 막 시작했을 때 한다.** 처음엔 마지막에 뒀다가 헛수고를 했다 —
-    // 그때는 이미 죽어 있어서 눌러도 아무 일이 안 나는 게 맞는데,
-    // 계측이 '안 나갔다' 고만 알려줘서 멀쩡한 코드를 뒤졌다.
-    // **재는 자리가 틀리면 숫자가 거짓말을 한다**
-    //
-    // 서버 시험은 StartDash 를 직접 불러서 잰다. 그런데 사람이 겪는 길은
-    // **연타 -> 패킷 -> 서버 -> 스냅샷 -> 화면**이라 중간에 한 군데만 끊겨도
-    // '눌러도 아무 일이 없다' 가 된다. 그 길을 통째로 한 번 밟아본다.
-    //
-    // 대쉬를 안 먹었을 수도 있다. 그러면 안 나가는 게 맞고, 그것도 결과다 —
-    // 여기서 재는 건 '나갔나' 가 아니라 **눌렀을 때 뭐가 일어났나** 다
-    {
-      // **누르고 있던 키를 먼저 뗀다.**
-      //
-      // 위에서 오른쪽으로 걸으려고 d 를 누른 채로 뒀다. 그 상태로 또 누르면
-      // 게임은 '이미 누르고 있다' 로 보고 무시한다 — 그게 맞다. 브라우저가
-      // 누른 키의 keydown 을 자동 반복으로 계속 보내기 때문에, 그걸 세면
-      // 걷기만 해도 대쉬가 나간다.
-      //
-      // 시험이 사람 손을 흉내 내려면 뗐다가 두 번 두드려야 한다
-      await keyUp('d', 'KeyD');
-      await sleep(300);
-
-      const before = await peek();
-      console.log('  대쉬 상태: ' +
-        (before.dash === -1 ? '아직 안 먹음'
-         : before.dash === 0 ? '먹었고 준비됨'
-         : '먹었고 쿨타임 ' + before.dash));
-
-        // **아래로** 두 번. 사이를 120ms 로 둔다 (인정 시간이 260ms).
-      //
-      // 오른쪽으로 걸어온 참이라 오른쪽은 벽에 붙어 있을 수 있다.
-      // 그러면 대쉬가 나가고도 한 점도 안 움직이는데, 그건 맞는 동작이지만
-      // '나갔나' 를 재는 데는 못 쓴다. 아직 안 가본 쪽으로 잰다
-      await key('s', 60);
-      await sleep(120);
-      await key('s', 60);
-      await sleep(400);
-
-      const after = await peek();
-      const moved = Math.abs((after.mx | 0) - (before.mx | 0))
-                  + Math.abs((after.my | 0) - (before.my | 0));
-      console.log('  살아 있나 ' + before.alive + ',  두 번 두드린 뒤 '
-                  + moved + ' units 갔다 (걸어서 0.5초면 20 안팎, 대쉬는 768),'
-                  + '  쿨타임 ' + before.dash + ' -> ' + after.dash);
-      await shot('d1-대쉬-직후');
-
-      // 쿨타임이 돌았나가 갈림길이다.
-      //   돌았다   -> 패킷은 갔다. 안 움직인 건 벽에 막혔거나 재는 법이 틀렸다
-      //   안 돌았다 -> 서버까지 못 갔다. 연타 판정이나 보내는 쪽을 봐야 한다
-      if (before.alive === 1 && before.dash === 0) {
-        if (after.dash > 0) {
-          console.log('  대쉬는 나갔다 (쿨타임이 돌았다). 움직임이 작으면 벽이다');
-        }
-        else {
-          console.log('  [경고] 서버까지 안 갔다. 연타 판정이나 보내는 쪽 문제다');
-        }
-      }
-    }
 
     await keyUp('d', 'KeyD');
 

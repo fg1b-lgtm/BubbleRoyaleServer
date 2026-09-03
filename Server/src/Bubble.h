@@ -271,13 +271,6 @@ inline void PickUpItems()
             p.power_lv = STAT_CAP_ULTRA;
         }
 
-        // 대쉬는 켜고 끄는 것이다. 두 번 먹어도 두 배가 되지 않는다.
-        // 쿨타임도 안 깎아준다 — 깎아주면 '많이 먹으면 계속 대쉬' 가 되고,
-        // 그러면 이건 새 동작이 아니라 그냥 속도 아이템이다
-        if (kind == ITEM_DASH) {
-            p.has_dash = true;
-        }
-
         PushEvent(EVT_ITEM, tx, ty, i, kind);
     }
 }
@@ -334,13 +327,6 @@ inline void DropKillLoot(int slot)
         for (int k = 0; k < n; ++k) {
             DropItemNear(p.judge_tx, p.judge_ty, stat[i].kind);
         }
-    }
-
-    // 대쉬를 갖고 있었으면 흘린다. **가진 걸 잃는 게 아니라 넘겨주는 것**이다.
-    // 잡은 쪽이 이어받으면 대쉬가 판을 돌아다니고, 그게 누가 갖고 있나를
-    // 지켜볼 이유가 된다. 잡히면 사라지게 하면 판 후반에 아무도 안 갖게 된다
-    if (p.has_dash) {
-        DropItemNear(p.judge_tx, p.judge_ty, ITEM_DASH);
     }
 
     // 울트라는 벽에서 절대 안 나온다. 여기와 최종 보급에서만 나온다.
@@ -482,13 +468,6 @@ inline void UpdateTimers()
                 p.invuln_ticks = INVULN_TICKS;
                 PushEvent(EVT_BREAK, p.judge_tx, p.judge_ty, i, 0);
             }
-        }
-
-        // 대쉬 쿨타임. 나가는 중이든 아니든 계속 줄어든다.
-        // 대쉬가 끝나고 나서부터 재면 실제 쿨타임이 5.3초가 되는데,
-        // 화면에 5초라고 써놓고 5.3초면 그 표시를 못 믿게 된다
-        if (p.dash_cd > 0) {
-            --p.dash_cd;
         }
 
         if (p.invuln_ticks > 0) {

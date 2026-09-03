@@ -244,10 +244,6 @@ static int BuildSnapshot(char* buf, int watch)
         ps.power_lv  = (uint8_t)p.power_lv;
         ps.speed_lv  = (uint8_t)p.speed_lv;
 
-        // 대쉬 한 바이트. 안 먹었으면 255, 먹었으면 남은 쿨타임
-        ps.dash = p.has_dash ? (uint8_t)(p.dash_cd > 254 ? 254 : p.dash_cd) : 255;
-        if (p.dash_ticks > 0) ps.flags |= PF_DASHING;
-
         memcpy(buf + pos, &ps, sizeof(ps));
         pos += (int)sizeof(ps);
         ++sh.player_count;
@@ -456,20 +452,6 @@ static void HandleJob(const Job* j){
                     }
                     const MoveBody* mb = (const MoveBody*)(j->data + HEADER_SIZE);
                     SetInput(s, mb->dx, mb->dy);
-                    break;
-                }
-
-                case PKT_DASH: {
-                    if (h->size != DASH_PACKET_SIZE) {
-                        printf("[Session] %s:%d bad dash size %u\n", s->ip, s->port, h->size);
-                        CloseSession(s);
-                        break;
-                    }
-                    const DashBody* db = (const DashBody*)(j->data + HEADER_SIZE);
-                    int slot = FindPlayer(s);
-                    if (slot >= 0) {
-                        StartDash(slot, db->dx, db->dy);
-                    }
                     break;
                 }
 
@@ -818,14 +800,6 @@ int main(int argc, char** argv)
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "fast") == 0) {
             flood_scale = 10;
-        }
-        // 앉는 사람 전부에게 대쉬를 준다. **시험용이다.**
-        //
-        // 대쉬는 판에 넷뿐이라 그냥 돌리면 먹을 때까지 확인을 못 한다.
-        // playshot 이 연타 -> 패킷 -> 서버 -> 화면 길을 밟아보려면 이게 필요하다.
-        // 켜는 사람이 직접 붙여야 하는 인자라 실수로 켜질 일은 없다
-        else if (strcmp(argv[i], "dash") == 0) {
-            g_give_dash = true;
         }
         else if (strcmp(argv[i], "aoi") == 0 && i + 1 < argc) {
             g_aoi_on = (atoi(argv[++i]) != 0);

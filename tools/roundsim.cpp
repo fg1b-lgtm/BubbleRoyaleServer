@@ -62,15 +62,6 @@ struct RoundResult
     int  trapped_same_tile;   // 서 있던 칸 그대로 갇혔다 (걸치기가 풀린 것)
     int  trapped_grazing;     // 갇히기 직전 틱에 걸치는 중이었다
     int  trap_reason[16];     // 갇힐 때 어느 규칙으로 움직이고 있었나
-
-    // 대쉬가 실제 판에서 쓸모가 있나.
-    //
-    // 시험판은 탁 트여 있어서 3칸을 다 간다. 그런데 진짜 판은 상자가 100% 라
-    // 두 칸 앞이 막힌 자리가 대부분이다. 거기서 늘 첫 걸음에 서면
-    // 이 아이템은 만들어놓고 안 쓰는 것이 된다
-    int  dash_count;
-    int  dash_units;   // 대쉬로 실제로 간 거리의 합
-    int  dash_full;    // 8틱을 다 쓴 수 (안 막힌 것)
 };
 
 // ── 조각별 계측 (레벨 디자인용) ─────────────────────────────
@@ -223,9 +214,6 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     // 전부 봇으로 앉힌다. 세션을 흉내 낼 필요가 없어졌다
     for (int i = 0; i < PLAYER_MAX; ++i) {
         AddPlayer(nullptr, true);
-        // 대쉬를 다 준다. 여기서 재려는 건 '몇 명이 먹나' 가 아니라
-        // **먹은 다음에 쓸모가 있나** 다. 판에 넷만 뿌리면 표본이 너무 적다
-        g_game.players[i].has_dash = true;
     }
 
     const int MAX_TICKS = TICK_RATE * 60 * 10;   // 10분이면 무승부
@@ -233,8 +221,6 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     int drowning_before[PLAYER_MAX];
     bool alive_before[PLAYER_MAX];
     int  trap_before[PLAYER_MAX];
-    int  dash_before[PLAYER_MAX];
-    int  dpx[PLAYER_MAX], dpy[PLAYER_MAX];
     int  jt_before[PLAYER_MAX];
     bool graze_before[PLAYER_MAX];
     int  last_dx[PLAYER_MAX] = {}, last_dy[PLAYER_MAX] = {};
@@ -248,11 +234,6 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             drowning_before[i] = g_game.players[i].flood_ticks;
             alive_before[i]    = g_game.players[i].alive;
             trap_before[i]     = g_game.players[i].trap_ticks;
-            dash_before[i]     = g_game.players[i].dash_ticks;
-            if (dash_before[i] == 0) {
-                dpx[i] = g_game.players[i].px;
-                dpy[i] = g_game.players[i].py;
-            }
             jt_before[i]       = g_game.players[i].judge_ty * MAP_W
                                + g_game.players[i].judge_tx;
             graze_before[i]    = g_game.players[i].grazing;
@@ -302,18 +283,6 @@ static void PlayRound(unsigned int seed, RoundResult& r)
             if (q.dir_x != 0 || q.dir_y != 0) {
                 last_dx[i] = q.dir_x; last_dy[i] = q.dir_y; last_why[i] = g_reason[i];
             }
-        }
-
-        // 대쉬가 방금 끝났나. 시작할 때 자리와 견줘서 실제로 간 거리를 잰다
-        for (int i = 0; i < PLAYER_MAX; ++i) {
-            const Player& p = g_game.players[i];
-            if (dash_before[i] <= 0 || p.dash_ticks > 0) continue;
-
-            int dx = p.px - dpx[i]; if (dx < 0) dx = -dx;
-            int dy = p.py - dpy[i]; if (dy < 0) dy = -dy;
-            ++r.dash_count;
-            r.dash_units += dx + dy;
-            if (dx + dy > DASH_SPEED * DASH_TICKS * 3 / 4) ++r.dash_full;
         }
 
         // 갓 갇힌 사람. 물줄기가 몇 틱째였는지가 이 판의 진짜 질문이다
@@ -460,7 +429,6 @@ int main(int argc, char** argv)
     long long selfd = 0, flips = 0, wet = 0;
     long long tt = 0, tw = 0, town = 0, tage = 0, tsame = 0, tgraze = 0;
     long long treason[16] = {};
-    long long dc = 0, du = 0, df = 0;
     int flood_hit[FLOOD_STAGES + 1] = {};
     int cap_rounds = 0;
     long long self_kill = 0, win_items = 0;
@@ -489,7 +457,6 @@ int main(int argc, char** argv)
         tsame  += r.trapped_same_tile;
         tgraze += r.trapped_grazing;
         for (int k = 0; k < 16; ++k) treason[k] += r.trap_reason[k];
-        dc += r.dash_count; du += r.dash_units; df += r.dash_full;
         flips += r.flips;
         wet += r.wet_flips;
         if (r.cap_tick > 0) { capped += r.cap_tick; ++cap_rounds; }
@@ -529,12 +496,6 @@ int main(int argc, char** argv)
     // 물줄기가 0.5초 남아 있다는 걸 판단에 못 넣고 있다는 뜻이고, 그건 버그다
     printf("  갇힌 횟수 %lld  (터질 때 휘말림 %lld,  깔린 데로 걸어 들어감 %lld = %lld%%)\n",
            tt / rounds, (tt - tw) / rounds, tw / rounds, tt ? tw * 100 / tt : 0);
-    // 대쉬가 실제 판에서 얼마나 가나. 탁 트인 데서는 3칸이다
-    printf("  대쉬 %lld회/판,  평균 %lld.%02ld칸 (최대 %d.00),  끝까지 간 것 %lld%%\n",
-           dc / rounds,
-           dc ? (du / dc) / TILE_UNITS : 0, dc ? ((du / dc) * 100 / TILE_UNITS) % 100 : 0,
-           DASH_SPEED * DASH_TICKS / TILE_UNITS,
-           dc ? df * 100 / dc : 0);
 
     // 갇힐 때 무슨 생각을 하고 있었나. 이게 있어야 어느 규칙을 고칠지 알 수 있다
     printf("  갇힐 때 하던 일:");

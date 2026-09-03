@@ -355,7 +355,7 @@ for (let y = 0; y < MAP_H; ++y) {
 }
 
 // PlayerState 한 사람이 몇 바이트인가. Protocol.h 의 struct 와 같아야 한다
-const PS = 12;
+const PS = 11;
 
 // SNAPSHOT. 사람 넷을 서로 다른 방향과 상태로 넣는다.
 //   p0 오른쪽을 보며 걷는 중   p1 위를 보며 서 있음
@@ -408,10 +408,6 @@ function snapshot(tick, phase, ringOn, want, wantB, dry) {
             v.setUint8(p + 8, i);
             v.setUint8(p + 9, i);
             v.setUint8(p + 10, i);
-
-            // 대쉬. 하나 걸러 하나만 갖고 있게 해서 HUD 칸이 늘었다 줄었다 하는 것도 본다.
-            // 255 가 '안 먹음' 이다
-            v.setUint8(p + 11, (i % 2) ? 255 : (i * 20));
         }
         for (let i = 0; i < nb; ++i) {
             const b = o + 28 + np * PS + i * 4;

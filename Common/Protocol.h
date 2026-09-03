@@ -32,18 +32,6 @@ enum PacketId : uint16_t
     // 지금은 손맛을 보려고 몇 번이고 다시 돌려야 해서 열어둔다.
     // 방과 대기실이 생기면 그쪽으로 옮긴다
     PKT_RESTART  = 8,
-
-    // 클라 -> 서버. 대쉬한다.
-    //
-    // 연타를 알아보는 건 클라이언트가 한다. 서버가 하려면 키를 뗀 것까지
-    // 다 보내야 하는데, 서버가 알아야 하는 건 '지금 대쉬한다' 하나뿐이다.
-    // 방향도 같이 받는다 — 누르고 있는 방향과 연타한 방향이 다를 수 있고,
-    // 사람이 두 번 두드린 그 방향으로 나가야 맞다.
-    //
-    // 이걸 믿어도 되나. 위치가 아니라 **의도**라서 괜찮다.
-    // 쿨타임도 갖고 있나도 실제로 얼마나 가나도 전부 서버가 정한다.
-    // 클라가 초당 백 번 보내도 쿨타임이 안 찼으면 아무 일도 안 일어난다
-    PKT_DASH     = 9,
 };
 
 // 화면에 띄울 일. SPEC 2.7 "어디서 재미가 나오나" 의 목록이 그대로 여기다.
@@ -75,15 +63,10 @@ enum EventType : uint8_t
     // 새 자리는 화면이 계산한다. 두 칸을 다 보내면 바이트가 두 개 더 든다
     EVT_PUSH       = 16,
 
-    // 대쉬가 시작됐다. x,y 가 떠난 자리, who 가 누구, value 에 방향이 들어 있다.
-    // 끝나는 자리는 안 보낸다 — 벽에 막히면 서버도 그때 가서야 안다.
-    // 화면은 이 하나로 떠나는 순간의 먼지와 소리를 낸다
-    EVT_DASH       = 17,
-
     // 바닥의 아이템이 물줄기에 쓸려갔다. x,y 만 쓴다.
     // 먹은 것(EVT_ITEM)과 나눠야 한다 — 먹은 건 누가 가져간 것이고
     // 이건 아무도 못 갖는 것이라, 화면도 소리도 달라야 한다
-    EVT_ITEM_GONE  = 18,
+    EVT_ITEM_GONE  = 17,
 };
 
 
@@ -104,13 +87,6 @@ struct PacketHeader
 struct MoveBody
 {
     int8_t dx;   // -1, 0, 1
-    int8_t dy;
-};
-
-// PKT_DASH 의 몸통. 어느 쪽으로 대쉬하나. 한 축만 채워 보낸다
-struct DashBody
-{
-    int8_t dx;
     int8_t dy;
 };
 
@@ -244,16 +220,6 @@ struct PlayerState
     uint8_t  jtx, jty;    // 판정 타일. 위치와 다르면 걸치는 중이다
     uint8_t  flags;
     uint8_t  bubble_lv, power_lv, speed_lv;
-
-    // 대쉬 상태를 한 바이트로.
-    //   255  아직 안 먹었다
-    //   0    먹었고 지금 쓸 수 있다
-    //   1~   남은 쿨타임 틱
-    //
-    // 남의 것도 보낸다. 누가 대쉬를 갖고 있는지 보이는 게 이 아이템의 절반이다 —
-    // 안 보이면 갑자기 튀어나오는 것이고, 보이면 그 사람을 조심하게 된다.
-    // 한 사람당 1바이트라 초당 720바이트다. 그 값을 한다
-    uint8_t  dash;
 };
 
 // PlayerState.flags 의 자리
@@ -276,10 +242,6 @@ constexpr uint8_t PF_MOVING = 1 << 4;
 constexpr uint8_t PF_FACE_SHIFT = 5;
 constexpr uint8_t PF_FACE_MASK  = 3 << PF_FACE_SHIFT;
 
-// 지금 대쉬로 나가는 중인가. 잔상을 그리는 데 쓴다.
-// 위치 차이로 알아낼 수도 있지만, 그러면 롤러를 많이 먹은 사람과 구분이 안 된다
-constexpr uint8_t PF_DASHING = 1 << 7;
-
 enum FaceDir : uint8_t
 {
     FACE_DOWN  = 0,   // 화면 앞쪽. 처음 들어오면 이쪽을 본다
@@ -297,7 +259,6 @@ struct BubbleState
 #pragma pack(pop)
 
 constexpr int MOVE_PACKET_SIZE  = HEADER_SIZE + (int)sizeof(MoveBody);
-constexpr int DASH_PACKET_SIZE  = HEADER_SIZE + (int)sizeof(DashBody);
 constexpr int PLACE_PACKET_SIZE = HEADER_SIZE;   // 몸통이 없다. 놓는 자리는 서버가 안다
 constexpr int EVENT_PACKET_SIZE = HEADER_SIZE + (int)sizeof(EventBody);
 constexpr int WELCOME_PACKET_SIZE = HEADER_SIZE + (int)sizeof(WelcomeBody);

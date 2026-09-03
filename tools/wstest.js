@@ -9,7 +9,7 @@
 //   3) node tools/wstest.js
 const HEADER_SIZE = 4;
 const PKT = { MOVE: 2, PLACE: 3, EVENT: 4, WELCOME: 5, MAPROW: 6, SNAPSHOT: 7,
-              RESTART: 8, DASH: 9 };
+              RESTART: 8 };
 
 let pass = 0, fail = 0;
 const check = (ok, what) => {
@@ -51,14 +51,20 @@ ws.onopen = () => {
     setTimeout(() => send(move(0, 1)), 4900);
     setTimeout(() => send(move(0, 0)), 6000);
 
-    // 물풍선 퓨즈가 2.5초다. 터지는 걸 보고 나서 다시 시작을 누른다
-    // 대쉬를 스무 번 도배한다. 안 먹었으니 하나도 안 나가야 하고,
-    // 그러고도 스냅샷이 계속 와야 한다
+    // 옆자리가 이상한 패킷을 도배한다.
+    //
+    // 서버는 모르는 id 를 받으면 그 연결을 끊는다. 버전이 어긋난 클라이언트가
+    // 뭘 하고 있는지 알 수 없으니 그게 맞다.
+    //
+    // 여기서 보려는 건 **끊기는 게 그 연결 하나뿐인가**다. 세션을 닫는 길에
+    // 남의 자리를 건드리거나 틱을 세우면, 클라 하나가 판 전체를 내린다.
+    // 스물넷이 붙는 게임에서 이게 제일 무서운 사고다
     setTimeout(() => {
-        for (let i = 0; i < 20; ++i) send(dash(i % 2 ? 1 : 0, i % 2 ? 0 : 1));
-        dashSentAt = snapshots;
+        for (let i = 0; i < 20; ++i)
+            if (filler.readyState === 1) filler.send(junk());
+        junkSentAt = snapshots;
     }, 6400);
-    setTimeout(() => { dashSnaps = snapshots - dashSentAt; }, 7200);
+    setTimeout(() => { junkSnaps = snapshots - junkSentAt; }, 7200);
 
     setTimeout(() => { restarted = true; send(restart()); }, 7600);
 
@@ -141,11 +147,12 @@ ws.onmessage = (e) => {
 };
 
 // PlayerState 한 사람이 몇 바이트인가. Protocol.h 의 struct 와 같아야 한다.
-// 9/2 에 대쉬 한 바이트가 붙어 11 -> 12 가 됐다.
+//
+// 대쉬 한 바이트가 붙었다 빠지면서 11 -> 12 -> 11 로 두 번 바뀌었다.
 // 두 군데에 적어놨더니 서버를 고친 날 시험이 조용히 틀렸다 — 한 곳에만 적는다
-const PS = 12;
+const PS = 11;
 
-let dashSentAt = 0, dashSnaps = 0;
+let junkSentAt = 0, junkSnaps = 0;
 
 function send(buf) { if (ws.readyState === 1) ws.send(buf); }
 
@@ -158,18 +165,11 @@ function move(dx, dy) {
     return b.buffer;
 }
 
-// 대쉬. **아직 안 먹었을 때 보내는 것**을 일부러 시험한다.
-//
-// 아무 일도 안 일어나는 게 맞는데, 여기서 확인하려는 건 '아무 일도 안 일어나는 것'
-// 자체가 아니라 **연결이 안 끊기는 것**이다. 몸통 크기를 잘못 세면 서버가
-// 이상한 패킷으로 보고 끊어버린다. 그러면 대쉬를 누른 사람이 튕긴다.
-// 클라를 고친 사람이 이걸 도배해도 서버가 버텨야 한다
-function dash(dx, dy) {
+// 서버가 모르는 패킷. 버려야 하고, 끊으면 안 된다
+function junk() {
     const b = new DataView(new ArrayBuffer(HEADER_SIZE + 2));
     b.setUint16(0, HEADER_SIZE + 2, true);
-    b.setUint16(2, PKT.DASH, true);
-    b.setInt8(4, dx);
-    b.setInt8(5, dy);
+    b.setUint16(2, 250, true);
     return b.buffer;
 }
 
@@ -255,8 +255,10 @@ function report() {
     check(facesSeen.has(0), '아래로 갈 때 아래를 본다');
     check(sawMoving && sawStanding, '걷는 상태와 서 있는 상태가 둘 다 온다');
 
-    check(dashSnaps > 15,
-          '대쉬를 스무 번 보내도 안 끊긴다 (' + dashSnaps + '장 더 왔다)');
+    check(junkSnaps > 15,
+          '옆자리가 이상한 패킷으로 끊겨도 내 스냅샷은 계속 온다 ('
+          + junkSnaps + '장 더 왔다)');
+    check(ws.readyState === 1, '남의 연결이 끊겨도 내 연결은 살아 있다');
 
     check(eventKinds.has(8), 'BUBBLE 이벤트가 왔다 (놓은 게 화면에 나간다)');
     check(eventKinds.has(9), 'BLAST 이벤트가 왔다');

@@ -695,24 +695,6 @@ inline void ThinkBot(int slot)
             g_reason[slot] = R_FLEE_NEW;
 
             // **도망칠 때만 대쉬한다.**
-            //
-            // 사람은 이걸 쫓아갈 때도 쓰겠지만, 봇이 쫓을 때도 쓰면 24명이
-            // 온 판을 튀어 다녀서 관전할 수가 없다. 봇의 대쉬는 연출이 아니라
-            // '나갈 시간이 모자랄 때 만드는 수단' 하나로 둔다.
-            //
-            // 조건은 두 개다 — 지금 나가는 방향이 한 축이고, 그쪽 두 칸이 안전할 것.
-            // 두 칸을 보는 이유는 대쉬가 3칸을 가기 때문이다. 한 칸만 보고 나가면
-            // 그다음 칸의 물줄기로 뛰어드는 꼴이 된다
-            if (p.has_dash && p.dash_cd == 0 && p.dash_ticks == 0
-                && (dx == 0) != (dy == 0)) {
-                bool clear = true;
-                for (int k = 1; k <= 2 && clear; ++k) {
-                    int nx = tx + dx * k, ny = ty + dy * k;
-                    if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) clear = false;
-                    else if (!Passable(nx, ny) || g_danger[ny][nx])     clear = false;
-                }
-                if (clear) StartDash(slot, dx, dy);
-            }
             return;
         }
         g_reason[slot] = R_FLEE_STUCK;   // 위험한데 갈 데가 없다. 아래 규칙으로 내려간다
