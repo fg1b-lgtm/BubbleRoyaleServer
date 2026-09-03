@@ -982,6 +982,9 @@ function trapLeft(p) {
   return Math.max(0, Math.min(1, 1 - gone / G.C.trap));
 }
 
+// 내 캐릭터가 마지막으로 그려진 화면 x. 걸음이 고른지 재는 데만 쓴다
+let drawnX = 0;
+
 function drawPlayer(id, p, alpha, now, T) {
   // 남은 스냅샷 두 장 사이를 보간한다. 그게 부드러움의 전부다.
   //
@@ -1000,6 +1003,14 @@ function drawPlayer(id, p, alpha, now, T) {
     px = (p.x0 + (p.x1 - p.x0) * alpha) / G.C.tileUnits * T;
     py = (p.y0 + (p.y1 - p.y0) * alpha) / G.C.tileUnits * T;
   }
+  // 내가 **실제로 그려진** 자리. 계측 도구가 이걸 읽는다.
+  //
+  // 전에는 Predict.view(0) 을 프레임마다 읽어서 걸음이 고른지 쟀다.
+  // 0 은 정의상 틱 시작 자리라, 보간이 되든 안 되든 틱마다 한 번씩만 바뀐다.
+  // 99프레임 중 56프레임이 제자리라는 숫자가 나왔는데 그건 화면이 아니라
+  // 재는 법 얘기였다. **눈에 보이는 값을 재야 한다**
+  if (id === G.myId) drawnX = px;
+
   const dead = !(p.flags & PF.ALIVE);
   const r = T * G.C.bodyNum / G.C.bodyDen / 2;
 

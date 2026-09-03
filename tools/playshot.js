@@ -209,6 +209,83 @@ async function peek() {
     await sleep(700);
     await shot('02-걷는중');
 
+    // ── 걸음이 매끄러운가 ───────────────────────────────────
+    //
+    // 서버는 30Hz 로 돌고 화면은 60fps 다. 틱마다만 자리를 옮기면 한 프레임은
+    // 뛰고 다음 프레임은 제자리라 덜덜 떤다. 눈으로는 '버벅인다' 로만 느껴지고
+    // 원인을 못 짚는다. **프레임마다 몇 units 갔는지**를 재면 바로 나온다.
+    //
+    // 고르면 걸음 간격이 다 비슷하고, 틱마다 뛰면 0 과 큰 값이 번갈아 나온다.
+    //
+    // **화면에 실제로 그려진 자리**를 읽는다. 전에는 Predict.view(0) 을 읽었는데,
+    // 0 은 정의상 틱 시작 자리라 보간이 되든 안 되든 틱마다 한 번만 바뀐다.
+    // 99프레임 중 56이 제자리라는 숫자가 나왔지만 그건 화면 얘기가 아니라
+    // 재는 법 얘기였다. 재는 자리가 틀리면 숫자가 거짓말을 한다 - 두 번째다
+    //
+    // 막힌 쪽이면 안 움직인 게 맞고, 그건 화면 얘기가 아니다.
+    // 사방을 돌아가며 눌러서 **실제로 걸은 방향**으로 잰다
+    {
+      const SAMPLE = [
+        'new Promise(function(done){',
+        '  var xs = [], n = 0;',
+        '  function step(){',
+        '    if (typeof drawnX !== "undefined") xs.push(drawnX);',
+        '    if (++n < 100) requestAnimationFrame(step);',
+        '    else done(JSON.stringify(xs));',
+        '  }',
+        '  requestAnimationFrame(step);',
+        '})',
+      ].join('');
+
+      // 걷다가 벽에 붙으면 거기서부터는 안 움직이는 게 맞다. 그 구간을 같이 세면
+      // 화면이 버벅이는 것으로 잡힌다 - 실제로 84/99 라는 숫자가 그렇게 나왔다.
+      // **쭉 걸은 구간**만 잘라서 본다
+      let best = null;
+      for (const [k, c] of [['d','KeyD'], ['s','KeyS'], ['a','KeyA'], ['w','KeyW']]) {
+        await keyDown(k, c);
+        await sleep(300);
+
+        const r = await cdp('Runtime.evaluate', {
+          expression: SAMPLE, awaitPromise: true, returnByValue: true,
+        });
+        await keyUp(k, c);
+
+        let xs = [];
+        try { xs = JSON.parse(r.result.value || '[]'); } catch (e) { /* 없다 */ }
+
+        const d = [];
+        for (let i = 1; i < xs.length; ++i) d.push(Math.abs(xs[i] - xs[i - 1]));
+
+        // 안 움직인 프레임이 세 번 이어지면 거기서 끊긴 것으로 본다.
+        // 한두 프레임 쉬는 건 보간이 아직 다음 칸을 안 넘은 것일 수 있다
+        let run = [], cur = [], gap = 0;
+        for (const v of d) {
+          if (v > 0.01) { gap = 0; cur.push(v); }
+          else if (++gap >= 3) { if (cur.length > run.length) run = cur; cur = []; }
+          else cur.push(v);
+        }
+        if (cur.length > run.length) run = cur;
+
+        if (!best || run.length > best.run.length) best = { k, run };
+        if (best.run.length > 60) break;          // 넉넉히 걸었다. 더 안 봐도 된다
+      }
+
+      if (best && best.run.length > 8) {
+        const run = best.run;
+        const move = run.filter((v) => v > 0.01);
+        const avg = move.reduce((a, b) => a + b, 0) / move.length;
+        const dev = Math.sqrt(move.reduce((a, b) => a + (b - avg) * (b - avg), 0)
+                              / move.length);
+        console.log('  걸음(' + best.k + '): 쭉 걸은 ' + run.length + '프레임 중 '
+                    + '안 움직인 프레임 ' + (run.length - move.length)
+                    + ',  한 프레임에 ' + avg.toFixed(2) + 'px'
+                    + ',  들쭉날쭉 ' + dev.toFixed(2)
+                    + '  (안 움직인 프레임이 많거나 들쭉날쭉하면 버벅인다)');
+      } else {
+        console.log('  걸음: 사방이 막혔거나 죽었다');
+      }
+    }
+
     await keyUp('d', 'KeyD');
 
     // 물풍선을 놓고 도망친다. 터지는 걸 봐야 한다
@@ -277,56 +354,6 @@ async function peek() {
       }
     }
 
-    // ── 걸음이 매끄러운가 ───────────────────────────────────
-    //
-    // 서버는 30Hz 로 돌고 화면은 60fps 다. 틱마다만 자리를 옮기면 한 프레임은
-    // 뛰고 다음 프레임은 제자리라 덜덜 떤다. 눈으로는 '버벅인다' 로만 느껴지고
-    // 원인을 못 짚는다. **프레임마다 몇 units 갔는지**를 재면 바로 나온다.
-    //
-    // 고르면 걸음 간격이 다 비슷하고, 틱마다 뛰면 0 과 큰 값이 번갈아 나온다
-    {
-      await keyDown('d', 'KeyD');
-      await sleep(300);
-
-      const SAMPLE = [
-        'new Promise(function(done){',
-        '  var xs = [], n = 0;',
-        '  function step(){',
-        '    var v = (typeof Predict !== "undefined" && Predict.view)',
-        '            ? Predict.view(0) : null;',
-        '    if (v) xs.push(v.x);',
-        '    if (++n < 100) requestAnimationFrame(step);',
-        '    else done(JSON.stringify(xs));',
-        '  }',
-        '  requestAnimationFrame(step);',
-        '})',
-      ].join('');
-
-      const r = await cdp('Runtime.evaluate', {
-        expression: SAMPLE, awaitPromise: true, returnByValue: true,
-      });
-      await keyUp('d', 'KeyD');
-
-      let xs = [];
-      try { xs = JSON.parse(r.result.value || '[]'); } catch (e) { /* 없다 */ }
-
-      const d = [];
-      for (let i = 1; i < xs.length; ++i) d.push(Math.abs(xs[i] - xs[i - 1]));
-      const move = d.filter((v) => v > 0.01);
-      const zero = d.length - move.length;
-
-      if (move.length) {
-        const avg = move.reduce((a, b) => a + b, 0) / move.length;
-        const dev = Math.sqrt(move.reduce((a, b) => a + (b - avg) * (b - avg), 0)
-                              / move.length);
-        console.log('  걸음: 프레임 ' + d.length + '개 중 안 움직인 프레임 ' + zero
-                    + ',  한 프레임에 ' + avg.toFixed(1) + ' units',
-                    '들쭉날쭉 ' + dev.toFixed(1)
-                    + '  (안 움직인 프레임이 많거나 들쭉날쭉하면 버벅인다)');
-      } else {
-        console.log('  걸음: 안 움직였다 (벽에 막혔거나 죽었다)');
-      }
-    }
     // ── 키를 누르고 화면이 움직이기까지 ─────────────────────
     //
     // 이 게임에서 제일 중요한 숫자인데 한 번도 안 재봤다.
@@ -371,17 +398,26 @@ async function peek() {
 
     console.log('');
     console.log('  --- 키를 누르고 화면이 움직이기까지 ---');
-    const lags = [];
+    // 막힌 방향은 버린다.
+    //
+    // 벽에 붙어 있으면 눌러도 자리가 안 바뀌고, 그게 수백 ms 로 잡힌다.
+    // 실제로 392ms 와 2531ms 가 섞여 나와서 가운데값이 거짓말을 했다.
+    // 같은 컴퓨터에서 입력 지연이 200ms 일 수는 없으니, 넘으면 막힌 것이다
+    const BLOCKED_MS = 200;
+    const lags = [], blocked = [];
     for (const [k, c] of [['d','KeyD'], ['a','KeyA'], ['s','KeyS'], ['d','KeyD'], ['w','KeyW']]) {
         const ms = await measureInputLag(k, c);
-        if (ms >= 0) lags.push(ms);
+        if (ms < 0) continue;
+        (ms <= BLOCKED_MS ? lags : blocked).push(k);
+        if (ms <= BLOCKED_MS) lags[lags.length - 1] = ms;
     }
     if (lags.length) {
         lags.sort((x, y) => x - y);
         console.log('    ' + lags.join(' · ') + ' ms   가운데값 '
-                    + lags[lags.length >> 1] + 'ms');
+                    + lags[lags.length >> 1] + 'ms'
+                    + (blocked.length ? '   (막혀서 버린 방향 ' + blocked.join(',') + ')' : ''));
     } else {
-        console.log('    못 쟀다 (죽었거나 자리가 안 왔다)');
+        console.log('    못 쟀다 (죽었거나 사방이 막혔다)');
     }
 
     // ── 예측이 서버와 같은 답을 내나 ────────────────────────
