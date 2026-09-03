@@ -136,7 +136,11 @@ static void SendWelcome(Session* s, int slot)
 
     // 판을 한 줄씩. 한 패킷에 다 담으면 한도를 넘는다
     for (int y = 0; y < MAP_H; ++y) {
-        char row[HEADER_SIZE + sizeof(MapRowHead) + 2 * MAP_W];
+        // 타일 · 아이템 · 길, 세 줄이 붙는다.
+        //
+        // 길은 조각을 그릴 때 '반드시 통로' 로 그은 자리다. 화면이 바닥에
+        // 흙길을 그리는 데 쓴다. 한 번만 보내면 되고 판당 1.7KB 다
+        char row[HEADER_SIZE + sizeof(MapRowHead) + 3 * MAP_W];
         int  len = (int)sizeof(row);
 
         PacketHeader rh;
@@ -148,10 +152,12 @@ static void SendWelcome(Session* s, int slot)
 
         char* tiles = row + HEADER_SIZE + sizeof(MapRowHead);
         char* items = tiles + MAP_W;
+        char* lanes = items + MAP_W;
 
         for (int x = 0; x < MAP_W; ++x) {
             tiles[x] = (char)g_game.map.tile[y][x];
             items[x] = (char)g_game.item[y][x];
+            lanes[x] = (char)(g_game.map.street[y][x] ? 1 : 0);
         }
 
         SendPacket(s, row, len);

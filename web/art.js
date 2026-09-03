@@ -137,6 +137,19 @@ const Art = (() => {
     return [shade(c, 0.85), shade(c, 0.45), c, light(c, 0.42), light(c, 0.82)];
   }
 
+  // 배경(바닥과 벽)에 쓰는 좁은 램프.
+  //
+  // 9/3 에 CC0 던전 타일셋을 받아서 우리 것과 나란히 재봤다. 한 칸 안의 명암 폭이
+  // 저쪽은 0.05~0.22 인데 우리는 0.40 이었다. 두 배다. 배경이 그만큼 시끄러우면
+  // 그 위에 놓인 물건이 전부 배경에 묻힌다.
+  //
+  // 배경은 무늬가 있다는 걸 알아볼 정도만 있으면 된다. 눈이 먼저 가야 하는 것은
+  // 만질 수 있는 것이지 바닥이 아니다
+  function bgRamp(base) {
+    const c = (typeof base === 'string') ? rgb(base) : base;
+    return [shade(c, 0.34), shade(c, 0.17), c, light(c, 0.15), light(c, 0.30)];
+  }
+
   // ── 가감속 ───────────────────────────────────────────────────
   const easeOut  = (t) => 1 - Math.pow(1 - t, 3);
   const easeIn   = (t) => t * t * t;
@@ -156,44 +169,44 @@ const Art = (() => {
   // 상자는 그 장소에 있을 법한 것으로 (나무 궤짝, 얼음덩이, 화물, 항아리).
   const PLACES = [
     { name: '광장',   // 0 CROSSROADS — 돌바닥과 붉은 기와
-      floor: '#a28c7d', floorAlt: '#9d8676', joint: '#856f5f', fleck: '#9c8170',
-      wallTop: '#cf6049', wallSide: '#9f3e2a', wallEdge: '#772e20',
-      crate: '#dfa46f', crateTop: '#e6c8ac', crateSide: '#d17b2f',
+      floor: '#6d5b5b', floorAlt: '#685757', joint: '#554747', fleck: '#7b6767',
+      wallTop: '#504343', wallSide: '#312929', wallEdge: '#262020',
+      crate: '#c27962', crateTop: '#d5a292', crateSide: '#a3573f',
       markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['crate', 'stone'], wallKinds: ['brick', 'brick', 'rock'],
       step: 'stone' },
 
     { name: '사원',   // 1 CLOISTER — 흰 대리석과 금빛
-      floor: '#95907c', floorAlt: '#8f8b76', joint: '#757160', fleck: '#8d8870',
-      wallTop: '#8d815a', wallSide: '#665d41', wallEdge: '#4b4530',
-      crate: '#daae33', crateTop: '#e1c988', crateSide: '#b79020',
+      floor: '#686a7f', floorAlt: '#636579', joint: '#505262', fleck: '#75778e',
+      wallTop: '#4c4e5d', wallSide: '#2f313a', wallEdge: '#25262d',
+      crate: '#9e8a44', crateTop: '#bfad6b', crateSide: '#7b6b35',
       markH: 'log2', markV: 'lamp2', mark: 'well', crateKinds: ['barrel', 'stone'], wallKinds: ['ashlar', 'ashlar', 'brick'],
       step: 'marble' },
 
     { name: '공장',   // 2 COMB — 강철과 주황 화물
-      floor: '#908f8e', floorAlt: '#8b8988', joint: '#747271', fleck: '#878584',
-      wallTop: '#868079', wallSide: '#615d57', wallEdge: '#484541',
-      crate: '#f39954', crateTop: '#f1c4a2', crateSide: '#e96f10',
+      floor: '#475459', floorAlt: '#445055', joint: '#374145', fleck: '#515f65',
+      wallTop: '#343d40', wallSide: '#1f2527', wallEdge: '#181c1e',
+      crate: '#c07c3d', crateTop: '#d4a478', crateSide: '#95602f',
       markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['barrel', 'crate'], wallKinds: ['metal', 'metal', 'brick'],
       step: 'metal' },
 
     { name: '마을',   // 3 LATTICE — 잔디와 나무집
-      floor: '#679c5a', floorAlt: '#619254', joint: '#496e3f', fleck: '#5a8e4e',
-      wallTop: '#429236', wallSide: '#306a27', wallEdge: '#244f1d',
-      crate: '#dda472', crateTop: '#e5c8ae', crateSide: '#ce7c34',
+      floor: '#3c6539', floorAlt: '#396036', joint: '#2f4e2c', fleck: '#447140',
+      wallTop: '#2c4929', wallSide: '#1b2d19', wallEdge: '#152314',
+      crate: '#b68143', crateTop: '#cea779', crateSide: '#8d6434',
       markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['crate', 'sack'], wallKinds: ['wood', 'wood', 'brick'],
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
-      floor: '#80986b', floorAlt: '#798f64', joint: '#5f714e', fleck: '#738d5f',
-      wallTop: '#638c48', wallSide: '#486534', wallEdge: '#354b27',
-      crate: '#e0a389', crateTop: '#e7c8ba', crateSide: '#d0744d',
+      floor: '#674d35', floorAlt: '#624932', joint: '#4f3b29', fleck: '#74573c',
+      wallTop: '#4a3826', wallSide: '#2d2217', wallEdge: '#221a12',
+      crate: '#4a9d43', crateTop: '#71bf6b', crateSide: '#3a7a34',
       markH: 'log2', markV: 'cact2', mark: 'tree', crateKinds: ['sack', 'crate'], wallKinds: ['wood', 'wood', 'rock'],
       step: 'sand' },
 
     { name: '사막',   // 5 DIAGONAL — 모래와 사암
-      floor: '#a18947', floorAlt: '#957f42', joint: '#6a5a2f', fleck: '#8f793b',
-      wallTop: '#a27a36', wallSide: '#755927', wallEdge: '#57421d',
-      crate: '#caab99', crateTop: '#dccbc2', crateSide: '#b2846a',
+      floor: '#6b6024', floorAlt: '#665b22', joint: '#534a1c', fleck: '#796c28',
+      wallTop: '#4e461a', wallSide: '#302b10', wallEdge: '#25210c',
+      crate: '#c3776d', crateTop: '#d6a19a', crateSide: '#aa5246',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
       step: 'sand' },
 
@@ -203,30 +216,30 @@ const Art = (() => {
     // 바닥을 식은 회색 벽돌로 내리고 차양을 사프란으로 올려서 떼어놨다.
     // 상자의 청록은 그대로 둔다. 그게 이 장소의 표식이다
     { name: '시장',   // 6 ALLEYS — 벽돌 골목과 천 차양
-      floor: '#b1818a', floorAlt: '#ac7b84', joint: '#9d616c', fleck: '#ad7681',
-      wallTop: '#c46185', wallSide: '#9d3a5e', wallEdge: '#752b46',
-      crate: '#d8a743', crateTop: '#e1c897', crateSide: '#bd8b27',
+      floor: '#7a3f58', floorAlt: '#743c54', joint: '#5e3144', fleck: '#8a4763',
+      wallTop: '#592e40', wallSide: '#361c27', wallEdge: '#29151e',
+      crate: '#9d8c31', crateTop: '#c3ae3f', crateSide: '#796c26',
       markH: 'car2', markV: 'lamp2', mark: 'well', crateKinds: ['sack', 'crate'], wallKinds: ['brick', 'brick', 'wood'],
       step: 'stone' },
 
     { name: '해변',   // 7 WELL — 흰 모래와 산호
-      floor: '#999161', floorAlt: '#8f885b', joint: '#6c6846', fleck: '#898356',
-      wallTop: '#89843d', wallSide: '#635f2c', wallEdge: '#494721',
-      crate: '#ee9cad', crateTop: '#f1c7cf', crateSide: '#e3627c',
+      floor: '#78775c', floorAlt: '#727158', joint: '#5d5c48', fleck: '#878568',
+      wallTop: '#585744', wallSide: '#38372b', wallEdge: '#2c2b22',
+      crate: '#c8718b', crateTop: '#d99daf', crateSide: '#b44667',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['barrel', 'stone'], wallKinds: ['rock', 'rock', 'wood'],
       step: 'sand' },
 
     { name: '얼음골', // 8 ZIGZAG — 눈과 얼음
-      floor: '#a186a1', floorAlt: '#9d809d', joint: '#876987', fleck: '#9b7b9b',
-      wallTop: '#a76da9', wallSide: '#7e4b80', wallEdge: '#5e385f',
-      crate: '#c8a7e4', crateTop: '#dccbec', crateSide: '#ab7bd6',
+      floor: '#58787a', floorAlt: '#547274', joint: '#455d5f', fleck: '#638689',
+      wallTop: '#415859', wallSide: '#293738', wallEdge: '#202b2c',
+      crate: '#bb7c61', crateTop: '#d0a491', crateSide: '#9a5c42',
       markH: 'log2', markV: 'lamp2', mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'ashlar'],
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
-      floor: '#8d83b9', floorAlt: '#897db6', joint: '#7265aa', fleck: '#8578b6',
-      wallTop: '#8873d0', wallSide: '#6347c2', wallEdge: '#4a3297',
-      crate: '#d8a66d', crateTop: '#e3c9ab', crateSide: '#c78235',
+      floor: '#375e52', floorAlt: '#355a4f', joint: '#2b4940', fleck: '#3e6a5d',
+      wallTop: '#28443c', wallSide: '#192a25', wallEdge: '#13201c',
+      crate: '#409c75', crateTop: '#62bf98', crateSide: '#31795b',
       markH: 'car2', markV: 'lamp2', mark: 'car', crateKinds: ['crate', 'barrel'], wallKinds: ['metal', 'metal', 'wood'],
       step: 'wood' },
   ];
@@ -261,6 +274,18 @@ const Art = (() => {
   };
 
   // 이 칸이 어느 장소인가
+  // 조각을 그릴 때 '반드시 통로' 로 그은 칸인가.
+  //
+  // 서버가 맵 줄에 실어 보낸다. 규칙에는 안 쓰고 바닥을 그리는 데만 쓴다 —
+  // 판정은 언제나 타일로만 한다
+  let laneGrid = null;
+  function setLanes(g) { laneGrid = g; }
+  function isLane(x, y) {
+    if (!laneGrid || y < 0 || x < 0) return false;
+    const r = laneGrid[y];
+    return !!(r && r[x]);
+  }
+
   function placeAt(x, y) {
     const s = Math.min(2, (y / V.sh) | 0) * 3 + Math.min(2, (x / V.sw) | 0);
     return V.place[s];
@@ -295,7 +320,13 @@ const Art = (() => {
   function setScale(ts) {
     V.TS  = ts;
     V.P   = Math.max(2, Math.round(ts / 16));
-    V.WH  = Math.round(ts * 0.46);   // 벽 높이
+    // 벽 높이. 이 값이 판의 입체감을 통째로 정한다.
+    //
+    // 0.46 에서 0.22 까지 낮췄다가 0.38 로 되돌렸다. 낮추면 아래 줄 벽에
+    // 사람이 안 가려지는데, 가려지는 게 맞다 — 블록에 높이가 있고 카메라가
+    // 살짝 아래에서 보는 각도이기 때문이다. 발과 정강이가 가려지는 정도가
+    // 적당하고, 가슴까지 묻히면 너무 높은 것이다
+    V.WH  = Math.round(ts * 0.38);
     // 상자 높이.
     //
     // 0.30 이었는데, 윗면(타일에서 여백 뺀 것)에 이 높이를 더하면
@@ -364,11 +395,35 @@ const Art = (() => {
         const joint = rgb(th.joint), fleck = rgb(th.fleck);
         const h = hash2(x, y);
 
+        // **바닥이 길을 말한다.**
+        //
+        // 크아 맵을 보면 잔디밭 위에 흙길이 격자로 나 있다. 그래서 판을 처음 봐도
+        // 어디로 다니는 데인지가 바닥만으로 읽힌다. 우리는 바닥이 어디나 똑같아서
+        // 상자를 다 부수기 전에는 길이 안 보였다.
+        //
+        // 판을 만들 때 '반드시 통로' 로 그은 칸을 그대로 길로 쓴다. 그 자리는
+        // 블록이 안 깔리는 자리라, 판이 끝날 때까지 길로 남는 자리이기도 하다.
+        // 없는 정보를 지어내는 게 아니라 이미 있는 정보를 눈에 보이게 하는 것이다
+        const lane = isLane(x, y);
+
         // 같은 색 두 개를 번갈아 깔되, 칸마다 아주 조금씩 밝기를 흔든다.
         // 완전히 같은 색이 이어지면 인쇄물처럼 보이고, 많이 흔들면 지저분해진다
-        const c = mix(((x + y) & 1) ? base : alt, WHITE, (h - 0.5) * 0.05);
+        let c = mix(((x + y) & 1) ? base : alt, WHITE, (h - 0.5) * 0.05);
+
+        // 길은 한 단 밝고 조금 누렇다. 밟아서 풀이 벗겨진 흙이다
+        if (lane) c = mix(light(c, 0.30), rgb('#c9a86a'), 0.22);
+
         g.fillStyle = css(c);
         g.fillRect(x * T, y * T, T, T);
+
+        // 길과 길 아닌 데의 경계에 한 줄. 길이 길로 보이는 건 이 선 때문이다
+        if (lane) {
+          g.fillStyle = css(shade(rgb(th.floor), 0.30), 0.45);
+          if (!isLane(x, y - 1)) g.fillRect(x * T, y * T, T, V.P);
+          if (!isLane(x - 1, y)) g.fillRect(x * T, y * T, V.P, T);
+          if (!isLane(x, y + 1)) g.fillRect(x * T, (y + 1) * T - V.P, T, V.P);
+          if (!isLane(x + 1, y)) g.fillRect((x + 1) * T - V.P, y * T, V.P, T);
+        }
 
         // 이음선도 격자 한 칸 두께로. 1px 로 그리면 배율에 따라 사라진다
         g.fillStyle = css(joint, 0.5);
@@ -465,8 +520,9 @@ const Art = (() => {
     return fromHsl(towardHue(h, HUE_SHADE, 0.45), sat * 0.30, 0.10);
   }
 
-  function tonePal(base) {
-    const r = ramp(base);
+  // bg 를 켜면 배경용 좁은 램프를 쓴다. 벽과 바닥이 그쪽이다
+  function tonePal(base, bg) {
+    const r = bg ? bgRamp(base) : ramp(base);
     return {
       '.': null,
       '0': css(r[0]), '1': css(r[1]), '2': css(r[2]),
@@ -1477,7 +1533,7 @@ const Art = (() => {
           // 그 점은 없는 것과 같다. 픽셀 아트가 색을 적게 쓰면서도 또렷한 이유가
           // 색마다 명도를 확실히 벌려놓기 때문이다
           const cv = bakeTile('w:' + wk + ':' + th.name + ':' + dp, rows,
-                              tonePal(th.wallTop), dp);
+                              tonePal(th.wallTop, true), dp);
           blitTile(g, cv, px, Y - V.WH, dp);
 
           // 넷이 붙었으면 그 위에 물건을 덮는다.
@@ -2027,6 +2083,149 @@ const Art = (() => {
   // 자세는 동물 · 색 · 보는 쪽 · 걷는지 · 걸음 토막 · 죽었는지 · 위급한지로 정해진다.
   // 매 프레임 스물넷을 그리던 것이 붙이기만 하는 것으로 바뀐다
   const spriteCache = new Map();
+
+  // ── 그림 아틀라스 ────────────────────────────────────────────
+  //
+  // 캐릭터는 도트를 찍는 대신 **그림 시트에서 오려 쓴다.**
+  //
+  // 9/3 까지 16x20 도트로 직접 찍었다. 픽셀 게임 자료를 찾아보며 세 번 고쳤는데,
+  // 유명한 픽셀 게임과 나란히 놓고 재보니 차이가 숫자로 나왔다 —
+  // 우리 채도가 두 배였고, 물건 하나에 쓰는 색이 6개인데 저쪽은 16개였다.
+  // 16x20 안에서 그 격차를 좁히는 건 도트를 더 잘 찍어서 될 일이 아니었다.
+  //
+  // 그림은 따로 만들어서 파일로 받고, 코드는 그걸 오려 붙이는 일만 한다.
+  // 시트가 바뀌면 tools/buildart.py 를 다시 돌리면 된다.
+  //
+  // **아직 안 왔으면 도트로 그린다.** 그림이 없다고 게임이 안 돌면 안 되고,
+  // 도트 쪽은 시험이 다 걸려 있어서 그대로 두는 편이 안전하다
+  // 아틀라스는 여러 장이다. chars 는 사람, fx 는 물풍선과 물줄기.
+  // 한 장에 다 넣으면 사람이 늘 때마다 물줄기까지 다시 굽게 된다
+  const atlases = {};
+
+  function loadAtlas(key, pngUrl, jsonUrl, done) {
+    // 브라우저가 아니면 아무것도 안 한다. 시험은 가짜 캔버스로 도는데
+    // 거기엔 Image 도 fetch 도 없다. 그때는 도트로 그린다
+    if (typeof Image === 'undefined' || typeof fetch === 'undefined') return;
+
+    // 둘 다 와야 쓴다. 하나만 오면 아무것도 안 그려진다
+    let img = null, map = null;
+    const ready = () => {
+      if (!img || !map) return;
+      atlases[key] = { img: img, map: map };
+      spriteCache.clear();
+      if (done) done();
+    };
+
+    const im = new Image();
+    im.onload = () => { img = im; ready(); };
+    im.onerror = () => { /* 없으면 도트로 간다 */ };
+    im.src = pngUrl;
+
+    fetch(jsonUrl)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j && j.sprites) { map = j; ready(); } })
+      .catch(() => { /* 없으면 도트로 간다 */ });
+  }
+
+  const hasAtlas = (key) => !!atlases[key];
+
+  // 그림 하나를 원하는 높이로 줄여서 굽는다.
+  //
+  // 매 프레임 줄이면 24명 x 60프레임이라 너무 비싸고, 브라우저가 줄일 때마다
+  // 조금씩 다르게 뭉갠다. 한 번 구워두면 붙이기만 하면 된다.
+  //
+  // 줄인 뒤 알파를 잘라내는 게 중요하다. 안 자르면 가장자리가 반투명해져서
+  // 확대했을 때 뿌옇다 — 픽셀 그림이 픽셀로 안 보이는 제일 흔한 이유다.
+  //
+  // flip 을 주면 좌우나 상하로 뒤집어 굽는다. 물줄기 끝처럼 방향만 다른
+  // 그림을 네 장씩 받을 이유가 없다
+  function bakeFromAtlas(key, atlasKey, name, h, flipH, flipV) {
+    let cv = spriteCache.get(key);
+    if (cv) return cv;
+
+    const A = atlases[atlasKey];
+    if (!A) return null;
+    const box = A.map.sprites[name];
+    if (!box) return null;
+
+    const w = Math.max(1, Math.round(box[2] * h / box[3]));
+    cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = true;   // 줄일 때는 켜야 계단이 안 생긴다
+    if (flipH || flipV) {
+      c.translate(flipH ? w : 0, flipV ? h : 0);
+      c.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+    }
+    c.drawImage(A.img, box[0], box[1], box[2], box[3], 0, 0, w, h);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+
+    try {
+      const d = c.getImageData(0, 0, w, h);
+      const p = d.data;
+      for (let i = 3; i < p.length; i += 4) p[i] = p[i] < 110 ? 0 : 255;
+      c.putImageData(d, 0, 0);
+    } catch (e) { /* 시험용 가짜 캔버스에는 픽셀이 없다 */ }
+
+    spriteCache.set(key, cv);
+    if (spriteCache.size > 900) spriteCache.clear();
+    return cv;
+  }
+  // 물줄기 한 칸을 그린다.
+  //
+  // 통짜 십자 그림 하나로는 못 그린다. 사거리가 아이템으로 1칸에서 6칸까지
+  // 늘어나서 십자 크기가 매판 다르기 때문이다. 가운데 · 팔 · 끝 세 조각을
+  // 이웃을 보고 골라서 이어 붙인다.
+  //
+  // 끝 조각은 한 방향짜리만 받아서 뒤집어 쓴다. 방향마다 그림을 따로 받으면
+  // 네 장이 미묘하게 달라져서 십자가 안 맞물린다.
+  //
+  // hit(x,y) 는 그 칸에 물줄기가 있나. 아직 안 뻗은 칸은 없는 것으로 친다 —
+  // 그래야 물이 자라는 동안에도 끝이 끝으로 보인다
+  function drawBlastTile(g, px, py, T, hit, x, y, alpha) {
+    if (!hasAtlas('fx')) return false;
+
+    const L = hit(x - 1, y), R = hit(x + 1, y);
+    const U = hit(x, y - 1), D = hit(x, y + 1);
+
+    let name, fh = false, fv = false;
+    if ((L || R) && (U || D)) name = 'blast_mid';       // 십자가 갈라지는 자리
+    else if (L && R)          name = 'blast_h';
+    else if (U && D)          name = 'blast_v';
+    else if (R)               name = 'blast_tip_h';     // 왼쪽이 끝이다
+    else if (L)             { name = 'blast_tip_h'; fh = true; }
+    else if (U)               name = 'blast_tip_v';     // 아래쪽이 끝이다
+    else if (D)             { name = 'blast_tip_v'; fv = true; }
+    else                      name = 'blast_mid';       // 한 칸짜리
+
+    const key = name + ':' + T + ':' + (fh ? 1 : 0) + (fv ? 1 : 0);
+    const cv = bakeFromAtlas(key, 'fx', name, T, fh, fv);
+    if (!cv) return false;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    g.globalAlpha = alpha;
+    g.drawImage(cv, Math.round(px + (T - cv.width) / 2), Math.round(py));
+    g.globalAlpha = 1;
+    g.imageSmoothingEnabled = smooth;
+    return true;
+  }
+
+  // 사람 스물넷에 캐릭터 스물넷. 자리 번호가 곧 캐릭터다
+  const CHAR_NAMES = [
+    'red', 'blue', 'pink', 'frog', 'miner', 'cat', 'panda', 'penguin',
+    'tech', 'cowboy', 'bunny', 'dino', 'space', 'witch', 'shark', 'ninja',
+    'chef', 'fox', 'vampire', 'unicorn', 'pilot', 'devil', 'angel', 'robot',
+  ];
+
+  // 방향 번호를 시트의 글자로. FaceDir 은 0 아래 1 왼 2 오른 3 위다
+  const FACE_KEY = ['d', 'l', 'r', 'u'];
+
+  // 걷기 세 프레임을 0-1-2-1 로 돈다.
+  // 0-1-2 로만 돌리면 2 에서 0 으로 튈 때 다리가 순간이동한다.
+  // 갔다 오는 순서면 발이 이어져 보인다
+  const WALK_ORDER = [0, 1, 2, 1];
   const SPRITE_FRAMES = 8;
 
   // ── 사람을 도트로 찍는다 ────────────────────────────────────
@@ -2256,14 +2455,55 @@ const Art = (() => {
     if (spriteCache.size > 900) spriteCache.clear();
     return sp;
   }
+  // 그림 아틀라스에서 오려 그린다. 그릴 수 있었으면 true.
+  //
+  // 사람 키는 타일의 1.25 배로 잡는다. 크아가 그 비율이고, 머리가 타일 위로
+  // 조금 올라와야 상자 뒤에 있어도 누가 있는지 보인다.
+  //
+  // 발이 cy 보다 조금 아래에 오게 세운다. cy 는 몸의 중심이고 사람은 중심보다
+  // 발이 아래에 있다. 이 값이 어긋나면 바닥에 떠 보인다
+  function drawCharSprite(g, cx, cy, r, o, frame) {
+    const idx  = ((o.animal | 0) % CHAR_NAMES.length + CHAR_NAMES.length)
+                 % CHAR_NAMES.length;
+    const face = FACE_KEY[(o.face | 0) & 3] || 'd';
+    const f    = o.moving ? WALK_ORDER[frame & 3] : 0;
+    const name = CHAR_NAMES[idx] + '_' + face + f;
+
+    // 타일 한 칸이 2r 이다. 키는 그 1.25 배이되 짝수로 맞춘다 —
+    // 홀수면 가운데 정렬에서 반 픽셀이 남아 흐려진다
+    const h  = Math.max(8, Math.round(r * 2 * 1.25 / 2) * 2);
+    const cv = bakeFromAtlas(name + ':' + h, 'chars', name, h);
+    if (!cv) return false;
+
+    const dx = Math.round(cx - cv.width / 2);
+    // 발이 칸 바닥에 닿게. cy 는 몸 중심이고 사람은 중심보다 발이 아래에 있다.
+    // 도트로 그리던 때와 같은 자리다 — 여기가 어긋나면 벽에 가슴까지 묻힌다
+    const dy = Math.round(cy + r * 1.35 - cv.height);
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+
+    // 갇히면 하얗게 뜬다. 아직 갇힌 그림이 없어서 밝기로만 알린다
+    if (o.danger) {
+      g.globalAlpha = 0.85;
+    }
+    g.drawImage(cv, dx, dy);
+    g.globalAlpha = 1;
+
+    g.imageSmoothingEnabled = smooth;
+    return true;
+  }
+
   function drawChar(g, cx, cy, r, hex, o) {
     const moving = !!o.moving;
 
-    // 걸음을 네 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져 구울 수가 없다.
-    // 다리 지도가 두 장뿐이라 네 토막이면 충분하다 — a a b b 로 번갈아 나간다
+    // 걸음을 네 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져 구울 수가 없다
     const frame = moving
       ? ((Math.floor((o.walk || 0) / (Math.PI * 2) * 4) % 4) + 4) % 4
       : 0;
+
+    // 그림이 있으면 그림으로 그린다. 없으면 아래 도트로 내려간다
+    if (hasAtlas('chars') && drawCharSprite(g, cx, cy, r, o, frame)) return;
 
     // 도트 크기는 타일에 맞춘다. 사람이 16 점 폭이고 타일이 16 점이라,
     // 같은 눈금을 쓰면 사람과 바닥의 도트가 어긋나지 않는다.
@@ -2478,7 +2718,49 @@ const Art = (() => {
     return cv;
   }
 
+  // 물풍선. 그림이 있으면 그림으로.
+  //
+  // 숨쉬기는 그림 세 장을 갈아 끼워서 만든다. 크기를 실수배로 늘리면
+  // 도트가 뭉개져서 매끈한 그림으로 되돌아간다.
+  // 곧 터질 때는 빨간 것으로 바꾼다 — 색이 바뀌는 게 제일 빨리 읽힌다
+  function drawBubbleSprite(g, cx, cy, r, near, t, hex) {
+    const T = Math.max(8, Math.round(r * 2.2));
+
+    let name;
+    if (near) {
+      // 곧 터진다. 빨간 것과 제일 부푼 것을 빠르게 번갈아 보여준다
+      name = ((t / 90) | 0) % 2 ? 'balloon_hot' : 'balloon2';
+    } else {
+      name = ['balloon0', 'balloon1', 'balloon2'][((t / 260) | 0) % 3];
+    }
+
+    const cv = bakeFromAtlas(name + ':' + T, 'fx', name, T);
+    if (!cv) return false;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+
+    // 그림자. 물풍선이 바닥에 놓인 것으로 읽히게 하는 한 줄이다
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    g.fillRect(Math.round(cx - T * 0.30), Math.round(cy + T * 0.30),
+               Math.round(T * 0.60), Math.max(2, Math.round(T * 0.10)));
+
+    g.drawImage(cv, Math.round(cx - cv.width / 2), Math.round(cy - cv.height / 2));
+
+    // 놓은 사람 색을 밑동에 얇게. 누가 놓은 것인지 알아야 피할지 밟을지 정해진다
+    if (hex) {
+      g.fillStyle = hex;
+      g.fillRect(Math.round(cx - T * 0.22), Math.round(cy + T * 0.24),
+                 Math.round(T * 0.44), Math.max(2, Math.round(T * 0.08)));
+    }
+
+    g.imageSmoothingEnabled = smooth;
+    return true;
+  }
+
   function drawBubble(g, cx, cy, r, near, t, hex) {
+    if (hasAtlas('fx') && drawBubbleSprite(g, cx, cy, r, near, t, hex)) return;
+
     // 숨쉬기는 **크기가 아니라 도트 수**로 준다.
     //
     // 전에는 1.26 배까지 부드럽게 늘렸다. 도트 그림을 실수배로 늘리면
@@ -2783,7 +3065,8 @@ const Art = (() => {
              Math.round((cy + up - 5.5 * P) / P) * P, P, 'item' + kind);
   }
   return {
-    PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, placeAt, placeNames, hash2, rr,
+    PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
+    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile,
     buildFloor, buildRow, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,

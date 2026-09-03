@@ -211,7 +211,9 @@ const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 // 색이 같은 사람끼리는 동물이 다르고 동물이 같으면 색이 다르다.
 //
 // 그리고 동물은 **실루엣**이라 안개 너머와 작은 표에서도 읽힌다
-const animalOf = (id) => id % 8;
+// 자리 번호가 곧 캐릭터다. 스물넷이 다 다른 얼굴이라 관전할 때 누가 누군지 보인다.
+// 전에는 여덟 개를 돌려 써서 셋이 같은 얼굴이었다
+const animalOf = (id) => id % 24;
 
 // ── 화면 크기 ────────────────────────────────────────────────
 //
@@ -439,6 +441,11 @@ function updateCamera(dt) {
 }
 
 // ── 한 프레임 ────────────────────────────────────────────────
+// 그림 아틀라스를 받는다. 다 받으면 그때부터 캐릭터가 그림으로 그려진다.
+// 못 받아도 게임은 그대로 돈다 — 그때는 도트로 그린다
+Art.loadAtlas('chars', 'art/chars.png', 'art/chars.json');
+Art.loadAtlas('fx',    'art/fx.png',    'art/fx.json');
+
 function frame(ts) {
   requestAnimationFrame(frame);
   if (!G.C || !floorCtx) return;
@@ -605,6 +612,12 @@ function drawWorld(now, dt) {
       const fade = age < 0.7 ? 0 : (age - 0.7) / 0.3;
       const px = b.x * T, py = b.y * T;
 
+      // 그림이 있으면 조각을 이어 붙여 그린다.
+      // 이웃을 보고 가운데인지 팔인지 끝인지 고른다
+      if (Art.drawBlastTile(ctx, px, py, T,
+                            (hx, hy) => hit.has(hx + ',' + hy),
+                            b.x, b.y, 1 - fade)) continue;
+
       const g = ctx.createLinearGradient(px, py, px, py + T);
       g.addColorStop(0,   'rgba(' + (150 + heat * 105) + ',' + (215 + heat * 40) + ',255,' + (0.82 - fade * 0.75) + ')');
       g.addColorStop(1,   'rgba(' + (60 + heat * 90)  + ',' + (150 + heat * 80) + ',235,' + (0.72 - fade * 0.68) + ')');
@@ -701,6 +714,12 @@ function drawWorld(now, dt) {
                      b.owner === 0xFF ? null : colorOf(b.owner));
     }
 
+    // 사람은 자기 줄에서 그린다.
+    //
+    // 그러면 아래 줄 벽의 윗면에 발과 정강이가 가려진다. 그게 맞다 —
+    // 블록에 높이가 있고 카메라가 살짝 아래에서 보는 각도라, 뒤에 선 사람이
+    // 조금 가려져야 앞뒤가 읽힌다. 판을 다 그린 뒤에 사람을 그려봤더니
+    // 벽 위에 붕 떠 보였다
     const ps = bucketP[y];
     if (ps) for (const [id, p] of ps) {
       // 죽은 사람은 안 그린다.
@@ -710,6 +729,34 @@ function drawWorld(now, dt) {
       if (!(p.flags & PF.ALIVE)) continue;
       drawPlayer(id, p, alpha, now, T);
     }
+  }
+
+  // ── 사람은 판을 다 그린 뒤에 그린다 ────────────────────────
+  //
+  // 전에는 줄마다 그 줄 사람을 같이 그렸다. 앞뒤가 맞는 방식인데,
+  // 벽 바로 위에 선 사람이 아래 줄 벽의 윗면에 가려서 귀만 보였다.
+  // 벽을 반으로 낮춰도 가슴까지 묻혔다.
+  //
+  // 24명이 동시에 붙는 게임에서 **누가 어디 있는지 보이는 것**이 입체감보다
+  // 훨씬 중요하다. 크아도 사람은 늘 보인다.
+  //
+  // 세로로 정렬해서 그린다. 사람끼리는 아래에 있는 쪽이 앞이다
+  {
+    const all = [];
+    for (let y = yStart; y < yEnd; ++y) {
+      const ps = bucketP[y];
+      if (!ps) continue;
+      for (const [id, p] of ps) {
+        // 죽은 사람은 안 그린다.
+        //
+        // 전에는 흐리게 남겨뒀는데 판 위에 유령이 늘어서 거슬렸다.
+        // 죽었으면 없는 것이다. 어디서 죽었는지는 킬 피드가 말해준다
+        if (!(p.flags & PF.ALIVE)) continue;
+        all.push([id, p, p.y0 + (p.y1 - p.y0) * alpha]);
+      }
+    }
+    all.sort((a, b) => a[2] - b[2]);
+    for (const [id, p] of all) drawPlayer(id, p, alpha, now, T);
   }
 
   // 걸치기로 산 칸. 파티클보다 위에 그려야 고리에 안 묻힌다
@@ -1710,6 +1757,7 @@ Hooks.welcome = function () {
   Predict.setup(G.C);
   // 아홉 자리에 각각 다른 장소를 깐다. 공기(하늘·물·색보정)는 판 하나에 하나
   Art.setPlaces(G.C.sectorKind, G.C.seed, G.C.sectorW, G.C.sectorH);
+  Art.setLanes(G.lanes);   // 바닥에 흙길을 그리는 데 쓴다
   resize();
   FX.reset();
   killFeed = [];

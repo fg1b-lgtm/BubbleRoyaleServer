@@ -331,7 +331,9 @@ check(api.Art.placeAt(2, 2).name !== api.Art.placeAt(40, 2).name,
 
 // 판. 벽과 상자와 빈칸이 골고루 나오게 깐다
 for (let y = 0; y < MAP_H; ++y) {
-    feed(pkt(6, 1 + MAP_W * 2, (v, o) => {
+    // 맵 줄은 타일 · 아이템 · 길 세 줄이다. 길은 조각을 그릴 때
+    // '반드시 통로' 로 그은 자리고, 화면이 바닥에 흙길을 그리는 데 쓴다
+    feed(pkt(6, 1 + MAP_W * 3, (v, o) => {
         v.setUint8(o, y);
         for (let x = 0; x < MAP_W; ++x) {
             const edge   = (x === 0 || y === 0 || x === MAP_W - 1 || y === MAP_H - 1);
@@ -344,6 +346,10 @@ for (let y = 0; y < MAP_H; ++y) {
         for (let x = 0; x < MAP_W; ++x) {
             // 아이템 네 종류가 다 한 번씩은 그려지게 깐다
             v.setUint8(o + 1 + MAP_W + x, (y === 5 && x >= 5 && x <= 8) ? (x - 4) : 0);
+        }
+        for (let x = 0; x < MAP_W; ++x) {
+            // 길. 가로세로로 격자를 내서 흙길이 실제로 그려지는지 본다
+            v.setUint8(o + 1 + MAP_W * 2 + x, (x % 6 === 1 || y % 6 === 1) ? 1 : 0);
         }
     }));
 }

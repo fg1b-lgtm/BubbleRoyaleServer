@@ -59,6 +59,7 @@ struct GameMap
 
     // 이 판이 어떤 조각으로 짜였나. 로그와 tools/maptest 가 본다
     uint8_t sector_template[SECTOR_SLOTS] = {};
+
     uint8_t sector_flip[SECTOR_SLOTS]     = {};   // 1 = 좌우, 2 = 상하
 
     unsigned int seed = 0;

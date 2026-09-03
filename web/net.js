@@ -107,6 +107,10 @@ function onWelcome(v) {
   G.tiles = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));
   G.items = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));
 
+  // 조각을 그릴 때 '반드시 통로' 로 그은 칸. 화면이 바닥에 흙길을 그리는 데 쓴다.
+  // 규칙에는 안 쓴다 — 판정은 tiles 로만 한다
+  G.lanes = Array.from({ length: G.C.mapH }, () => new Uint8Array(G.C.mapW));
+
   Hooks.welcome();
 }
 
@@ -117,6 +121,8 @@ function onMapRow(v) {
   for (let x = 0; x < G.C.mapW; ++x) G.tiles[y][x] = v.getUint8(o + x);
   o += G.C.mapW;
   for (let x = 0; x < G.C.mapW; ++x) G.items[y][x] = v.getUint8(o + x);
+  o += G.C.mapW;
+  for (let x = 0; x < G.C.mapW; ++x) G.lanes[y][x] = v.getUint8(o + x);
   Hooks.mapRow(y);
 }
 

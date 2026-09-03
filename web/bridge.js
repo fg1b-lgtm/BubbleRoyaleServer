@@ -78,6 +78,8 @@ const server = http.createServer((req, res) => {
                    : full.endsWith('.js')   ? 'text/javascript; charset=utf-8'
                    : full.endsWith('.css')  ? 'text/css; charset=utf-8'
                    : full.endsWith('.ogg')  ? 'audio/ogg'
+                   : full.endsWith('.png')  ? 'image/png'
+                   : full.endsWith('.json') ? 'application/json; charset=utf-8'
                    :                          'application/octet-stream';
 
         res.writeHead(200, { 'Content-Type': type });
