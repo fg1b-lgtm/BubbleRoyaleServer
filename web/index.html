@@ -7,13 +7,20 @@
      여기 있는 것은 판 밖의 껍데기뿐이다.
      브라우저 기본 위젯을 그대로 쓰면 안을 아무리 잘 그려도
      "웹 페이지에 얹은 게임" 으로 보인다. */
+  /* 9/4: 남색 계열을 걷어내고 판때기와 같은 나무색으로 바꿨다.
+     판이 이제 상자·모래로 채워져 있는데 판 밖 껍데기만 남색 금속이면
+     그 하나가 다른 게임에서 온 것처럼 붕 뜬다. web/game.js 의 PANEL 과
+     같은 팔레트를 쓴다 — 색을 두 군데에 따로 적어두면 하나 바뀔 때 잊는다 */
   :root {
-    --ink:   #e6edf6;
-    --dim:   #7d8794;
-    --line:  rgba(255,255,255,0.09);
-    --panel: rgba(14,19,27,0.72);
-    --good:  #4ade80;
-    --bad:   #f87171;
+    --ink:   #ffeecf;
+    --dim:   #c9986a;
+    --wood-line: #2a160a;
+    --wood-dark: #3d2110;
+    --wood-mid:  #6b3c1c;
+    --wood-lite: #a56a34;
+    --wood-rim:  #c98c4d;
+    --good:  #7ed957;
+    --bad:   #ff6b5e;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -27,7 +34,7 @@
     display: flex; flex-direction: column; align-items: center;
     height: 100vh; overflow: hidden;
     /* 배경도 그라데이션을 뺐다. 판 밖이 부드럽게 번지면 판 안의 또렷함이 죽는다 */
-    background: #0a0e14;
+    background: #140b06;
   }
 
   header {
@@ -40,21 +47,21 @@
   /* 위 띠도 판과 같은 재료로 만든다.
      둥근 알약 모양 칩과 그라데이션 글자는 웹 대시보드의 말투다.
      판이 픽셀 아트인데 그 위가 웹이면 두 개가 다른 게임처럼 보인다.
-     모서리를 없애고, 그라데이션을 없애고, 테두리를 1px 로 세운다 */
+     모서리를 없애고, 그라데이션을 없애고, 테두리를 나무색 2px 로 굵게 세운다 */
   .mark {
     font-weight: 800; font-size: 11px; letter-spacing: .18em;
-    color: #dbe6f2;
+    color: var(--wood-rim);
   }
   .chip {
     display: inline-flex; align-items: center; gap: 5px;
-    background: #141a24; border: 1px solid #2b3546;
+    background: var(--wood-dark); border: 2px solid var(--wood-line);
     border-radius: 0; padding: 2px 8px; font-size: 11px; color: var(--dim);
   }
   .chip b { color: var(--ink); font-weight: 600; }
   .dot { width: 6px; height: 6px; border-radius: 0; background: var(--bad); }
   .on  { color: var(--good); }
   .off { color: var(--bad); }
-  .keys { opacity: .5; }
+  .keys { opacity: .6; }
   .keys kbd + kbd { margin-left: 1px; }
 
   #stage {
@@ -63,21 +70,21 @@
     min-height: 0; width: 100%;
   }
   canvas {
-    display: block; border-radius: 6px; background: #06090d;
-    box-shadow: 0 18px 50px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
+    display: block; border-radius: 0; background: #140b06;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.7), 0 0 0 2px var(--wood-line);
   }
 
   kbd {
     display: inline-block; min-width: 15px; text-align: center;
-    background: rgba(255,255,255,0.07); border: 1px solid var(--line);
-    border-radius: 3px; padding: 0 4px; font: inherit; font-size: 10px; color: var(--ink);
+    background: var(--wood-mid); border: 2px solid var(--wood-line);
+    border-radius: 0; padding: 0 4px; font: inherit; font-size: 10px; color: var(--ink);
   }
   button {
-    background: rgba(255,255,255,0.07); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--wood-mid); color: var(--ink);
+    border: 2px solid var(--wood-line); border-radius: 0;
     padding: 2px 10px; font: inherit; font-size: 11px; cursor: pointer;
   }
-  button:hover { background: rgba(255,255,255,0.13); border-color: rgba(255,255,255,0.2); }
+  button:hover { background: var(--wood-lite); border-color: var(--wood-line); }
 </style>
 
 <header>

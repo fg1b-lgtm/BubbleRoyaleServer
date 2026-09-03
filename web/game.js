@@ -1255,22 +1255,27 @@ function farOf(cx, cy) {
 // 판때기를 깔고, 크기로 위아래를 나누고, 숫자는 크게, 이름표는 작고 넓게 쓴다
 // 판때기. **판과 같은 재료로 만든다.**
 //
-// 도트로 찍은 판 옆에 매끈한 상자를 놓으면 그 상자만 다른 세계에서 온 것으로
-// 보인다. 판이 쓰는 규칙 셋을 그대로 가져온다.
+// 9/4 에 다시 만들었다. 전에는 남색 금속판이었는데, 판이 이제 나무 상자와
+// 모래로 채워져 있다 — 남색 판때기만 다른 세계에서 온 것처럼 붕 떴다.
+// 상자 그림을 그대로 재료로 가져온다.
 //
-//   1) 바깥에 어두운 윤곽선 한 줄. 판 위의 모든 스프라이트가 갖고 있는 것이다
-//   2) 그늘은 파랑 쪽으로, 빛은 노랑 쪽으로 돌린다. 밝기만 바꾸면 납작해진다
-//   3) 모서리를 한 칸 깎는다. 둥글리면 아무리 작아도 흐려진다
+//   1) 바깥에 진한 나무색 윤곽선 한 줄. 상자와 같은 굵기다
+//   2) 그늘은 짙은 밤색으로, 빛은 볕에 바랜 나무색으로 돌린다.
+//      밝기만 바꾸면(회색조로 보면 똑같아지면) 납작해진다
+//   3) 네 귀퉁이에 상자와 똑같은 쇠 못을 박는다.
+//      이게 없으면 그냥 사각형이고, 있으면 "이 판과 같이 만든 것" 이 된다
 //
 // 반투명을 안 쓴다. 뒤가 비치면 글자가 배경과 싸우고, 판이 움직일 때마다
 // 판때기 색이 같이 흔들려서 읽는 데 힘이 든다
 const PANEL = {
-  line: '#080b12',   // 윤곽
-  low:  '#19202e',   // 아래 몸통. 파랑 쪽으로 돌아가 있다
-  mid:  '#242e3d',
-  top:  '#2f3a4b',   // 위 몸통
-  rim:  '#5c6270',   // 윗변 림. 노랑 쪽으로 살짝 돌렸다
-  foot: '#0d1119',   // 아랫변
+  line: '#2a160a',   // 윤곽. 상자 널빤지 이음매와 같은 짙은 밤색
+  low:  '#6b3c1c',   // 아래 몸통. 그늘 쪽 나무
+  mid:  '#8a5528',
+  top:  '#a56a34',   // 위 몸통. 볕 쪽 나무
+  rim:  '#c98c4d',   // 윗변 림. 더 밝게 바랜 나무
+  foot: '#3d2110',   // 아랫변
+  rivet:  '#7c8ba3', // 못대가리. 상자 쇠테와 같은 청회색이라 나무 위에서 도드라진다
+  rivetHi: '#dde5f0',
 };
 
 function panel(x, y, w, h) {
@@ -1294,6 +1299,13 @@ function panel(x, y, w, h) {
   ctx.fillStyle = PANEL.mid; ctx.fillRect(x0, y0 + b, w0, h0 - b - P);
   ctx.fillStyle = PANEL.low; ctx.fillRect(x0, y0 + b * 2, w0, h0 - b * 2 - P);
 
+  // 널빤지 이음매. 상자에 세로 판자 줄이 있듯, 판때기에도 한두 줄 그어서
+  // "매끈한 유리판" 이 아니라 "나무를 이어붙인 것" 으로 보이게 한다
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  for (let sx = x0 + w0 * 0.34; sx < x0 + w0 - P; sx += w0 * 0.33) {
+    ctx.fillRect(q(sx), y0 + P, P, h0 - P * 2);
+  }
+
   // 윗변과 왼쪽에 빛, 아랫변과 오른쪽에 그늘. 광원은 판 전체와 같은 왼쪽 위다
   ctx.fillStyle = PANEL.rim;
   ctx.fillRect(x0 + P, y0, w0 - P * 2, P);
@@ -1302,6 +1314,17 @@ function panel(x, y, w, h) {
   ctx.fillStyle = PANEL.foot;
   ctx.fillRect(x0 + P, y0 + h0 - P, w0 - P * 2, P);
   ctx.fillRect(x0 + w0 - P, y0 + P, P, h0 - P * 2);
+
+  // 네 귀퉁이 쇠 못. 밀 수 있는 상자에 박힌 것과 같은 자리, 같은 크기다.
+  // 판때기 하나짜리 UI 요소도 결국 이 그림에서 나온 것이라는 표시다
+  const rx0 = x0 + P * 2, rx1 = x0 + w0 - P * 3;
+  const ry0 = y0 + P * 2, ry1 = y0 + h0 - P * 3;
+  for (const [rx, ry] of [[rx0,ry0],[rx1,ry0],[rx0,ry1],[rx1,ry1]]) {
+    ctx.fillStyle = PANEL.rivet;
+    ctx.fillRect(rx, ry, P, P);
+    ctx.fillStyle = PANEL.rivetHi;
+    ctx.fillRect(rx, ry, P * 0.5, P * 0.5);
+  }
 }
 
 // 모서리를 한 칸씩 깎은 네모. 곡선을 쓰면 아무리 작아도 흐려진다
@@ -1710,16 +1733,20 @@ function drawFirstHints(now) {
 function keyCap(text, x, y, alpha, w) {
   const P = Art.V.P;
   const bw = w || 22, bh = 22;
+  const x0 = Math.round(x / P) * P, y0 = Math.round(y / P) * P;
 
   ctx.save();
   ctx.globalAlpha = alpha;
 
-  ctx.fillStyle = '#0d1219';
-  pxBox(Math.round(x / P) * P, Math.round(y / P) * P, bw, bh, P);
-  ctx.fillStyle = '#3d4a5e';
-  ctx.fillRect(Math.round(x / P) * P + P, Math.round(y / P) * P, bw - P * 2, P);
+  // 판때기와 같은 나무색이다. 다른 색을 쓰면 "이건 딴 데서 온 안내판" 이 된다
+  ctx.fillStyle = PANEL.line;
+  pxBox(x0, y0, bw, bh, P);
+  ctx.fillStyle = PANEL.top;
+  ctx.fillRect(x0 + P, y0 + P, bw - P * 2, bh - P * 2);
+  ctx.fillStyle = PANEL.rim;
+  ctx.fillRect(x0 + P, y0 + P, bw - P * 2, P);
 
-  label(text, x + bw / 2, y + 15, text.length > 1 ? 10 : 12, '#dfe8f5', 'center', 1);
+  label(text, x + bw / 2, y + 15, text.length > 1 ? 10 : 12, '#fff3e0', 'center', 1);
   ctx.restore();
 }
 

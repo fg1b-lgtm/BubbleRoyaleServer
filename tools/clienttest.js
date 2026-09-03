@@ -18,7 +18,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
-const { colorDist, contrast, over } = require('./colorlib');
+const { colorDist, contrast } = require('./colorlib');
 
 let pass = 0, fail = 0;
 const check = (ok, what) => {
@@ -236,7 +236,7 @@ check(true, '다섯 파일이 처음부터 끝까지 돌았다');
 // 스크립트 맨 위의 const 는 전역 **객체**에 안 붙는다. 전역 렉시컬 환경에 들어간다.
 // 브라우저에서는 스크립트끼리 그 환경을 같이 쓰므로 서로 잘 보이는데,
 // 밖에서 sandbox.G 로 꺼내려 하면 없다. 같은 realm 에서 식을 하나 굴려서 가져온다
-const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, Predict: Predict, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS, paintList: function(){ return paintList; }, PK: PK })', sandbox);
+const api = vm.runInContext('({ G: G, Art: Art, FX: FX, Sound: Sound, Predict: Predict, onPacket: onPacket, frame: frame, statRows: statRows, PLAYER_COLORS: PLAYER_COLORS, paintList: function(){ return paintList; }, PK: PK, PANEL: PANEL })', sandbox);
 
 // ── 진짜와 같은 모양의 패킷을 만들어 먹인다 ──────────────────
 const HEADER_SIZE = 4;
@@ -806,31 +806,26 @@ let pushOk = false, pushFrom = null;
         + (tooLong.length ? ' — 너무 긴 것: ' + tooLong.join(', ') : ''));
   // ── UI: 글자가 읽히나 ───────────────────────────────────────
   //
-  // HUD 판때기가 rgba(10,15,22,0.72) 라 **뒤 바닥이 28% 비친다.**
-  // 검은 판 위의 흰 글자로 계산하면 실제보다 좋게 나온다.
-  // 제일 밝은 장소 위에 얹었을 때가 최악이므로 거기서 잰다
+  // 9/4 전에는 판때기가 rgba(10,15,22,0.72) 라 뒤 바닥이 비쳤다. 그때 이
+  // 시험은 "바닥과 섞인 색" 을 계산해서 최악을 골랐다.
+  //
+  // 지금 판때기는 **완전히 덮는 나무판**이다(PANEL, web/game.js). 바닥과 안
+  // 섞이므로 예전 계산은 이제 존재하지 않는 색을 재는 것이었다 — 값을 손으로
+  // 안 옮기고 game.js 의 PANEL 을 그대로 읽어와서 이 자리를 없앤다.
+  // 글자는 판때기의 제일 어두운 단(low) 위에 놓일 수 있으니 거기서 잰다
   console.log();
   console.log('  --- UI: HUD 대비 ---');
 
-  let brightest = api.Art.PLACES[0], darkest = api.Art.PLACES[0];
-  for (const pl of api.Art.PLACES) {
-      const L = (h) => parseInt(h.slice(1, 3), 16) + parseInt(h.slice(3, 5), 16)
-                     + parseInt(h.slice(5, 7), 16);
-      if (L(pl.floor) > L(brightest.floor)) brightest = pl;
-      if (L(pl.floor) < L(darkest.floor))   darkest   = pl;
-  }
-
-  const panelOn = over('#0a0f16', 0.72, brightest.floor);
+  const panelOn = api.PANEL.low;
   const white   = contrast('#ffffff', panelOn);
   const amber   = contrast('#ffd166', panelOn);
 
-  console.log('    제일 밝은 바닥: ' + brightest.name + ' ' + brightest.floor
-              + ' -> 판때기 실제 색 ' + panelOn);
+  console.log('    판때기 제일 어두운 단 ' + panelOn);
   console.log('    흰 글자 대비 ' + white.toFixed(1) + ':1, 노란 글자 대비 '
               + amber.toFixed(1) + ':1');
 
   // WCAG 는 큰 글자에 3:1 을 요구한다. HUD 숫자는 20px 이상이라 큰 글자다
-  check(white >= 4.5, '가장 밝은 장소 위에서도 HUD 흰 글자가 본문 기준(4.5:1)을 넘는다');
+  check(white >= 4.5, 'HUD 흰 글자가 판때기 위에서 본문 기준(4.5:1)을 넘는다');
   check(amber >= 3.0, '킬 수를 세는 노란 글자도 큰 글자 기준(3:1)을 넘는다');
 
   // ── UI: 스물넷을 색으로 가를 수 있나 ────────────────────────
