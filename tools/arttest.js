@@ -414,7 +414,7 @@ console.log('=== 그림 타일 이름 ===');
 
     for (const th of Art.PLACES) {
       if (!th.tiles) continue;
-      const extra = [th.tiles.floor];
+      const extra = [].concat(th.tiles.floor);   // 문자열 하나든 배열이든 다 편다
       if (th.tiles.water)  extra.push(th.tiles.water);
       if (th.tiles.bridge) extra.push(th.tiles.bridge);
       for (const n of extra.concat(th.tiles.wall, th.tiles.crate,

@@ -307,8 +307,17 @@ const Art = (() => {
         if (th.tiles && atlases.tiles) {
           // 다리는 빈칸인데 잔디가 아니다. 여기가 강을 건너는 자리라는 걸
           // 바닥이 말해줘야 물풍선으로 막을 자리가 보인다
-          const name = (lookAt(x, y) === 2 && th.tiles.bridge)
-                       ? th.tiles.bridge : th.tiles.floor;
+          //
+          // floor 는 하나일 수도, 여러 개일 수도 있다. 사막처럼 모래 그림이
+          // 넷이면 하나만 계속 깔았을 때 판이 아니라 타일 벽지로 보인다.
+          // 벽 · 상자와 같은 규칙으로 칸 자리에서 하나를 고정으로 고른다
+          let name;
+          if (lookAt(x, y) === 2 && th.tiles.bridge) {
+            name = th.tiles.bridge;
+          } else {
+            const set = Array.isArray(th.tiles.floor) ? th.tiles.floor : [th.tiles.floor];
+            name = set[tileHash(x, y) % set.length];
+          }
           const cv = bakeTileSprite(name, T);
           if (cv) {
             g.imageSmoothingEnabled = false;

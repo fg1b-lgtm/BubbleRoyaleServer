@@ -73,13 +73,22 @@ const ART_DATA = (() => {
       wallTop: '#4e461a', wallSide: '#302b10', wallEdge: '#25210c',
       crate: '#c3776d', crateTop: '#d6a19a', crateSide: '#aa5246',
       markH: 'log2', markV: 'cact2', mark: 'palm', crateKinds: ['stone', 'sack'], wallKinds: ['rock', 'rock', 'brick'],
-      // 모래는 02 번만 테두리가 없다. 나머지 열다섯은 풀이 물린 이음새 타일이라
-               // 바닥에 깔면 온 판에 풀 자국이 격자로 생긴다
-      tiles: { floor: 'desert_sand_02',
-               wall:  ['desert_stone_round', 'desert_sand_block', 'desert_cactus_pot3'],
-               big:   ['desert_house_red', 'desert_house_blue', 'desert_market'],
-               crate: ['desert_crate', 'desert_barrel1'],
-               push:  ['desert_star_crate'],
+      // desert17 세트로 갈아끼웠다.
+      //
+      // 바닥이 넷이다(모래 A~D). 하나만 계속 깔면 판이 아니라 벽지로 보인다 —
+      // 벽 · 상자와 같은 규칙으로 칸 자리에서 하나를 고정으로 고른다.
+      //
+      // 조형물이 아홉 가지다. 유적 기둥 · 오벨리스크 · 부서진 원기둥 ·
+      // 꽃 선인장 · 바위더미 · 깃발 · 돌블록 · 거대 뼈 유적 · 아치.
+      // 종류가 많을수록 판이 지루하지 않다 - 같은 게 두 번 연속 안 나온다
+      tiles: { floor: ['desert17_sand_a', 'desert17_sand_b',
+                       'desert17_sand_c', 'desert17_sand_d'],
+               wall:  ['desert17_ruin_pillar', 'desert17_obelisk', 'desert17_short_column',
+                       'desert17_cactus', 'desert17_rock_pile', 'desert17_banner',
+                       'desert17_stone_block', 'desert17_skeleton', 'desert17_arch'],
+               big:   ['desert17_tent', 'desert17_bazaar'],
+               crate: ['desert17_crate'],
+               push:  ['desert17_xcrate'],
                water: 'desert_water_06', bridge: 'desert_bridge_h' },
       step: 'sand' },
 

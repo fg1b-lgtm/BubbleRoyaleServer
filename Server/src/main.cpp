@@ -76,7 +76,9 @@ static_assert(HEADER_SIZE + sizeof(SnapshotHead)
               + PLAYER_MAX * sizeof(PlayerState)
               + MAX_SNAPSHOT_BUBBLE * sizeof(BubbleState) <= MAX_PACKET_SIZE,
               "snapshot packet is too big");
-static_assert(HEADER_SIZE + sizeof(MapRowHead) + 2 * MAP_W <= MAX_PACKET_SIZE,
+// 4 줄 - tiles · items · lanes · looks. 실제로 내려보내는 줄 수와 안 맞으면
+// 이 검사가 아무것도 지키지 못하는 장식이 된다
+static_assert(HEADER_SIZE + sizeof(MapRowHead) + 4 * MAP_W <= MAX_PACKET_SIZE,
               "map row packet is too big");
 
 // 접속한 사람에게만 보낸다. 판이 어떻게 생겼는지와 게임 상수를 알려준다

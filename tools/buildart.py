@@ -220,7 +220,8 @@ TILE_W = 96          # 한 칸을 아틀라스에서 몇 픽셀로 담나
 
 # 두 칸을 차지하는 것들. 나머지는 다 한 칸이다
 TILE_WIDE = {'house': 2, 'well': 2, 'desert_house_red': 2, 'desert_house_blue': 2,
-             'desert_market': 2, 'desert_palm_big': 2, 'desert_rock_big': 2}
+             'desert_market': 2, 'desert_palm_big': 2, 'desert_rock_big': 2,
+             'desert17_tent': 2, 'desert17_bazaar': 2}
 
 # 바닥으로 까는 타일. 테두리를 잘라낸다.
 #
@@ -234,7 +235,8 @@ FLOOR_TRIM = 0.09
 
 def is_floor(name):
     for head in ('grass', 'dirt_', 'water_', 'desert_sand_0', 'desert_sand_1',
-                 'desert_water_', 'desert_carpet'):
+                 'desert_water_', 'desert_carpet',
+                 'desert17_sand_', 'desert17_pave_'):
         if name.startswith(head):
             return True
     return False
