@@ -59,9 +59,13 @@ const server = http.createServer((req, res) => {
     let file = req.url === '/' ? 'index.html' : req.url.replace(/^\//, '');
     file = file.split('?')[0];
 
-    // 위로 못 올라가게 막는다. 이 폴더 안의 파일만 준다
+    // 위로 못 올라가게 막는다. 이 폴더 안의 파일만 준다.
+    //
+    // startsWith(__dirname) 만 보면 안 된다. __dirname 이 ".../web" 이면
+    // ".../web-secret/x" 도 문자열로는 그 접두어를 만족한다 - 형제 폴더인데
+    // 안쪽인 것처럼 통과한다. 구분자까지 같이 봐야 "그 폴더 안"이 된다
     const full = path.join(__dirname, path.normalize(file).replace(/^(\.\.[/\\])+/, ''));
-    if (!full.startsWith(__dirname)) {
+    if (full !== __dirname && !full.startsWith(__dirname + path.sep)) {
         res.writeHead(403);
         res.end('no');
         return;
