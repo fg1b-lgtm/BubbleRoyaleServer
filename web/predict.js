@@ -25,6 +25,13 @@ const Predict = (() => {
   let px = 0, py = 0;
   let live = false;
 
+  // 한 틱 전 자리.
+  //
+  // 서버는 30Hz 로 도는데 화면은 60Hz 로 그린다. 틱마다만 자리를 옮기면
+  // 한 프레임은 18칸 뛰고 다음 프레임은 제자리라 **덜덜 떠는 것으로 보인다.**
+  // 두 자리 사이를 프레임 시간만큼 메워서 그린다
+  let ppx = 0, ppy = 0;
+
   // 서버가 마지막으로 말해준 자리와, 그때 내가 믿던 자리
   let errX = 0, errY = 0;
 
@@ -151,6 +158,7 @@ const Predict = (() => {
   // 순서가 바뀌면 답이 달라진다. 줄여 쓰지 않고 그대로 옮겼다
   function tick(tiles, dirX, dirY, speedLv, trapped) {
     if (!live) return;
+    ppx = px; ppy = py;
 
     const speed = trapped ? C.trapSpeed
                           : (C.moveBase + speedLv * C.moveStep);
@@ -177,7 +185,7 @@ const Predict = (() => {
   // 반 칸 넘게 어긋나는 건 내가 모르는 일(밀림, 부활)이 일어난 것이다
   function reconcile(sx, sy) {
     if (!live) {
-      px = sx; py = sy; live = true;
+      px = sx; py = sy; ppx = sx; ppy = sy; live = true;
       errX = 0; errY = 0;
       return;
     }
@@ -191,7 +199,7 @@ const Predict = (() => {
 
     if (Math.abs(dx) > far || Math.abs(dy) > far) {
       ++snapped;              // 예측이 아예 틀렸다. 서버로 순간이동한다
-      px = sx; py = sy;
+      px = sx; py = sy; ppx = sx; ppy = sy;
       errX = 0; errY = 0;
       return;
     }
@@ -209,17 +217,25 @@ const Predict = (() => {
   // 이건 켜둔 채로 자리만 맞추는 것이라, 대쉬가 끝나면 이어서 예측이 돈다.
   // 어긋난 양(err)도 지운다 — 안 지우면 대쉬가 끝나고 그만큼 미끄러진다
   function follow(sx, sy) {
-    px = sx; py = sy; live = true;
+    px = sx; py = sy; ppx = sx; ppy = sy; live = true;
     errX = 0; errY = 0;
   }
 
-  // 화면에 그릴 자리. 오차를 조금씩 녹여서 튐을 감춘다
-  function view() {
+  // 화면에 그릴 자리. 오차를 조금씩 녹여서 튐을 감춘다.
+  //
+  // alpha 는 마지막 틱 뒤로 얼마나 지났나 (0~1). 두 자리 사이를 메운다.
+  // 이게 없으면 60fps 화면에서 30Hz 로만 움직여서 한 프레임씩 건너뛴 것처럼 보인다
+  function view(alpha) {
     errX -= errX * 0.25;
     errY -= errY * 0.25;
     if (Math.abs(errX) < 2) errX = 0;
     if (Math.abs(errY) < 2) errY = 0;
-    return { x: px + errX, y: py + errY, live: live };
+
+    const a = (alpha === undefined) ? 1
+            : (alpha < 0 ? 0 : (alpha > 1 ? 1 : alpha));
+    return { x: ppx + (px - ppx) * a + errX,
+             y: ppy + (py - ppy) * a + errY,
+             live: live };
   }
 
   function stats() {

@@ -1,0 +1,1157 @@
+{
+  "version": 9,
+  "cols": 15,
+  "rows": 13,
+  "floorLayer": [
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_08",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "dirt_01",
+      "grass",
+      "bridge_h",
+      "bridge_h",
+      "dirt_02",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_08",
+      "water_06",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "dirt_06",
+      "dirt_06",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "dirt_06",
+      "dirt_06",
+      "grass"
+    ],
+    [
+      "grass",
+      "dirt_06",
+      "dirt_06",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "bridge_h",
+      "bridge_h",
+      "grass",
+      "grass",
+      "grass",
+      "dirt_06",
+      "dirt_06",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "bridge_h",
+      "bridge_h",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_08",
+      "water_06",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "bridge_h",
+      "bridge_h",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_16",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ],
+    [
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "water_14",
+      "water_06",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass",
+      "grass"
+    ]
+  ],
+  "objects": [
+    {
+      "id": "house",
+      "x": 1,
+      "y": 4,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "house",
+      "x": 12,
+      "y": 4,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "well",
+      "x": 10,
+      "y": 7,
+      "w": 2,
+      "h": 2
+    },
+    {
+      "id": "tree",
+      "x": 0,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 0,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 14,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 14,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 4,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 10,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 4,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "tree",
+      "x": 10,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "stone",
+      "x": 4,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "stone",
+      "x": 10,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "lamp",
+      "x": 3,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "lamp",
+      "x": 11,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "lamp",
+      "x": 3,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 5,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 6,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 11,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 13,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 5,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 12,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 13,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 4,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 9,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 11,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 4,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 11,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 1,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 0,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 1,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 6,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 2,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 6,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 13,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 14,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 10,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 6,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 10,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "lamp",
+      "x": 11,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 13,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 14,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 12,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 11,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 11,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 14,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 11,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 9,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 6,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 5,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 1,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 3,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 3,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 1,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 2,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 0,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 3,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 2,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 2,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 13,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 10,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 11,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 14,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 3,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 3,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 2,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 1,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 0,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 0,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 2,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 3,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 1,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 3,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 2,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 5,
+      "y": 5,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 5,
+      "y": 9,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 6,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 6,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 12,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 8,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 5,
+      "y": 7,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 3,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 4,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 6,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 10,
+      "y": 3,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 10,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 9,
+      "y": 4,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 11,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 13,
+      "y": 2,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 14,
+      "y": 1,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 12,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 9,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_x",
+      "x": 11,
+      "y": 10,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "sign",
+      "x": 2,
+      "y": 6,
+      "w": 1,
+      "h": 1
+    },
+    {
+      "id": "crate_plain",
+      "x": 0,
+      "y": 11,
+      "w": 1,
+      "h": 1
+    }
+  ],
+  "spawnZones": {
+    "A": {
+      "x": 1,
+      "y": 1,
+      "rot": 0
+    },
+    "B": {
+      "x": 1,
+      "y": 10,
+      "rot": 2
+    },
+    "C": {
+      "x": 12,
+      "y": 10,
+      "rot": 3
+    }
+  }
+}

@@ -326,15 +326,24 @@ const Art = (() => {
     // 사람이 안 가려지는데, 가려지는 게 맞다 — 블록에 높이가 있고 카메라가
     // 살짝 아래에서 보는 각도이기 때문이다. 발과 정강이가 가려지는 정도가
     // 적당하고, 가슴까지 묻히면 너무 높은 것이다
-    V.WH  = Math.round(ts * 0.38);
+    V.WH  = Math.round(ts * 0.42);
     // 상자 높이.
     //
     // 0.30 이었는데, 윗면(타일에서 여백 뺀 것)에 이 높이를 더하면
     // **타일보다 커져서 위아래 상자가 서로 겹쳤다.** 세로로 붙어 한 기둥으로 보이고,
     // 그러면 몇 칸인지 셀 수가 없다. 폭발 사거리를 세야 하는 게임에서 치명적이다.
     // 확대해서 찍어보기 전에는 몰랐다
-    V.CH  = Math.round(ts * 0.20);
-    V.TOP = V.WH + 2;                // 줄 그림이 위로 삐져나오는 여유
+    // 상자가 솟은 높이. 벽보다 조금 낮다.
+    //
+    // 0.20 이었는데 0.34 로 올렸다. 재보니 상자 윗변이 위 칸 사람의 발보다
+    // 아래에 있어서 사람이 상자 위에 붕 떠 보였다. 살짝 아래에서 보는 각도라면
+    // 아래 칸에 놓인 것이 위 칸 사람의 발을 가려야 한다
+    V.CH  = Math.round(ts * 0.34);
+    // 줄 그림이 위로 삐져나오는 여유.
+    //
+    // 벽과 상자 중 더 높이 솟는 쪽에 맞춰야 한다. 여기가 모자라면 솟은 부분이
+    // 종이 밖으로 잘려서, 아래 칸 물건이 위 칸 사람을 못 가린다
+    V.TOP = Math.max(V.WH, V.CH) + 2;
     V.BOT = Math.round(ts * 0.45);   // 아래로 삐져나오는 여유 (그림자)
   }
 
@@ -2200,6 +2209,33 @@ const Art = (() => {
     return true;
   }
 
+  // 죽은 자세 · 터진 자세 · 빠져나온 자세.
+  //
+  // 갇힘 시트의 나머지 세 칸이다. 갇힌 그림과 같은 아틀라스에 들어 있다.
+  //   free  물방울에서 스스로 빠져나왔다
+  //   pop   몸으로 부딪쳐 터졌다
+  //   ko    뻗었다. 이게 죽은 모습이다
+  function drawPose(g, cx, cy, r, animal, kind, alpha) {
+    if (!hasAtlas('trap')) return false;
+
+    const idx = ((animal | 0) % CHAR_NAMES.length + CHAR_NAMES.length)
+                % CHAR_NAMES.length;
+    const name = CHAR_NAMES[idx] + '_' + kind;
+
+    const h  = Math.max(10, Math.round(r * 2 * 1.4 / 2) * 2);
+    const cv = bakeFromAtlas('P:' + name + ':' + h, 'trap', name, h);
+    if (!cv) return false;
+
+    const smooth = g.imageSmoothingEnabled;
+    g.imageSmoothingEnabled = false;
+    if (alpha !== undefined) g.globalAlpha = alpha;
+    g.drawImage(cv, Math.round(cx - cv.width / 2),
+                    Math.round(cy + r * 0.5 - cv.height * 0.6));
+    g.globalAlpha = 1;
+    g.imageSmoothingEnabled = smooth;
+    return true;
+  }
+
   // 물줄기 한 칸을 그린다.
   //
   // 통짜 십자 그림 하나로는 못 그린다. 사거리가 아이템으로 1칸에서 6칸까지
@@ -2227,14 +2263,24 @@ const Art = (() => {
     else if (D)             { name = 'blast_tip_v'; fv = true; }
     else                      name = 'blast_mid';       // 한 칸짜리
 
-    const key = name + ':' + T + ':' + (fh ? 1 : 0) + (fv ? 1 : 0);
-    const cv = bakeFromAtlas(key, 'fx', name, T, fh, fv);
+    // **칸보다 크게 그려서 옆 칸과 겹치게 한다.**
+    //
+    // 조각을 칸에 딱 맞춰 그렸더니 하나로 뻗은 물줄기가 아니라 물보라를
+    // 늘어놓은 것으로 보였다. 조각마다 둥근 외곽선과 물방울이 있어서,
+    // 딱 붙여놔도 경계에 선이 보이기 때문이다.
+    //
+    // 3할쯤 키워서 겹치면 그 선이 사라진다. 밝은 물이라 겹친 데가 더 밝아지는데,
+    // 그게 오히려 이어진 것으로 읽힌다
+    const BD = Math.round(T * 1.3);
+    const key = name + ':' + BD + ':' + (fh ? 1 : 0) + (fv ? 1 : 0);
+    const cv = bakeFromAtlas(key, 'fx', name, BD, fh, fv);
     if (!cv) return false;
 
     const smooth = g.imageSmoothingEnabled;
     g.imageSmoothingEnabled = false;
     g.globalAlpha = alpha;
-    g.drawImage(cv, Math.round(px + (T - cv.width) / 2), Math.round(py));
+    g.drawImage(cv, Math.round(px + (T - cv.width) / 2),
+                    Math.round(py + (T - cv.height) / 2));
     g.globalAlpha = 1;
     g.imageSmoothingEnabled = smooth;
     return true;
@@ -2504,9 +2550,12 @@ const Art = (() => {
     if (!cv) return false;
 
     const dx = Math.round(cx - cv.width / 2);
-    // 발이 칸 바닥에 닿게. cy 는 몸 중심이고 사람은 중심보다 발이 아래에 있다.
-    // 도트로 그리던 때와 같은 자리다 — 여기가 어긋나면 벽에 가슴까지 묻힌다
-    const dy = Math.round(cy + r * 1.35 - cv.height);
+    // 발을 칸 바닥보다 조금 아래에 둔다.
+    //
+    // 카메라가 살짝 아래에서 보는 각도다. 그래서 아래 칸에 놓인 것이 위 칸
+    // 사람의 발과 정강이를 가려야 한다. 발이 칸 경계에 딱 맞으면 아무것도
+    // 안 가려서 사람이 판 위에 붕 떠 보인다
+    const dy = Math.round(cy + r * 1.5 - cv.height);
 
     const smooth = g.imageSmoothingEnabled;
     g.imageSmoothingEnabled = false;
@@ -3094,7 +3143,7 @@ const Art = (() => {
   }
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
-    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped,
+    loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
     buildFloor, buildRow, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,

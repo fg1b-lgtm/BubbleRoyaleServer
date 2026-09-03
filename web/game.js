@@ -33,6 +33,19 @@ let rowCv = [];            // 줄마다 한 장. 벽과 상자와 그림자가 �
 let floorDirty = true;
 const dirtyRows = new Set();
 
+// 죽은 자세.
+//
+// 죽으면 그냥 사라지고 있었다. 24명 중 23명이 죽는 게임인데 죽는 그림이
+// 없으면 사람이 판에서 빠지는 게 그냥 '없어짐' 으로 보인다.
+//
+// 갇힘 시트에 뻗은 모습과 터지는 모습이 같이 왔다. 몸으로 부딪쳐 터진
+// 것과 그냥 죽은 것을 나눠 그린다 — 터진 쪽이 통쾌해야 하는 순간이다.
+//
+// 잠깐 남았다 사라진다. 오래 두면 판 위에 시체가 쌓여서 지저분하다
+const DEATH_POSE_MS = 1400;
+const POP_POSE_MS   = 320;
+const deathPose = new Map();   // 자리 번호 -> { x, y, animal, t0, popped }
+
 // 지금 밀려가고 있는 상자들.
 //
 // 서버는 밀리는 동안 두 칸을 다 막고, 다 밀리면 떠난 칸을 비운다.
@@ -498,6 +511,7 @@ function frame(ts) {
 //
 // 서버 권위는 그대로다. 맞고 죽는 것은 전부 서버가 정한다.
 // 여기서는 **자리만** 미리 옮긴다. 서버 답이 오면 predict.reconcile 이 맞춘다
+// 마지막 서버 틱 뒤로 쌓인 시간. 틱 사이를 메우는 데 쓴다
 let predictAcc = 0;
 
 function stepPrediction() {
@@ -760,6 +774,21 @@ function drawWorld(now, dt) {
     for (const [id, p] of all) drawPlayer(id, p, alpha, now, T);
   }
 
+  // 죽은 자세. 사람을 다 그린 뒤에 그린다 — 죽은 자리가 벽에 묻히면
+  // 누가 어디서 죽었는지가 안 보인다. 잠깐만 남았다 사라진다
+  for (const [id, d] of deathPose) {
+    const age = now - d.t0;
+    if (age > DEATH_POSE_MS) { deathPose.delete(id); continue; }
+
+    // 터진 것은 처음 순간만. 그다음은 뻗은 모습이다
+    const kind = (d.popped && age < POP_POSE_MS) ? 'pop' : 'ko';
+
+    // 마지막 1/4 에서만 옅어진다. 처음부터 옅으면 죽은 게 안 보인다
+    const k = age / DEATH_POSE_MS;
+    const fade = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
+    Art.drawPose(ctx, d.x, d.y, T * 0.40, d.animal, kind, fade);
+  }
+
   // 걸치기로 산 칸. 파티클보다 위에 그려야 고리에 안 묻힌다
   drawGrazeCell(now, T);
 
@@ -911,7 +940,9 @@ function drawPlayer(id, p, alpha, now, T) {
   const mineLive = (id === G.myId) && Predict.isLive() && (p.flags & PF.ALIVE);
 
   if (mineLive) {
-    const v = Predict.view();
+    // 마지막 틱 뒤로 얼마나 지났나. 두 틱 사이를 메워서 그린다 —
+    // 이게 없으면 30Hz 로만 움직여서 60fps 화면에서 덜덜 떨어 보인다
+    const v = Predict.view(predictAcc / (1000 / G.C.tickRate));
     px = v.x / G.C.tileUnits * T;
     py = v.y / G.C.tileUnits * T;
   } else {
@@ -954,7 +985,14 @@ function drawPlayer(id, p, alpha, now, T) {
   ctx.globalAlpha = dead ? 0.20
                   : ((p.flags & PF.INVULN) && (now / 80 | 0) % 2 ? 0.4 : 1);
 
-  Art.drawChar(ctx, px, py, r, colorOf(id), {
+  // 물방울에서 막 빠져나왔다. 잠깐 그 모습을 보여준다.
+  //
+  // 7초를 갇혀 있다가 살아 나온 순간이라, 그냥 원래 그림으로 돌아가면
+  // 풀린 줄도 모르고 지나간다. 이 0.4초가 살아났다는 신호다
+  const freeing = p.freeUntil && now < p.freeUntil
+                  && Art.drawPose(ctx, px, py, r, animalOf(id), 'free');
+
+  if (!freeing) Art.drawChar(ctx, px, py, r, colorOf(id), {
     face: p.face | 0,
     animal: animalOf(id),
     moving: !!p.moving && !dead,
@@ -1140,6 +1178,7 @@ function panel(x, y, w, h) {
   ctx.fillStyle = '#0a0e15';
   ctx.fillRect(x0 + P, y0 + h0 - P, w0 - P * 2, P);
   ctx.fillRect(x0 + w0 - P, y0 + P, P, h0 - P * 2);
+
 }
 
 // 모서리를 한 칸씩 깎은 네모. 곡선을 쓰면 아무리 작아도 흐려진다
@@ -2072,10 +2111,14 @@ Hooks.event = function (type, x, y, who, val) {
       }
       break;
 
-    case EVT.BREAK:
+    case EVT.BREAK: {
+      // 스스로 빠져나왔다. 물방울이 터지고 나온 모습을 잠깐 보여준다
+      const me2 = G.players.get(who);
+      if (me2) me2.freeUntil = now + 380;
       FX.burstWater(cx, cy, T, now, false);
       Sound.breaks(pan, far);
       break;
+    }
 
     // 마무리. 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
     // 마무리. 이 게임에서 제일 통쾌해야 하는 순간인데 밋밋했다.
@@ -2086,6 +2129,9 @@ Hooks.event = function (type, x, y, who, val) {
     //   내가 잡았으면 화면이 더 오래 멈추고 더 크게 흔들린다
     //   HUD 킬 수가 튀어오른다
     case EVT.POP:
+      // 터지는 모습을 잠깐 남긴다. 그다음 뻗은 모습으로 넘어간다
+      deathPose.set(who, { x: cx, y: cy, animal: animalOf(who),
+                           t0: now, popped: true });
       FX.pop(cx, cy, T, now, colorOf(who), colorOf(val));
       statOf(val).kills += 1;
       markDead(who);
@@ -2107,6 +2153,12 @@ Hooks.event = function (type, x, y, who, val) {
       break;
 
     case EVT.DEATH: {
+      // 이미 터져서 자세가 남아 있으면 그대로 둔다. 덮어쓰면 터지는 그림이
+      // 한 프레임도 안 보이고 지나간다 — POP 과 DEATH 가 같은 틱에 오기 때문이다
+      if (!deathPose.has(who)) {
+        deathPose.set(who, { x: cx, y: cy, animal: animalOf(who),
+                             t0: now, popped: false });
+      }
       markDead(who);
 
       // 사람 하나가 판에서 빠지는 건 이 게임에서 제일 큰 사건이다.

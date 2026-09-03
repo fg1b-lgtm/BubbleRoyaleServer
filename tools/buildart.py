@@ -88,14 +88,26 @@ def main():
         'puddle':     30,   # 웅덩이
     }
     imgs = load_pieces('water', 0)
-    fx = [(k, imgs[v]) for k, v in WATER.items() if v < len(imgs)]
 
-    # 물줄기 조각은 칸에 꽉 차야 이어 붙였을 때 틈이 없다.
-    # 캐릭터처럼 발밑에 맞추면 안 되고 칸 한가운데에 맞춘다
-    size, n = build(fx,
+    # 물줄기 조각과 물풍선은 담는 방식이 다르다.
+    #
+    # 물줄기는 **칸을 꽉 채워야** 한다. 비율을 지키면 가로로 긴 팔 조각이 칸보다
+    # 좁아져서 옆 칸과 사이에 틈이 생긴다. 그러면 하나로 뻗은 물줄기가 아니라
+    # 조각을 늘어놓은 것으로 보인다 — 실제로 그렇게 보였다.
+    #
+    # 물풍선은 비율을 지켜야 한다. 늘리면 찌그러진 풍선이 된다
+    BLAST = ('blast_mid', 'blast_v', 'blast_h', 'blast_tip_h', 'blast_tip_v')
+
+    fx_fill = [(k, imgs[v]) for k, v in WATER.items()
+               if k in BLAST and v < len(imgs)]
+    fx_keep = [(k, imgs[v]) for k, v in WATER.items()
+               if k not in BLAST and v < len(imgs)]
+
+    size, n = build(fx_fill + fx_keep,
                     os.path.join(OUT, 'fx.png'),
                     os.path.join(OUT, 'fx.json'),
-                    96, 96, cols=6, fit='center')
+                    96, 96, cols=6, fit='center',
+                    fill_names=set(k for k, _ in fx_fill))
     print('물 아틀라스 %s, %d칸' % (size, n))
 
     # ── 갇힌 모습 ────────────────────────────────────────────

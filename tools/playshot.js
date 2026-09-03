@@ -115,13 +115,17 @@ const PEEK = '(function(){ try {'
   + '     if (t===1) ++w; else if (t===2) ++b; else if (t===4) ++x2; } } }'
   + ' var np = G.players ? G.players.size : 0;'
   + ' var me = G.players ? G.players.get(G.myId) : null;'
+  + ' var V = Art.V;'
   + ' var dash = me ? (me.has_dash ? me.dash_cd : -1) : -2;'
   + ' var mx = me ? me.x1 : 0, my = me ? me.y1 : 0;'
   + ' return JSON.stringify({ phase:G.phase, alive:G.aliveCount, round:G.roundNo,'
   + '   me:G.myId, walls:w, blocks:b, boxes:x2, drawn:np, dash:dash, mx:mx, my:my,'
+  + '   TS:V.TS, WH:V.WH, TOP:V.TOP, BOT:V.BOT, P:V.P,'
   + '   alive:(me ? ((me.flags & 1) ? 1 : 0) : -1),'
   + '   bubbles:(G.bubbles||[]).length });'
   + ' } catch(e) { return JSON.stringify({err:String(e)}); } })()';
+
+const seenErr = new Set();
 
 async function peek() {
     const r = await cdp('Runtime.evaluate', { expression: PEEK, returnByValue: true });
@@ -162,7 +166,16 @@ async function peek() {
         if (m.method === 'Runtime.exceptionThrown') {
             const d = m.params.exceptionDetails || {};
             const msg = (d.exception && (d.exception.description || d.exception.value)) || d.text;
-            console.log('  [페이지 예외] ' + String(msg).split(String.fromCharCode(10))[0]);
+            // 같은 예외가 프레임마다 나면 로그가 수천 줄이 된다. 한 번만 찍고
+            // 그다음부터는 센다. 대신 어디서 났는지 알아야 하니 줄 번호까지 남긴다
+            const one = String(msg).split(String.fromCharCode(10))[0];
+            if (!seenErr.has(one)) {
+                seenErr.add(one);
+                const f = (d.stackTrace && d.stackTrace.callFrames || [])[0] || {};
+                console.log('  [페이지 예외] ' + one
+                            + '   @ ' + (f.url || '?').split('/').pop()
+                            + ':' + ((f.lineNumber | 0) + 1));
+            }
         }
         if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
             console.log('  [페이지 오류] '
@@ -327,6 +340,56 @@ async function peek() {
       }
     }
 
+    // ── 걸음이 매끄러운가 ───────────────────────────────────
+    //
+    // 서버는 30Hz 로 돌고 화면은 60fps 다. 틱마다만 자리를 옮기면 한 프레임은
+    // 뛰고 다음 프레임은 제자리라 덜덜 떤다. 눈으로는 '버벅인다' 로만 느껴지고
+    // 원인을 못 짚는다. **프레임마다 몇 units 갔는지**를 재면 바로 나온다.
+    //
+    // 고르면 걸음 간격이 다 비슷하고, 틱마다 뛰면 0 과 큰 값이 번갈아 나온다
+    {
+      await keyDown('d', 'KeyD');
+      await sleep(300);
+
+      const SAMPLE = [
+        'new Promise(function(done){',
+        '  var xs = [], n = 0;',
+        '  function step(){',
+        '    var v = (typeof Predict !== "undefined" && Predict.view)',
+        '            ? Predict.view(0) : null;',
+        '    if (v) xs.push(v.x);',
+        '    if (++n < 100) requestAnimationFrame(step);',
+        '    else done(JSON.stringify(xs));',
+        '  }',
+        '  requestAnimationFrame(step);',
+        '})',
+      ].join('');
+
+      const r = await cdp('Runtime.evaluate', {
+        expression: SAMPLE, awaitPromise: true, returnByValue: true,
+      });
+      await keyUp('d', 'KeyD');
+
+      let xs = [];
+      try { xs = JSON.parse(r.result.value || '[]'); } catch (e) { /* 없다 */ }
+
+      const d = [];
+      for (let i = 1; i < xs.length; ++i) d.push(Math.abs(xs[i] - xs[i - 1]));
+      const move = d.filter((v) => v > 0.01);
+      const zero = d.length - move.length;
+
+      if (move.length) {
+        const avg = move.reduce((a, b) => a + b, 0) / move.length;
+        const dev = Math.sqrt(move.reduce((a, b) => a + (b - avg) * (b - avg), 0)
+                              / move.length);
+        console.log('  걸음: 프레임 ' + d.length + '개 중 안 움직인 프레임 ' + zero
+                    + ',  한 프레임에 ' + avg.toFixed(1) + ' units',
+                    '들쭉날쭉 ' + dev.toFixed(1)
+                    + '  (안 움직인 프레임이 많거나 들쭉날쭉하면 버벅인다)');
+      } else {
+        console.log('  걸음: 안 움직였다 (벽에 막혔거나 죽었다)');
+      }
+    }
     // ── 키를 누르고 화면이 움직이기까지 ─────────────────────
     //
     // 이 게임에서 제일 중요한 숫자인데 한 번도 안 재봤다.
