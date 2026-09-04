@@ -468,11 +468,12 @@ function updateCamera(dt) {
 }
 
 // ── 한 프레임 ────────────────────────────────────────────────
-// 그림 아틀라스를 받는다. 다 받으면 그때부터 캐릭터가 그림으로 그려진다.
-// 못 받아도 게임은 그대로 돈다 — 그때는 도트로 그린다
-Art.loadAtlas('chars', 'art/chars.png', 'art/chars.json');
-Art.loadAtlas('fx',    'art/fx.png',    'art/fx.json');
-Art.loadAtlas('trap',  'art/trap.png',  'art/trap.json');
+// chars·trap 은 캐릭터를 그림으로 그리던 시절에 쓰던 아틀라스다.
+// 9/5에 캐릭터를 벡터 동물로 되돌리면서 그리는 쪽도 kill feed·결과표와
+// 같은 함수(Art.drawChar/drawFace)로 통일했다 - 이제 이 두 그림을
+// 아무도 안 읽는다. 안 받으면 로딩이 그만큼 짧아진다. 파일 자체는
+// 나중에 다시 그림으로 돌아갈 수도 있어서 지우지 않고 뒀다(web/art/)
+Art.loadAtlas('fx', 'art/fx.png', 'art/fx.json');
 
 // 판 타일. 다 받으면 바닥을 다시 구워야 한다 — 색으로 찍어둔 바닥이
 // 그림으로 바뀌기 때문이다. 벽과 상자는 매 프레임 그리니 저절로 바뀐다
@@ -915,7 +916,7 @@ function drawWorld(now, dt) {
     // 마지막 1/4 에서만 옅어진다. 처음부터 옅으면 죽은 게 안 보인다
     const k = age / DEATH_POSE_MS;
     const fade = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
-    Art.drawPose(ctx, d.x, d.y, T * 0.40, d.animal, kind, fade);
+    Art.drawPose(ctx, d.x, d.y, T * 0.40, d.hex, d.animal, kind, fade);
   }
 
   FX.draw(ctx, now);
@@ -1139,13 +1140,6 @@ function drawPlayer(id, p, alpha, now, T) {
   ctx.globalAlpha = dead ? 0.20
                   : ((p.flags & PF.INVULN) && (now / 80 | 0) % 2 ? 0.4 : 1);
 
-  // 물방울에서 막 빠져나왔다. 잠깐 그 모습을 보여준다.
-  //
-  // 7초를 갇혀 있다가 살아 나온 순간이라, 그냥 원래 그림으로 돌아가면
-  // 풀린 줄도 모르고 지나간다. 이 0.4초가 살아났다는 신호다
-  const freeing = p.freeUntil && now < p.freeUntil
-                  && Art.drawPose(ctx, px, py, r, animalOf(id), 'free');
-
   // 물풍선을 놓는 순간 몸이 한 번 움츠러들었다 편다.
   //
   // 리서치에서 제일 값싸고 제일 효과가 큰 기법으로 꼽힌 게 이거다 —
@@ -1164,7 +1158,7 @@ function drawPlayer(id, p, alpha, now, T) {
     ctx.translate(-fx, -fy);
   }
 
-  if (!freeing) Art.drawChar(ctx, px, py, r, colorOf(id), {
+  Art.drawChar(ctx, px, py, r, colorOf(id), {
     // 내 얼굴만 미리 돌린다. 남의 것은 서버가 준 그대로다 —
     // 남이 뭘 누르고 있는지는 여기서 알 길이 없다
     face: (() => {
@@ -1206,7 +1200,9 @@ function drawPlayer(id, p, alpha, now, T) {
     ctx.stroke();
     ctx.restore();
 
-    // 그림이 있으면 그림으로. 없으면 아래 캔버스 물방울로 내려간다.
+    // Art.drawTrapped는 9/5부터 늘 false다 — 전용 그림을 뗐다.
+    // 몸은 위 Art.drawChar가 평소처럼 이미 그렸으니, 여기는 그 위에
+    // 덮이는 반투명 물방울만 그리면 된다.
     // 여기서 return 하면 안 된다 — 뒤에 익사 표시가 남아 있다
     const drawn = Art.drawTrapped(ctx, px, py, r, animalOf(id), now);
 
@@ -2452,14 +2448,12 @@ Hooks.event = function (type, x, y, who, val) {
       }
       break;
 
-    case EVT.BREAK: {
-      // 스스로 빠져나왔다. 물방울이 터지고 나온 모습을 잠깐 보여준다
-      const me2 = G.players.get(who);
-      if (me2) me2.freeUntil = now + 380;
+    case EVT.BREAK:
+      // 스스로 빠져나왔다. 전용 자세 그림을 떼면서(9/5) 몸 쪽은 이제 할 일이
+      // 없다 - 물이 터지는 FX와 소리만으로 "풀렸다"가 전달된다
       FX.burstWater(cx, cy, T, now, false);
       S.breaks(pan, far);
       break;
-    }
 
     // 마무리. 몸으로 부딪쳐 터뜨렸다. 이 게임에서 마무리는 이것뿐이다
     // 마무리. 이 게임에서 제일 통쾌해야 하는 순간인데 밋밋했다.
@@ -2471,7 +2465,7 @@ Hooks.event = function (type, x, y, who, val) {
     //   HUD 킬 수가 튀어오른다
     case EVT.POP:
       // 터지는 모습을 잠깐 남긴다. 그다음 뻗은 모습으로 넘어간다
-      deathPose.set(who, { x: cx, y: cy, animal: animalOf(who),
+      deathPose.set(who, { x: cx, y: cy, animal: animalOf(who), hex: colorOf(who),
                            t0: now, popped: true });
       FX.pop(cx, cy, T, now, colorOf(who), colorOf(val));
       statOf(val).kills += 1;
@@ -2497,7 +2491,7 @@ Hooks.event = function (type, x, y, who, val) {
       // 이미 터져서 자세가 남아 있으면 그대로 둔다. 덮어쓰면 터지는 그림이
       // 한 프레임도 안 보이고 지나간다 — POP 과 DEATH 가 같은 틱에 오기 때문이다
       if (!deathPose.has(who)) {
-        deathPose.set(who, { x: cx, y: cy, animal: animalOf(who),
+        deathPose.set(who, { x: cx, y: cy, animal: animalOf(who), hex: colorOf(who),
                              t0: now, popped: false });
       }
       markDead(who);

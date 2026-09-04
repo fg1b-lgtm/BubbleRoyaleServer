@@ -1728,54 +1728,43 @@ const Art = (() => {
   //
   // 물줄기에 맞으면 바로 안 죽고 갇힌다. 7초 동안 갇혀 있다가 누가 몸으로
   // 부딪치면 터지고 아니면 풀린다. 그 7초가 이 게임에서 제일 긴장되는 시간이라
-  // 캔버스로 그린 물방울 대신 제대로 그린 그림을 쓴다.
+  // 한때는 따로 그린 그림(trap 아틀라스)을 여기 씌웠다.
   //
-  // 세 프레임을 천천히 돌린다. 물방울이 살아 있는 것처럼 흔들려야
-  // '아직 갇혀 있다' 가 계속 읽힌다
+  // 9/5 - 캐릭터를 그 그림 이전의 벡터 동물로 되돌리면서 이것도 뗐다.
+  // 몸(drawChar)은 갇힌 동안에도 game.js 가 평소처럼 계속 그리고 있고,
+  // 그 위에 game.js 가 반투명 물방울을 덮어 씌운다 — 그래서 여기서는 항상
+  // false 를 돌려주기만 하면 된다. 그림이 없다는 뜻이 아니라, **몸을 가리지
+  // 않는 게 이제 맞는 그림**이라는 뜻이다. 갇힌 사람도 누군지 계속 보여야
+  // 사냥하는 쪽이 색과 동물로 알아본다
   function drawTrapped(g, cx, cy, r, animal, t) {
-    if (!hasAtlas('trap')) return false;
-
-    const idx = ((animal | 0) % CHAR_NAMES.length + CHAR_NAMES.length)
-                % CHAR_NAMES.length;
-    const name = CHAR_NAMES[idx] + '_trap' + (((t / 220) | 0) % 3);
-
-    // 물방울은 사람보다 크다. 칸을 넘겨야 갇힌 것으로 보인다
-    const h  = Math.max(10, Math.round(r * 2 * 1.55 / 2) * 2);
-    const cv = bakeFromAtlas('T:' + name + ':' + h, 'trap', name, h);
-    if (!cv) return false;
-
-    const smooth = g.imageSmoothingEnabled;
-    g.imageSmoothingEnabled = false;
-    g.drawImage(cv, Math.round(cx - cv.width / 2),
-                    Math.round(cy + r * 0.5 - cv.height * 0.62));
-    g.imageSmoothingEnabled = smooth;
-    return true;
+    return false;
   }
 
-  // 죽은 자세 · 터진 자세 · 빠져나온 자세.
+  // 죽은 자세 · 터진 자세.
   //
-  // 갇힘 시트의 나머지 세 칸이다. 갇힌 그림과 같은 아틀라스에 들어 있다.
-  //   free  물방울에서 스스로 빠져나왔다
-  //   pop   몸으로 부딪쳐 터졌다
-  //   ko    뻗었다. 이게 죽은 모습이다
-  function drawPose(g, cx, cy, r, animal, kind, alpha) {
-    if (!hasAtlas('trap')) return false;
+  // 벽에 가려 죽은 자리를 놓치면 "왜 죽었는지" 가 안 남는다. 한때는 갇힘과
+  // 같은 아틀라스에서 전용 그림을 가져다 썼는데, 9/5에 그 그림을 떼면서
+  // 여기도 새로 그린다 — 새 그림을 굽는 대신, 몸(drawChar)을 그 자리에서
+  // 90도 돌려 눕혀서 "뻗었다"를 표현한다. pop 은 이 순간 FX.pop 이 이미
+  // 색 조각을 터뜨려 주므로 자세까지 따로 안 가른다.
+  //
+  //   free  물방울에서 스스로 빠져나왔다 — 여기서는 그리지 않는다.
+  //         평소 걷는 몸으로 바로 돌아가는 것으로 충분하다
+  //   pop   몸으로 부딪쳐 터졌다   ) 둘 다 뻗은 자세 + fade
+  //   ko    뻗었다. 이게 죽은 모습 )
+  function drawPose(g, cx, cy, r, hex, animal, kind, alpha) {
+    if (kind === 'free') return false;
 
-    const idx = ((animal | 0) % CHAR_NAMES.length + CHAR_NAMES.length)
-                % CHAR_NAMES.length;
-    const name = CHAR_NAMES[idx] + '_' + kind;
-
-    const h  = Math.max(10, Math.round(r * 2 * 1.4 / 2) * 2);
-    const cv = bakeFromAtlas('P:' + name + ':' + h, 'trap', name, h);
-    if (!cv) return false;
-
-    const smooth = g.imageSmoothingEnabled;
-    g.imageSmoothingEnabled = false;
-    if (alpha !== undefined) g.globalAlpha = alpha;
-    g.drawImage(cv, Math.round(cx - cv.width / 2),
-                    Math.round(cy + r * 0.5 - cv.height * 0.6));
-    g.globalAlpha = 1;
-    g.imageSmoothingEnabled = smooth;
+    g.save();
+    g.globalAlpha = alpha === undefined ? 1 : alpha;
+    // 캐릭터 발밑을 축으로 돌린다. 몸 중심을 축으로 돌리면 넘어진 사람이
+    // 제자리가 아니라 반 칸 옆으로 미끄러진 것처럼 보인다
+    const foot = cy + r * 0.5;
+    g.translate(cx, foot);
+    g.rotate(Math.PI / 2);
+    g.translate(-cx, -foot);
+    drawChar(g, cx, cy, r, hex, { face: 0, moving: false, animal, danger: false });
+    g.restore();
     return true;
   }
 
@@ -1990,17 +1979,16 @@ const Art = (() => {
     return true;
   }
 
-  function drawChar(g, cx, cy, r, hex, o) {
+  // 9/4 에 한 번 썼던 도트 동물이다. 9/5 에 그보다 더 전 것 — 아래
+  // drawChar(옛 paintChar)의 벡터 동물 — 로 다시 되돌리면서 여기는 안 쓴다.
+  // 그림을 굽는 코드라 안 지우고 남겨둔다 - 나중에 다시 켤 수도 있어서다
+  function drawCharDot(g, cx, cy, r, hex, o) {
     const moving = !!o.moving;
 
     // 걸음을 네 토막으로 끊는다. 이어지는 값이면 자세가 무한히 많아져 구울 수가 없다
     const frame = moving
       ? ((Math.floor((o.walk || 0) / (Math.PI * 2) * 4) % 4) + 4) % 4
       : 0;
-
-    // 9/4 - AI로 그린 캐릭터 그림을 빼고 원래 쓰던 도트 동물로 되돌리자는
-    // 요청으로, 그림이 있어도 여기서 안 쓴다(hasAtlas 체크를 건너뛴다).
-    // 그림 자체와 굽는 코드는 안 지웠다 - 나중에 다시 켤 수도 있어서다
 
     // 도트 크기는 타일에 맞춘다. 사람이 16 점 폭이고 타일이 16 점이라,
     // 같은 눈금을 쓰면 사람과 바닥의 도트가 어긋나지 않는다.
@@ -2022,7 +2010,11 @@ const Art = (() => {
     g.drawImage(sp.cv, 0, 0, sp.sw, sp.sh, dx, dy, sp.sw * P, sp.sh * P);
     g.imageSmoothingEnabled = smooth;
   }
-  function paintChar(g, cx, cy, r, hex, o) {
+  // 판에서 쓰는 실제 캐릭터. 9/4에 도트 동물(위 drawCharDot)로 한 번 갈아탔다가,
+  // "이상하다"는 말을 듣고 9/5에 그보다 더 전 — 킬 피드·결과표에 남아 있던
+  // 것과 같은 — 벡터 동물로 되돌렸다. drawEars·drawFaceParts 를 얼굴만 쓰는
+  // drawFace 와 그대로 같이 쓴다. 따로 그리면 판과 표의 얼굴이 갈린다
+  function drawChar(g, cx, cy, r, hex, o) {
     const face = o.face | 0;
     const walk = o.walk || 0;
     const moving = !!o.moving;
