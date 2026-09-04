@@ -103,28 +103,27 @@ constexpr SectorTemplate SECTOR_TEMPLATES[SECTOR_TEMPLATE_COUNT] = {
     "bbbb#p.=~b#bbpp",
 }},
 
-// DESERT_BAZAAR — 사막.
+// DESERT_BAZAAR — 사막. 두 번째로 받은 배치 사진을 보고 다시 그렸다.
 //
-// **이 조각은 마을만큼 정확하지 않다.** 마을은 지도 도구가 뱉은 좌표
-// (village.json)를 그대로 읽어서 옮겼는데, 사막은 사진 한 장만 받아서
-// 눈으로 옮겼다. 조형물(장터 · 텐트 · 오벨리스크 · 깃발 · 뼈 유적 · 바위더미 ·
-// 돌블록 · 선인장) 자리는 사진을 보고 맞췄고, 상자 하나하나의 정확한 자리는
-// 못 맞췄다 — 그 자리는 밀도만 비슷하게 채웠다(정해진 상자 b/p 로).
-// 사진처럼 정밀하게 하려면 마을처럼 좌표 파일(json)로 받아야 한다
+// 큰 구조물 네 개(텐트 2x2, 장터 둘 2x2, 뼈 유적 2x1)는 사진 자리에서
+// 최대 한 칸만 옮겼다 — 짝수 칸에서 시작해야 화면이 한 장으로 묶여 그려진다.
+// 그 외 1칸짜리(오벨리스크 · 짧은 기둥 · 깃발 · 선인장 · 바위더미 · 돌블록)는
+// 1칸이라 자리가 조금 어긋나도 크기 문제가 없어서 사진의 대략적인 위치만 옮겼다.
+// 상자 하나하나의 정확한 자리는 사진처럼 못 맞췄다 - 밀도만 비슷하게 채웠다
 { "DESERT_BAZAAR", 5, {
-    ".pb.pbp..pb.pb.",
-    ".pb###p#.##.#b.",
-    ".pb.##p#.##.pb.",
-    ".pbspbp..p#.pb.",
-    "##b.bb#..pb.pbp",
-    "##b.b##.......#",
-    ".p#.bbp..ps.#..",
-    ".........#b.pbp",
-    "#pb.bbp..pb.bbp",
-    ".p#.bbs..#b.bbp",
-    ".pb.bbp..pb.bbp",
-    ".pbpbbp..pb.bbp",
-    ".pbpbbp..pb.bbp",
+    "pbbp##p.##bpbbp",
+    "pb.###p.##b.b#p",
+    "pb.pbbp..bb.bbp",
+    "pb.psbp#.bb.bb.",
+    "##bp.b##.bbp#bp",
+    "###p.#pb.bbp#bp",
+    ".bb#.b##.bsp#b.",
+    "...............",
+    "p#bpbbb.p#bpbbp",
+    "pbb#bbs.pbbpb#p",
+    "pb#pbbb.pbbpbbp",
+    "pbbpbbb.pbbpbbp",
+    "pbbpbbb.pbbpbbb",
 }},
 
 };
