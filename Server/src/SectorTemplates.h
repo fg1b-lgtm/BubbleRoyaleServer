@@ -48,6 +48,34 @@
 constexpr int SECTOR_TEMPLATE_COUNT = 2;
 constexpr int SECTOR_THEME_COUNT    = 10;
 
+// 벽이 뭉친 자리에 집·우물·텐트·장터 같은 큰 그림을 얹는다(web/art.js 의
+// place.tiles.big). 예전엔 화면이 "벽이 W x H 만큼 꽉 찬 자리"를 스스로
+// 찾아서 그 크기에 맞는 그림 중 하나를 무작위로 얹었다.
+//
+// 그런데 마을은 집(2x2)과 우물(2x2)이 **크기가 같다.** 화면은 벽 모양만
+// 보고는 "이 자리가 집 자리였는지 우물 자리였는지" 를 가릴 방법이 없어서,
+// 찾아낸 아무 2x2 벽 덩어리에나 집 아니면 우물을 반반 확률로 얹었다.
+// 강가·조각 이음매처럼 우연히 벽이 뭉친 자리까지 걸려서, 한 판에 우물
+// 대여섯 채가 서고 집은 하나도 안 서는 일이 실제로 나왔다 - 사진과 전혀
+// 다른 마을이 된 원인이 이거였다.
+//
+// 그래서 "여기, 이 이름" 을 조각을 그릴 때 못 박아 클라이언트로 그대로
+// 보낸다(PKT_LANDMARKS, GameMap::landmarks). 화면은 더는 벽 모양을 보고
+// 추측하지 않는다.
+//
+// kind 는 web/artdata.js 그 테마의 tiles.big 배열 순번이다(0, 1, 2 ...).
+// 같은 kind 를 조각 하나에 여러 번 써도 된다 - 마을 집 두 채가 둘 다
+// kind 0("집")이듯, 그림은 같되 서는 자리만 다른 경우다.
+// x, y 는 조각 안 왼쪽 위 칸이고, **뒤집기 전** 기준이다 - 뒤집는 계산은
+// GameMap::StampSector 가 조각을 붙일 때 한 번만 한다
+struct SectorLandmark
+{
+    uint8_t kind;
+    uint8_t x, y;
+    uint8_t w, h;   // 뒤집을 때 왼쪽 끝을 다시 구하는 데 쓴다 (GameMap::StampSector)
+};
+constexpr int MAX_LANDMARK = 4;
+
 struct SectorTemplate
 {
     const char* name;
@@ -70,6 +98,9 @@ struct SectorTemplate
     int theme;
 
     const char* row[SECTOR_H];
+
+    SectorLandmark landmark[MAX_LANDMARK];
+    int landmark_count;
 };
 
 constexpr SectorTemplate SECTOR_TEMPLATES[SECTOR_TEMPLATE_COUNT] = {
@@ -88,7 +119,11 @@ constexpr SectorTemplate SECTOR_TEMPLATES[SECTOR_TEMPLATE_COUNT] = {
 // 검사기 ②(길만으로 관문·스폰이 전부 이어진다)를 통과시켰다. 그림 그대로는
 // 다리 사이가 물로 끊겨 있어서 시작하자마자 갇히는 자리가 있었다
 { "VILLAGE_RIVER", 3, {
-    "bbbb#b.=~b#bpbb",
+    // 9/4 - (7,0)·(7,12)는 관문이라 다리로 바꿔야 하는데, 그 옆 칸(8,0)·
+    // (8,12)은 그대로 강(~)으로 둬서 같은 줄에 다리 반 칸 + 강 반 칸이
+    // 나란히 있었다. 강을 건너는 다른 다리는 전부 두 칸(7,8)이 같이
+    // 다리인데 여기만 한 칸짜리라 눈에 띄게 어색했다 - 짝을 맞춘다
+    "bbbb#b.==b#bpbb",
     "b..ppb.~~b.bbbp",
     "b.p.bp.==p.ppp#",
     "#bp#pb.~~bp#p.b",
@@ -100,30 +135,47 @@ constexpr SectorTemplate SECTOR_TEMPLATES[SECTOR_TEMPLATE_COUNT] = {
     "ppp#pb.~~.##pp#",
     "p.pp.p.==bppp.b",
     "b..ppp.~~bpp..b",
-    "bbbb#p.=~b#bbpp",
-}},
+    "bbbb#p.==b#bbpp",
+},
+// kind 0 = web/artdata.js 마을 tiles.big[0]("집"), kind 1 = big[1]("우물").
+// 집이 두 채라 kind 0 이 두 번 나온다 - 그림은 같고 자리만 다르다
+{ {0, 2, 4, 2, 2}, {0, 12, 4, 2, 2}, {1, 10, 8, 2, 2} }, 3},
 
 // DESERT_BAZAAR — 사막. 두 번째로 받은 배치 사진을 보고 다시 그렸다.
 //
-// 큰 구조물 네 개(텐트 2x2, 장터 둘 2x2, 뼈 유적 2x1)는 사진 자리에서
-// 최대 한 칸만 옮겼다 — 짝수 칸에서 시작해야 화면이 한 장으로 묶여 그려진다.
-// 그 외 1칸짜리(오벨리스크 · 짧은 기둥 · 깃발 · 선인장 · 바위더미 · 돌블록)는
+// 큰 구조물(텐트 2x2, 장터 둘 2x2)은 사진 자리에서 최대 한 칸만 옮겼다 —
+// 짝수 칸에서 시작해야 화면이 한 장으로 묶여 그려진다.
+// 그 외 1칸짜리(오벨리스크 · 짧은 기둥 · 선인장 · 바위더미 · 돌블록)는
 // 1칸이라 자리가 조금 어긋나도 크기 문제가 없어서 사진의 대략적인 위치만 옮겼다.
 // 상자 하나하나의 정확한 자리는 사진처럼 못 맞췄다 - 밀도만 비슷하게 채웠다
+//
+// 9/4 - 깃발(desert17_banner) · 뼈 유적(desert17_skeleton) · 아치(desert17_arch)
+// 세 조형물을 통째로 뺐다. 뼈 유적은 2x1 랜드마크였던 것까지 지웠고
+// (6,6)-(7,6) 두 칸은 그냥 부술 수 있는 블록(b)으로 내렸다 - 남겨봤자
+// 아무 그림도 안 걸리는 벽 두 칸만 남는다. artdata.js 의 wall/big 배열에서도
+// 같이 뺐다(web/artdata.js 참고)
+//
+// (7,4)의 # 하나 - 원래는 (7,4)(6,4)가 나란히 #라서, 벽 둘 붙은 자리를
+// 찾아 큰 그림을 세우던 옛 규칙(지금은 서버가 자리를 못 박아 주므로 안 쓴다)이
+// 여기서도 걸려 뼈 유적이 두 번 세워진 적이 있었다. 오벨리스크 받침이었을
+// 뿐 구조물 자리가 아니라서 b(그냥 블록)로 내려둔 채로 둔다
 { "DESERT_BAZAAR", 5, {
     "pbbp##p.##bpbbp",
     "pb.###p.##b.b#p",
     "pb.pbbp..bb.bbp",
     "pb.psbp#.bb.bb.",
-    "##bp.b##.bbp#bp",
+    "##bp.b#b.bbp#bp",
     "###p.#pb.bbp#bp",
-    ".bb#.b##.bsp#b.",
+    ".bb#.bbb.bsp#b.",
     "...............",
     "p#bpbbb.p#bpbbp",
     "pbb#bbs.pbbpb#p",
     "pb#pbbb.pbbpbbp",
     "pbbpbbb.pbbpbbp",
     "pbbpbbb.pbbpbbb",
-}},
+},
+// kind 0 = web/artdata.js 사막 tiles.big[0]("텐트"), 1 = big[1]("장터").
+// 장터가 둘이라 kind 1 이 두 번 나온다
+{ {0, 0, 4, 2, 2}, {1, 4, 0, 2, 2}, {1, 8, 0, 2, 2} }, 3},
 
 };

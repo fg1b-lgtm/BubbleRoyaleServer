@@ -175,8 +175,17 @@ const Predict = (() => {
       px = centerAxis(tiles, py, px, dirY * speed, false, speed);
     }
 
-    px = stepAxis(tiles, px, py, dirX * speed, true);
-    py = stepAxis(tiles, py, px, dirY * speed, false);
+    // 9/4 - 서버 쪽(Game.h)에 대각선 보정(diag_speed, 1/√2 ≈ 181/256)을
+    // 넣어놓고 여기는 안 고쳤었다. 파일 맨 위에 "한쪽만 고치면 화면과
+    // 판이 갈린다"고 스스로 적어놓고 딱 그 실수를 했다 - 화면(여기)은
+    // 대각선으로 계속 옛 속도(41% 빠름)로 미리 그리고, 서버 답은 고친
+    // 속도로 오니 대각선으로 움직일 때마다 매 틱 어긋나서 그 오차를
+    // 녹이느라 화면이 삐걱거렸다. 맵마다 트인 데가 많고 적음에 따라
+    // 대각선을 얼마나 쓰게 되는지가 달라서 "어떤 판은 심하고 어떤 판은
+    // 괜찮다"로 보인 것이다
+    const diagSpeed = (dirX !== 0 && dirY !== 0) ? (speed * 181 / 256 | 0) : speed;
+    px = stepAxis(tiles, px, py, dirX * diagSpeed, true);
+    py = stepAxis(tiles, py, px, dirY * diagSpeed, false);
 
     py = clampAxis(tiles, py, px, false, speed);
     px = clampAxis(tiles, px, py, true,  speed);

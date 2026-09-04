@@ -74,6 +74,14 @@ struct GameMap
 
     uint8_t sector_flip[SECTOR_SLOTS]     = {};   // 1 = 좌우, 2 = 상하
 
+    // 집·우물·텐트·장터 같은 큰 그림이 실제로 서는 자리(판 전체 좌표,
+    // 뒤집기까지 다 적용한 뒤). StampSector 가 조각을 붙이면서 채운다.
+    // 화면은 이걸 그대로 받아서 그린다 - 벽 모양을 보고 되짚어 추측하지 않는다
+    static constexpr int MAX_MAP_LANDMARK = SECTOR_SLOTS * MAX_LANDMARK;
+    struct MapLandmark { uint8_t x, y, kind, theme; };
+    MapLandmark landmark[MAX_MAP_LANDMARK] = {};
+    int landmark_count = 0;
+
     unsigned int seed = 0;
 
     // 밖은 전부 벽이라고 답한다.
@@ -102,6 +110,7 @@ struct GameMap
         rnd.Seed(s);
         seed = s;
         spawn_count = 0;
+        landmark_count = 0;
 
         // 1) 테마를 아홉 개 뽑고, 테마마다 판을 하나씩 고른다.
         //
@@ -190,6 +199,17 @@ struct GameMap
             }
         }
 
+#ifdef MAPGEN_TRACE
+        auto __count = [this]() {
+            int n = 0;
+            for (int y = 0; y < MAP_H; ++y)
+                for (int x = 0; x < MAP_W; ++x)
+                    if (IsBreakableTile(tile[y][x])) ++n;
+            return n;
+        };
+        printf("[trace] 0 stamp+border   : %d\n", __count());
+#endif
+
         // 4) 테두리를 두르면서 생긴 막다른 칸을 벽으로 메운다.
         //
         //    조각은 사방이 열려 있다고 치고 그렸다. 그런데 판 가장자리에 놓이면
@@ -197,6 +217,9 @@ struct GameMap
         //    들어갔다 도로 나와야 하는 주머니가 된다.
         //    거기서 마주치면 피할 데가 없다. 그건 실력이 아니라 자리 운이다.
         SealDeadEnds();
+#ifdef MAPGEN_TRACE
+        printf("[trace] 1 SealDeadEnds   : %d\n", __count());
+#endif
 
         // 5) 스폰 주변을 비운다.
         //
@@ -206,10 +229,16 @@ struct GameMap
         for (int i = 0; i < spawn_count; ++i) {
             ClearAround(spawn_x[i], spawn_y[i], SPAWN_CLEAR_RADIUS);
         }
+#ifdef MAPGEN_TRACE
+        printf("[trace] 2 ClearAround x%-3d: %d\n", spawn_count, __count());
+#endif
 
         // 6) 조각과 조각이 맞닿는 자리를 확인한다.
         //    조각마다 관문을 뚫어놨으니 보통은 할 일이 없다. 안전장치다
         OpenSeams();
+#ifdef MAPGEN_TRACE
+        printf("[trace] 3 OpenSeams      : %d\n", __count());
+#endif
 
         // 7) 공정성 맞추기와 죽는 칸 없애기를 **번갈아 두 번** 돈다.
         //
@@ -221,7 +250,13 @@ struct GameMap
         //    두 바퀴면 충분하다. 세 바퀴째에는 바뀌는 게 없다
         for (int pass = 0; pass < 2; ++pass) {
             BalanceSpawnBlocks(rnd);
+#ifdef MAPGEN_TRACE
+            printf("[trace] 4.%d BalanceSpawnBlocks: %d\n", pass, __count());
+#endif
             OpenDeathTraps(BLAST_BASE_RANGE);
+#ifdef MAPGEN_TRACE
+            printf("[trace] 4.%d OpenDeathTraps    : %d\n", pass, __count());
+#endif
         }
     }
 
@@ -368,6 +403,26 @@ private:
                 }
             }
         }
+
+        // 이 조각의 큰 그림 자리도 같이 뒤집는다.
+        //
+        // 타일은 "찍을 자리마다 반대쪽 글자를 읽어서" 뒤집었다(위 for문).
+        // 좌표 하나(landmark)는 읽을 반대쪽이 없으니 식을 직접 쓴다 -
+        // W칸짜리 덩어리를 좌우로 뒤집으면 왼쪽 끝이 (SECTOR_W - W - x) 로
+        // 간다. 칸 하나하나를 (SECTOR_W-1-lx) 로 뒤집은 뒤 그 중 제일 작은
+        // x를 다시 구한 것과 같은 값이다 - 위 for문과 다른 방법이지만 같은 규칙이다
+        for (int i = 0; i < t.landmark_count && landmark_count < MAX_MAP_LANDMARK; ++i) {
+            const SectorLandmark& lm = t.landmark[i];
+
+            int lx = (flip & 1) ? (SECTOR_W - lm.w - lm.x) : lm.x;
+            int ly = (flip & 2) ? (SECTOR_H - lm.h - lm.y) : lm.y;
+
+            MapLandmark& out = landmark[landmark_count++];
+            out.x = (uint8_t)(ox + lx);
+            out.y = (uint8_t)(oy + ly);
+            out.kind = lm.kind;
+            out.theme = (uint8_t)t.theme;
+        }
     }
 
     // 이웃이 하나뿐인 칸을 벽으로 메운다. 없어질 때까지 돈다.
@@ -474,18 +529,40 @@ private:
         // 아래로만 맞추면 언제나 된다. 덜어낼 상자는 늘 있기 때문이다.
         // 스폰 주변 상자가 적어지는 대신 **스물일곱 자리가 다 같아진다.**
         // 아이템은 공정성이 총량보다 중요하다. 억울해서 지는 게 제일 나쁘다
-        int target = 9999;
+        //
+        // 9/4 - "제일 적은 쪽"을 판 전체 스물일곱 자리에서 하나 고르고 있었다.
+        // 조각이 서른한 종일 때는 다 고만고만해서 문제가 안 됐는데, 지금은
+        // 집·우물·텐트·장터처럼 **자리마다 일부러 다르게 채운** 손그림 조각이다.
+        // 어쩌다 스폰 하나가 큰 건물 옆이라 원래 낮았을 뿐인데, 그 한 자리가
+        // 판 전체 스물일곱 곳의 목표를 끌어내려서 **집·우물이 없는 다른 여덟
+        // 조각까지 덩달아 상자가 반토막 났다.** 재보니 이 함수와 아래
+        // OpenDeathTraps 두 곳에서만 판 전체 상자의 1/3이 사라지고 있었다 -
+        // "빈 공간이 너무 많다"던 것의 진짜 원인이 이거였다.
+        //
+        // 공정성은 **같은 조각 안 세 스폰끼리만** 맞추면 충분하다. 어차피
+        // 다른 조각 스폰은 서로 옆에 붙어 있지도 않다 - 마을 스폰과 사막
+        // 스폰이 얼마나 상자를 더 가졌는지는 애초에 비교할 대상이 아니었다
+        // Game.h 의 SectorIndex 와 같은 식이다. 여기서 다시 적는 이유는
+        // GameMap.h 가 Game.h 를 몰라야 하기 때문이다(맨 위 설명 - 소켓도
+        // 세션도 모르고 tools/ 에서 서버 없이 돌아가야 한다). 식 하나 정도는
+        // 두 곳에 적어도 갈릴 일이 없다 - 조각 칸 수(SECTOR_W/H)가 바뀌면
+        // 둘 다 컴파일부터 깨진다
+        int target[SECTOR_SLOTS];
+        for (int s = 0; s < SECTOR_SLOTS; ++s) target[s] = 9999;
         for (int i = 0; i < spawn_count; ++i) {
+            int s = (spawn_y[i] / SECTOR_H) * SECTOR_COLS + (spawn_x[i] / SECTOR_W);
             int n = BlocksNear(spawn_x[i], spawn_y[i]);
-            if (n < target) target = n;
+            if (n < target[s]) target[s] = n;
         }
 
         for (int i = 0; i < spawn_count; ++i) {
             int cx = spawn_x[i], cy = spawn_y[i];
+            const int mySector = (cy / SECTOR_H) * SECTOR_COLS + (cx / SECTOR_W);
+            const int myTarget = target[mySector];
 
             // 너무 많으면 덜어낸다
             for (int guard = 0; guard < 200; ++guard) {
-                if (BlocksNear(cx, cy) <= target + SPAWN_BLOCK_TOLERANCE) break;
+                if (BlocksNear(cx, cy) <= myTarget + SPAWN_BLOCK_TOLERANCE) break;
 
                 int x = cx - 3 + rnd.Next(7);
                 int y = cy - 3 + rnd.Next(7);
@@ -495,7 +572,7 @@ private:
 
             // 너무 적으면 채운다. 스폰 바로 옆은 비워둔 채로 둔다
             for (int guard = 0; guard < 200; ++guard) {
-                if (BlocksNear(cx, cy) >= target - SPAWN_BLOCK_TOLERANCE) break;
+                if (BlocksNear(cx, cy) >= myTarget - SPAWN_BLOCK_TOLERANCE) break;
 
                 int x = cx - 3 + rnd.Next(7);
                 int y = cy - 3 + rnd.Next(7);

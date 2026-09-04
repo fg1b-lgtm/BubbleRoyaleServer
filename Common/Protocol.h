@@ -32,6 +32,16 @@ enum PacketId : uint16_t
     // 지금은 손맛을 보려고 몇 번이고 다시 돌려야 해서 열어둔다.
     // 방과 대기실이 생기면 그쪽으로 옮긴다
     PKT_RESTART  = 8,
+
+    // 서버 -> 클라. 판이 새로 깔릴 때 MAPROW 뒤에 한 번.
+    //
+    // 집·우물·텐트·장터가 "정확히 어디에, 어느 이름으로" 서는지를 못 박아 보낸다.
+    // 예전엔 화면이 "벽이 W x H 만큼 뭉친 자리"를 스스로 찾아 큰 그림을 얹었는데,
+    // 마을은 집(2x2)과 우물(2x2)이 크기가 같아서 화면이 둘을 못 가렸다 -
+    // 강가에 우연히 벽이 뭉친 자리에도 걸려서, 우물 대여섯 채가 서고 집은
+    // 하나도 안 서는 판이 실제로 나왔다. 벽 모양을 보고 되짚어 추측하는 대신,
+    // 조각을 그린 사람이 이미 아는 자리를 그대로 알려준다(SectorTemplates.h)
+    PKT_LANDMARKS = 9,
 };
 
 // 화면에 띄울 일. SPEC 2.7 "어디서 재미가 나오나" 의 목록이 그대로 여기다.
@@ -263,6 +273,24 @@ struct BubbleState
     uint8_t tx, ty;
     uint8_t fuse;     // 남은 틱. 마지막 0.5초에 맥박이 빨라지는 연출에 쓴다
     uint8_t owner;
+};
+
+// PKT_LANDMARKS 한 칸. x,y 는 그 그림의 왼쪽 위 칸(판 전체 좌표).
+//
+// kind 는 그 테마의 web/artdata.js tiles.big 배열 순번이다. theme 없이
+// kind 만 봐서는 "0번"이 마을 집인지 사막 텐트인지 못 가리므로 같이 보낸다.
+// 크기(w, h)는 안 보낸다 - 화면이 이미 자기 artdata.js 로 큰 그림 이름마다
+// 크기를 알고 있어서, 여기서 또 보내면 서버 값과 갈릴 여지만 하나 늘어난다
+struct LandmarkEntry
+{
+    uint8_t x, y;
+    uint8_t kind;
+    uint8_t theme;
+};
+
+struct LandmarksHead
+{
+    uint8_t count;
 };
 #pragma pack(pop)
 

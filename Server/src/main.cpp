@@ -173,6 +173,32 @@ static void SendWelcome(Session* s, int slot)
 
         SendPacket(s, row, len);
     }
+
+    // 집·우물·텐트·장터가 정확히 어디에 서는지. MAPROW 뒤에 한 번만 간다
+    {
+        char buf2[HEADER_SIZE + sizeof(LandmarksHead)
+                  + GameMap::MAX_MAP_LANDMARK * sizeof(LandmarkEntry)];
+        int n = g_game.map.landmark_count;
+
+        PacketHeader h2;
+        h2.id = PKT_LANDMARKS;
+        h2.size = (uint16_t)(HEADER_SIZE + sizeof(LandmarksHead) + n * sizeof(LandmarkEntry));
+        memcpy(buf2, &h2, HEADER_SIZE);
+
+        LandmarksHead lh;
+        lh.count = (uint8_t)n;
+        memcpy(buf2 + HEADER_SIZE, &lh, sizeof(lh));
+
+        LandmarkEntry* out = (LandmarkEntry*)(buf2 + HEADER_SIZE + sizeof(LandmarksHead));
+        for (int i = 0; i < n; ++i) {
+            out[i].x     = g_game.map.landmark[i].x;
+            out[i].y     = g_game.map.landmark[i].y;
+            out[i].kind  = g_game.map.landmark[i].kind;
+            out[i].theme = g_game.map.landmark[i].theme;
+        }
+
+        SendPacket(s, buf2, h2.size);
+    }
 }
 
 // 매 틱. 누가 어디 있고 물풍선이 어디 있나.

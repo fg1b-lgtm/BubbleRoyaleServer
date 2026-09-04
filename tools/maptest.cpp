@@ -257,7 +257,8 @@ struct Report
     int worst_escape;       // 제일 먼 탈출 거리
     int escape_sum, escape_n;
     int biggest_region;
-    int spawn_block_min, spawn_block_max;
+    int spawn_block_min, spawn_block_max;   // 판 전체에서 (참고용으로만 남긴다)
+    int spawn_block_spread_max;             // 9/4 - 같은 조각 세 스폰끼리만 비교한 최댓값
 
     // 블록을 다 부순 뒤의 뼈대
     int struct_open;
@@ -335,6 +336,16 @@ static void Measure(const GameMap& m, int range, Report& r)
         }
     }
 
+    // 9/4 - 이 값을 판 전체 스물일곱 스폰에서 하나로 재고 있었는데,
+    // GameMap::BalanceSpawnBlocks 를 조각별로 고치면서 여기도 같이 고친다.
+    // 조각이 서른한 종일 때는 다 고만고만해서 판 전체로 재도 됐는데, 지금은
+    // 집·우물이 있는 마을과 텐트·장터가 있는 사막처럼 **일부러 다르게 채운**
+    // 손그림 조각이다. 판 전체로 재면 조각 하나의 특징이 다른 여덟 조각의
+    // 목표치를 끌어내려서, 시험을 맞추려다 맵 전체 밀도를 깎게 된다.
+    // 같은 조각 세 스폰끼리만 비교하는 게 지금 규칙과 맞다
+    int sec_min[9], sec_max[9];
+    for (int s = 0; s < 9; ++s) { sec_min[s] = 9999; sec_max[s] = 0; }
+
     for (int i = 0; i < m.spawn_count; ++i) {
         int sx = m.spawn_x[i], sy = m.spawn_y[i];
 
@@ -351,7 +362,7 @@ static void Measure(const GameMap& m, int range, Report& r)
             r.dig_x = sx; r.dig_y = sy;
         }
 
-        // 반경 3 안의 블록 수. SPEC 2.2 가 조각 간에 비슷하게 하라고 한 값이다
+        // 반경 3 안의 블록 수. SPEC 2.2 가 (같은 조각 안에서) 비슷하게 하라고 한 값이다
         int n = 0;
         for (int y = sy - 3; y <= sy + 3; ++y) {
             for (int x = sx - 3; x <= sx + 3; ++x) {
@@ -361,6 +372,17 @@ static void Measure(const GameMap& m, int range, Report& r)
         }
         if (n < r.spawn_block_min) r.spawn_block_min = n;
         if (n > r.spawn_block_max) r.spawn_block_max = n;
+
+        int slot = (sy / SECTOR_H) * 3 + (sx / SECTOR_W);
+        if (n < sec_min[slot]) sec_min[slot] = n;
+        if (n > sec_max[slot]) sec_max[slot] = n;
+    }
+
+    r.spawn_block_spread_max = 0;
+    for (int s = 0; s < 9; ++s) {
+        if (sec_max[s] < sec_min[s]) continue;   // 그 자리에 스폰이 없었다
+        int spread = sec_max[s] - sec_min[s];
+        if (spread > r.spawn_block_spread_max) r.spawn_block_spread_max = spread;
     }
 }
 
@@ -514,6 +536,76 @@ static void TemplatePromises()
     Check(bad_split == 0, "벽으로 갈라져 못 가는 칸이 없다");
 }
 
+// 9/4에 잡은 버그의 재발 시험이다.
+//
+// 화면이 "벽이 W x H 만큼 뭉친 자리"를 스스로 찾아 집·우물 중 하나를
+// 무작위로 얹던 옛 방식은, 강가처럼 우연히 벽이 뭉친 자리에도 걸려서
+// 한 판에 우물 대여섯 채가 서고 집은 하나도 안 서는 일이 실제로 있었다.
+// 지금은 조각을 그릴 때 자리를 못 박아 보낸다(SectorLandmark) - 이 시험은
+// 그 못 박은 자리가 ① 조각 원본에서 정말 전부 벽인지 ② 판에 실제로 찍고
+// 나서도(뒤집기 포함) 여전히 전부 벽인지 ③ 조각 하나가 낸 개수만큼만
+// 판에 남아있는지(우연히 더 늘거나 준 게 없는지) 를 잰다
+static void LandmarkPromises()
+{
+    printf("\n--- 랜드마크(집·우물·텐트·장터) 약속 ---\n");
+
+    int bad_origin = 0;
+    for (int t = 0; t < SECTOR_TEMPLATE_COUNT; ++t) {
+        const SectorTemplate& T = SECTOR_TEMPLATES[t];
+        for (int i = 0; i < T.landmark_count; ++i) {
+            const SectorLandmark& lm = T.landmark[i];
+            for (int dy = 0; dy < lm.h; ++dy) {
+                for (int dx = 0; dx < lm.w; ++dx) {
+                    if (T.row[lm.y + dy][lm.x + dx] != '#') {
+                        ++bad_origin;
+                        printf("  [원본 어김] %s landmark %d 의 (%d,%d) 가 벽이 아니다 ('%c')\n",
+                               T.name, i, lm.x + dx, lm.y + dy, T.row[lm.y + dy][lm.x + dx]);
+                    }
+                }
+            }
+        }
+    }
+    Check(bad_origin == 0, "조각 원본에서 랜드마크 자리는 전부 벽이다");
+
+    // 씨앗 여러 개로 실제 판을 깔아서, 찍힌 뒤에도 여전히 성립하는지 본다.
+    // 뒤집기(좌우·상하)가 걸리면 좌표가 바뀌므로, 여기서 진짜로 잡아낸다
+    int bad_final = 0, bad_overlap = 0, bad_count = 0;
+    for (unsigned s = 1; s <= 200; ++s) {
+        GameMap m;
+        m.Generate(s);
+
+        int want = 0;
+        for (int slot = 0; slot < SECTOR_SLOTS; ++slot) {
+            want += SECTOR_TEMPLATES[m.sector_template[slot]].landmark_count;
+        }
+        if (m.landmark_count != want) ++bad_count;
+
+        bool claimed[MAP_H][MAP_W] = {};
+        for (int i = 0; i < m.landmark_count; ++i) {
+            const auto& lm = m.landmark[i];
+            int w = 2, h = 2;
+            // 뼈 유적(사막 kind 2)만 2x1이다 - SectorTemplates.h 와 같은 값을 여기 한 번 더 적지
+            // 않으려면 landmark 에서 w/h 를 그대로 들고 와야 하는데, 판에는 kind/theme 만
+            // 남아 있어서 여기서는 "2x1도 있다"는 것만 알고 둘 다 검사한다
+            if (lm.theme == 5 && lm.kind == 2) h = 1;
+            for (int dy = 0; dy < h; ++dy) {
+                for (int dx = 0; dx < w; ++dx) {
+                    int x = lm.x + dx, y = lm.y + dy;
+                    if (x >= MAP_W || y >= MAP_H || m.tile[y][x] != TILE_WALL) ++bad_final;
+                    if (x < MAP_W && y < MAP_H) {
+                        if (claimed[y][x]) ++bad_overlap;
+                        claimed[y][x] = true;
+                    }
+                }
+            }
+        }
+    }
+    printf("  판 200개, 랜드마크 %d개 확인\n", 200);
+    Check(bad_count == 0,   "조각이 낸 개수만큼 판에도 랜드마크가 있다");
+    Check(bad_final == 0,   "뒤집힌 뒤에도 랜드마크 자리는 전부 벽이다");
+    Check(bad_overlap == 0, "랜드마크끼리 자리가 안 겹친다");
+}
+
 int main(int argc, char** argv)
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -570,8 +662,7 @@ int main(int argc, char** argv)
         if (r.dig_max > dig_worst) dig_worst = r.dig_max;
         dig_stuck_total += r.dig_stuck;
 
-        int spread = r.spawn_block_max - r.spawn_block_min;
-        if (spread > spread_max) spread_max = spread;
+        if (r.spawn_block_spread_max > spread_max) spread_max = r.spawn_block_spread_max;
         if (r.spawn_min_gap < gap_min) { gap_min = r.spawn_min_gap; gap_seed = seed; }
 
         if (r.worst_escape > worst) { worst = r.worst_escape; worst_seed = (int)seed; }
@@ -608,11 +699,12 @@ int main(int argc, char** argv)
            struct_open / TRIES, struct_big / TRIES);
     printf("  끝까지 남는 막다른 길: %lld 개\n", struct_dead / TRIES);
 
-    printf("\n--- 공정성 ---\n");
+    printf("\n--- 공정성 (같은 조각 세 스폰끼리) ---\n");
     printf("  스폰 주변(반경3) 블록 수 차이: 최대 %d 개\n", spread_max);
     printf("  제일 가까운 두 스폰: %d 칸 (씨앗 %u)\n", gap_min, gap_seed);
 
     TemplatePromises();
+    LandmarkPromises();
 
     printf("\n--- 판정 ---\n");
     Check(death == 0,
@@ -633,7 +725,7 @@ int main(int argc, char** argv)
     Check(gap_min >= BLAST_BASE_RANGE * 3,
           "제일 가까운 두 스폰도 기본 사거리의 세 배만큼 떨어져 있다");
     Check(spread_max <= 12,
-          "스폰끼리 주변 블록 수 차이가 12개 이하다");
+          "같은 조각 세 스폰끼리는 주변 블록 수 차이가 12개 이하다");
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
 

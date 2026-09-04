@@ -250,6 +250,13 @@ inline void PickUpItems()
             continue;
         }
 
+        // 물방울에 갇힌 동안은 못 줍는다. 갇힌 사람은 몸부림칠 뿐이지
+        // 아이템을 챙길 처지가 아니고, 갇힌 채로 기어가다 우연히 아이템
+        // 위에 걸치면 줍는 건 이상하다는 지적을 받았다
+        if (p.trap_ticks > 0) {
+            continue;
+        }
+
         int tx = p.px / TILE_UNITS;
         int ty = p.py / TILE_UNITS;
 

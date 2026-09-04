@@ -782,11 +782,21 @@ inline void MovePlayer(const GameMap& map, Player& p)
         p.px = CornerAssistAxis(map, p.py, p.px, p.dir_y * speed, false, speed);
     }
 
+    // 대각선(두 방향을 같이 누름)이면 가로·세로 두 축이 **각자** speed만큼
+    // 간다. 그러면 대각선 이동 거리가 직선의 약 1.41배(√2)가 된다 -
+    // 빗변이 두 변의 합과 같은 셈이니 당연히 더 간 것이다.
+    // 사람은 이걸 몰라도 몸으로 "대각선이 더 빠르다"를 느끼고, 그러면
+    // 다들 대각선으로만 다니게 된다 - 이동 자체가 왜곡된다.
+    //
+    // 두 축이 같이 눌렸을 때만 1/√2(≈0.7071)를 곱해 대각선 속도를 직선과
+    // 맞춘다. float 을 안 쓰므로(README) 181/256(≈0.7070)로 정수 근사한다
+    int diag_speed = (p.dir_x != 0 && p.dir_y != 0) ? (speed * 181 / 256) : speed;
+
     // 가로 먼저, 그다음 세로.
     // 한 축씩 따로 보는 이유는 벽에 비스듬히 부딪혔을 때
     // 막힌 축만 서고 나머지 축은 계속 가게 하기 위해서다. 벽을 타고 미끄러진다
-    p.px = StepAxis(map, p.px, p.py, p.dir_x * speed, true);
-    p.py = StepAxis(map, p.py, p.px, p.dir_y * speed, false);
+    p.px = StepAxis(map, p.px, p.py, p.dir_x * diag_speed, true);
+    p.py = StepAxis(map, p.py, p.px, p.dir_y * diag_speed, false);
 
     // 몸이 벽에 파묻혀 있으면 빼낸다.
     //
