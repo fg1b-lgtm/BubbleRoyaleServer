@@ -1682,22 +1682,26 @@ function drawHUD(now) {
   else if (!me || !(me.flags & PF.ALIVE)) {
     // 죽어도 판은 계속 보인다. 스냅샷이 어차피 전원에게 오니 관전은 공짜다.
     // 띠를 화면 가운데가 아니라 아래에 둔다. 가운데는 판을 보는 자리다
-    const by = H - 96;
-    ctx.fillStyle = 'rgba(0,0,0,0.34)';
-    ctx.fillRect(0, by, W, 30);
+    //
+    // 9/4 에 판때기를 나무로 다 바꾸면서 여기를 빼먹었다 - 화면 전체를 가로지르는
+    // 납작한 검정 띠만 옛날 그대로 남아서, 죽고 나면 갑자기 다른 게임 화면으로
+    // 바뀐 것처럼 보였다. 다른 HUD 판때기와 같은 나무 상자로 맞춘다
+    const bw = Math.min(BW - 40, 460), bh = 34;
+    const bx = BX + (BW - bw) / 2, by = H - 60;
+    panel(bx, by, bw, bh);
 
     const list = aliveList();
     const who  = list.indexOf(specId);
 
-    label('관전 중', 16, by + 20, 13, '#ff8f8f', 'left', 2);
+    label('관전 중', bx + 16, by + bh / 2 + 5, 13, '#ffcf9e', 'left', 1);
 
     if (who >= 0) {
       // 누구를 보고 있는지와, 바꾸는 방법을 같이 적는다.
       // 바꿀 수 있다는 걸 모르면 없는 기능이다
-      label('P' + specId, W / 2 - 44, by + 20, 14, colorOf(specId), 'center');
-      label('(' + (who + 1) + '/' + list.length + ')', W / 2 + 6, by + 20, 12,
-            'rgba(255,255,255,0.5)', 'center');
-      label('← →', W / 2 + 62, by + 20, 13, 'rgba(255,255,255,0.75)', 'center', 1);
+      label('P' + specId, bx + bw / 2 - 44, by + bh / 2 + 5, 14, colorOf(specId), 'center');
+      label('(' + (who + 1) + '/' + list.length + ')', bx + bw / 2 + 10, by + bh / 2 + 4, 12,
+            'rgba(255,238,214,0.6)', 'center');
+      label('← →', bx + bw - 34, by + bh / 2 + 5, 13, 'rgba(255,238,214,0.85)', 'center', 1);
     }
   }
 
