@@ -55,7 +55,7 @@ const ART_DATA = (() => {
       // 위 색들은 그림이 안 왔을 때(파일이 없거나 시험 중일 때) 쓴다
       tiles: { floor: 'grass',
                wall:  ['tree', 'stone', 'bush'],
-               big:   ['house', 'well'],
+               big:   [{ name: 'house', w: 2, h: 2 }, { name: 'well', w: 2, h: 2 }],
                crate: ['crate_plain'],      // 부서지는 것
                push:  ['crate_x'],          // 밀리는 것. X 가 그려져 있다
                water: 'water_06', bridge: 'bridge_h' },
@@ -86,7 +86,11 @@ const ART_DATA = (() => {
                wall:  ['desert17_ruin_pillar', 'desert17_obelisk', 'desert17_short_column',
                        'desert17_cactus', 'desert17_rock_pile', 'desert17_banner',
                        'desert17_stone_block', 'desert17_skeleton', 'desert17_arch'],
-               big:   ['desert17_tent', 'desert17_bazaar'],
+               big:   [{ name: 'desert17_tent', w: 2, h: 2 },
+                       { name: 'desert17_bazaar', w: 2, h: 2 },
+                       // 거대 뼈 유적은 눕는 모양(가로 2, 세로 1)이다.
+                       // 옛 시스템은 2x2 만 알아서 이런 것은 통째로 1x1 로 흩어져 그려졌다
+                       { name: 'desert17_skeleton', w: 2, h: 1 }],
                crate: ['desert17_crate'],
                push:  ['desert17_xcrate'],
                water: 'desert_water_06', bridge: 'desert_bridge_h' },

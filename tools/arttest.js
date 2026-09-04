@@ -417,8 +417,11 @@ console.log('=== 그림 타일 이름 ===');
       const extra = [].concat(th.tiles.floor);   // 문자열 하나든 배열이든 다 편다
       if (th.tiles.water)  extra.push(th.tiles.water);
       if (th.tiles.bridge) extra.push(th.tiles.bridge);
+      // big 은 {name, w, h} 객체 배열이다 - 여러 칸짜리 건물마다 크기를 알아야
+      // 정확히 짝을 맞춰 그릴 수 있어서 이름만 있던 문자열에서 바뀌었다
+      const bigNames = (th.tiles.big || []).map((b) => b.name);
       for (const n of extra.concat(th.tiles.wall, th.tiles.crate,
-                                   th.tiles.push || [], th.tiles.big || [])) {
+                                   th.tiles.push || [], bigNames)) {
         ++used;
         if (!have.has(n)) missing.push(th.name + ' : ' + n);
       }

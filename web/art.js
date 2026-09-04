@@ -843,22 +843,54 @@ const Art = (() => {
       // 동시에 속해서 어느 쪽으로 그릴지가 안 정해진다.
       //
       // 그리는 것은 **왼쪽 아래 칸 하나**가 맡는다. 그 칸의 발밑 y 가 곧
-      // 집의 아랫변이라, 두 칸짜리도 한 칸짜리와 같은 자로 줄을 선다.
-      // 나머지 세 칸은 아무것도 안 그린다
+      // 건물의 아랫변이라, 여러 칸짜리도 한 칸짜리와 같은 자로 줄을 선다.
+      // 나머지 칸은 아무것도 안 그린다.
+      //
+      // 크기가 2x2 뿐이 아니다. 텐트·집·우물은 2x2 지만 뼈 유적 같은 건
+      // 2x1(가로로 눕는다) 이다. 그래서 크기별로 묶어서 본다 - 짝 맞추는 기준
+      // (qx = x - x%w) 이 가로세로 폭에 따라 다르기 때문이다.
+      //
+      // 9/4 에 처음 만들 때는 늘 2x2 로 셈해서 x&~1, y&~1 로 짝을 맞췄다.
+      // 그런데 손으로 심어둔 실제 자리(예: village.json 의 집이 x=1)가
+      // 홀수에서 시작하면 그 자리는 **어느 쪽으로 짝지어도 안 맞아서** 통째로
+      // 1x1 칸들로 흩어져 그려졌다. 사람이 그려온 그림과 다르게 보인 원인이
+      // 이거였다 - 작아 보인 게 아니라 애초에 못 만나서 큰 그림 자체가 안 켜졌다.
+      // 이제 자리 자체를 폭·높이의 배수에 맞춰 심는다(SectorTemplates.h) 대신,
+      // 여기서는 크기별로 정확히 재서 한 번에 맞는지만 본다
       if (t === 1 && place.tiles.big) {
-        const qx = x & ~1, qy = y & ~1;
-        if (wall4(qx, qy) && wall4(qx + 1, qy)
-            && wall4(qx, qy + 1) && wall4(qx + 1, qy + 1)) {
-          if (x !== qx || y !== qy + 1) return;      // 나머지 세 칸
+        const groups = new Map();   // "wxh" -> [이름, 이름, ...]
+        for (const b of place.tiles.big) {
+          const key = b.w + 'x' + b.h;
+          let list = groups.get(key);
+          if (!list) { list = []; groups.set(key, list); }
+          list.push(b);
+        }
 
-          const big = place.tiles.big;
-          const cv = bakeTileSprite(big[tileHash(qx, qy) % big.length], T);
+        let drawn = false;
+        for (const [, list] of groups) {
+          const { w: bw, h: bh } = list[0];
+          const qx = x - (x % bw), qy = y - (y % bh);
+
+          let ok = true;
+          for (let dy = 0; dy < bh && ok; ++dy) {
+            for (let dx = 0; dx < bw && ok; ++dx) {
+              if (!wall4(qx + dx, qy + dy)) ok = false;
+            }
+          }
+          if (!ok) continue;
+
+          if (x !== qx || y !== qy + bh - 1) return;   // 이 건물의 다른 칸이다
+
+          const pick = list[tileHash(qx, qy) % list.length];
+          const cv = bakeTileSprite(pick.name, T);
           if (cv) {
             g.imageSmoothingEnabled = false;
-            g.drawImage(cv, qx * T, (qy + 2) * T - cv.height);
-            return;
+            g.drawImage(cv, qx * T + (bw * T - cv.width) / 2, (qy + bh) * T - cv.height);
+            drawn = true;
           }
+          break;
         }
+        if (drawn) return;
       }
 
       // 밀 수 있는 상자는 **그림이 다르다.** 덧그리지 않는다.
