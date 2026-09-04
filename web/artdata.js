@@ -58,7 +58,11 @@ const ART_DATA = (() => {
                big:   [{ name: 'house', w: 2, h: 2 }, { name: 'well', w: 2, h: 2 }],
                crate: ['crate_plain'],      // 부서지는 것
                push:  ['crate_x'],          // 밀리는 것. X 가 그려져 있다
-               water: 'water_06', bridge: 'bridge_h' },
+               // 강이 두 칸 폭이라 왼쪽 바깥·오른쪽 바깥에 각각 돌둑이 있는
+               // 그림을 따로 쓴다(art.js 의 drawProp 이 옆 칸을 보고 고른다).
+               // water 는 폭이 셋 이상일 때 가운데 칸에 쓰는 기본값이다
+               water: 'water_04', waterLeft: 'water_14', waterRight: 'water_16',
+               bridge: 'bridge_h' },
       step: 'grass' },
 
     { name: '캠프',   // 4 FOUR_ROOMS — 흙바닥과 천막
@@ -78,19 +82,19 @@ const ART_DATA = (() => {
       // 바닥이 넷이다(모래 A~D). 하나만 계속 깔면 판이 아니라 벽지로 보인다 —
       // 벽 · 상자와 같은 규칙으로 칸 자리에서 하나를 고정으로 고른다.
       //
-      // 조형물이 아홉 가지다. 유적 기둥 · 오벨리스크 · 부서진 원기둥 ·
-      // 꽃 선인장 · 바위더미 · 깃발 · 돌블록 · 거대 뼈 유적 · 아치.
-      // 종류가 많을수록 판이 지루하지 않다 - 같은 게 두 번 연속 안 나온다
+      // 조형물이 여섯 가지다. 유적 기둥 · 오벨리스크 · 부서진 원기둥 ·
+      // 꽃 선인장 · 바위더미 · 돌블록. 종류가 많을수록 판이 지루하지 않다 -
+      // 같은 게 두 번 연속 안 나온다.
+      //
+      // 9/4 - 깃발(banner) · 뼈 유적(skeleton) · 아치(arch)는 빼달라는
+      // 요청으로 뺐다. 뼈 유적은 큰 그림(big) 쪽에도 있었는데 그것도 같이
+      // 뺐다 - SectorTemplates.h 의 DESERT_BAZAAR landmark 목록에서도 지웠다
       tiles: { floor: ['desert17_sand_a', 'desert17_sand_b',
                        'desert17_sand_c', 'desert17_sand_d'],
                wall:  ['desert17_ruin_pillar', 'desert17_obelisk', 'desert17_short_column',
-                       'desert17_cactus', 'desert17_rock_pile', 'desert17_banner',
-                       'desert17_stone_block', 'desert17_skeleton', 'desert17_arch'],
+                       'desert17_cactus', 'desert17_rock_pile', 'desert17_stone_block'],
                big:   [{ name: 'desert17_tent', w: 2, h: 2 },
-                       { name: 'desert17_bazaar', w: 2, h: 2 },
-                       // 거대 뼈 유적은 눕는 모양(가로 2, 세로 1)이다.
-                       // 옛 시스템은 2x2 만 알아서 이런 것은 통째로 1x1 로 흩어져 그려졌다
-                       { name: 'desert17_skeleton', w: 2, h: 1 }],
+                       { name: 'desert17_bazaar', w: 2, h: 2 }],
                crate: ['desert17_crate'],
                push:  ['desert17_xcrate'],
                water: 'desert_water_06', bridge: 'desert_bridge_h' },

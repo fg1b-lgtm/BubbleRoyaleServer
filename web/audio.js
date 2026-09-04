@@ -119,7 +119,7 @@ const Sound = (() => {
   let ready = false, muted = false, loaded = 0, total = 0;
 
   // 믹서. 게임 소리와 음악이 각자 볼륨을 갖고 마지막에 하나로 모인다
-  let master, comp, sfxBus, musicBus, verb, verbSend;
+  let master, comp, sfxBus, musicBus, musicTone, verb, verbSend;
 
   const buffers = {};       // 이름 -> AudioBuffer
   const lastAt = {};        // 종류별 마지막 시각. 같은 게 몰아치는 걸 막는다
@@ -161,15 +161,25 @@ const Sound = (() => {
     comp.attack.value    = 0.004;
     comp.release.value   = 0.16;
 
-    master   = ac.createGain(); master.gain.value = 0.95;
+    // 0.95는 한계 바로 밑이라 여유가 없다. 압축기가 있어도 "꽉 찬 소리"가
+    // 남는다 - 스튜디오 쪽 상식이 "제일 크게 만들고 낮추지 말고, 처음부터
+    // 여유 있게 잡아라"다. 0.85로 낮춰서 숨 쉴 자리를 남긴다
+    master   = ac.createGain(); master.gain.value = 0.85;
     sfxBus   = ac.createGain(); sfxBus.gain.value = 1.0;
     musicBus = ac.createGain(); musicBus.gain.value = 0.0;
+
+    // 음악 전용 저역통과 하나. 네모파 배음을 여기서 한 번에 죽인다 -
+    // 노트마다 걸지 않고 버스 하나에 걸어서 값 하나만 만지면 곡 전체가 같이 움직인다
+    musicTone = ac.createBiquadFilter();
+    musicTone.type = 'lowpass';
+    musicTone.frequency.value = 4200;
 
     verb = ac.createConvolver();
     verb.buffer = makeRoom(1.5, 2.8);
     verbSend = ac.createGain(); verbSend.gain.value = 0.32;
 
     sfxBus.connect(master);
+    musicTone.connect(musicBus);
     musicBus.connect(master);
     verbSend.connect(verb);
     verb.connect(master);
@@ -426,7 +436,7 @@ const Sound = (() => {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
     osc.connect(g);
-    g.connect(musicBus);
+    g.connect(musicTone);
     if (send) {
       const sg = ac.createGain();
       sg.gain.value = send;
@@ -448,7 +458,7 @@ const Sound = (() => {
     const f = ac.createBiquadFilter();
     f.type = type || 'highpass'; f.frequency.value = cut;
     const g = ac.createGain(); g.gain.value = gain;
-    src.connect(f); f.connect(g); g.connect(musicBus);
+    src.connect(f); f.connect(g); g.connect(musicTone);
     src.start(t);
   }
 
@@ -501,6 +511,20 @@ const Sound = (() => {
   // 모양이다. 한 음을 내면서 음높이를 빠르게 떨어뜨리거나 올린다.
   // 물이 터지는 실체감은 녹음물이 주고, 이 게임 소리라는 인상은 이쪽이 준다.
   // 둘을 겹치는 것이 요점이지 하나를 고르는 것이 아니다
+  // 이 게임에서 나는 소리 중 제일 자주, 제일 많이 겹쳐 들리는 것이 이거다 —
+  // 물풍선 하나 터질 때마다, 걸칠 때마다, 연쇄마다 전부 이 함수를 거친다.
+  // "듣기 거북하다"는 말을 들으면 제일 먼저 의심할 자리도 여기다.
+  //
+  // 네모파(square)는 배음이 세다. 그 배음이 하필 사람 귀가 제일 예민한
+  // 2~4kHz·6~8kHz 대역에 몰린다 - 음정이나 박자가 아니라 이 대역 자체가
+  // "거슬린다"의 정체였다(마스터링 쪽에서 harshness라고 부르는 그 대역).
+  // 녹음물(둔탁하고 실감 나는 소리)과 이 네모파(또렷하고 게임 같은 소리)를
+  // 겹치는 게 원래 설계 의도인데, 네모파 쪽 배음을 다듬지 않고 그대로
+  // 얹으니 겹칠 때마다 그 대역만 계속 쌓였다.
+  //
+  // 기본파는 그대로 두고 그 위 배음만 저역통과로 깎는다. 세게 깎으면
+  // 네모파 특유의 딱딱한 성격이 사라져 그냥 삼각파가 되므로, 정체성은
+  // 남기고 제일 거친 위쪽만 죽이는 선에서 멈춘다
   function sweep(o) {
     if (muted || !ready) return;
     const t = ac.currentTime + (o.delay || 0);
@@ -515,8 +539,14 @@ const Sound = (() => {
     g.gain.exponentialRampToValueAtTime(o.gain * (o.far ? o.far.gain : 1), t + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
 
+    const tone = ac.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = osc.type === 'square' ? 3400 : 5200;
+    tone.Q.value = 0.6;
+    g.connect(tone);
+
     // 멀면 높은 데가 먼저 죽는다. 녹음물 쪽과 같은 규칙을 쓴다
-    let node = g;
+    let node = tone;
     if (o.far) {
       const ff = ac.createBiquadFilter();
       ff.type = 'lowpass';

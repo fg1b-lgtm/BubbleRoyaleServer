@@ -259,6 +259,34 @@ const Art = (() => {
     V.world = WORLDS[seed % WORLDS.length];
   }
 
+  // 집·우물·텐트·장터가 실제로 서는 자리(판 전체 좌표). 서버가
+  // PKT_LANDMARKS 로 못 박아 준 것을 game.js 가 그대로 넘겨준다.
+  //
+  //   landmarkCover   그 그림이 차지하는 칸 전부. 여기 있으면 보통 벽 그림을
+  //                   안 그리고 여기서 끝낸다(앵커가 아니면 아무것도 안 그림)
+  //   landmarkAnchor  왼쪽 아래 칸(그림을 실제로 그리는 자리)만
+  const landmarkCover  = new Set();
+  const landmarkAnchor = new Map();
+
+  function setLandmarks(list) {
+    landmarkCover.clear();
+    landmarkAnchor.clear();
+    for (const lm of list || []) {
+      const place = PLACES[lm.theme];
+      const big = place && place.tiles && place.tiles.big;
+      const def = big && big[lm.kind];
+      if (!def) continue;   // 모르는 조합이면 그냥 안 그린다 - 벽으로 남아도 판은 안 깨진다
+
+      const { name, w, h } = def;
+      for (let dy = 0; dy < h; ++dy) {
+        for (let dx = 0; dx < w; ++dx) {
+          landmarkCover.add((lm.x + dx) + ',' + (lm.y + dy));
+        }
+      }
+      landmarkAnchor.set(lm.x + ',' + (lm.y + h - 1), { name, w, h });
+    }
+  }
+
   // 지금 판에 어떤 장소들이 깔렸나. HUD 에 이름을 띄우는 데 쓴다
   function placeNames() {
     const seen = [];
@@ -818,7 +846,23 @@ const Art = (() => {
     // 물은 위로 안 솟는다. 칸에 딱 맞게 깐다 - 강이 벽처럼 높이를 가지면
     // 건널 수 있는 다리가 어디인지가 안 읽힌다
     if (lookAt(x, y) === 1 && place.tiles && atlases.tiles && place.tiles.water) {
-      const cv = bakeTileSprite(place.tiles.water, T);
+      // 마을 강이 두 칸 폭인데 그림은 한 종류(물 06 - 오른쪽에 돌둑)만 썼다.
+      // 그러면 왼쪽 칸도 물 06 으로 그려져서, 강 왼쪽 바깥(잔디와 만나는 쪽)엔
+      // 돌둑이 하나도 없고 두 칸이 만나는 가운데에만 돌둑이 두 겹 생겼다 -
+      // 실제로 이상하게 보인 게 이거였다.
+      //
+      // 옆 칸의 겉모습을 보고 고른다. 내 왼쪽이 물이 아니면(잔디) 내가 강의
+      // 왼쪽 바깥쪽이니 물 14(왼쪽에 돌둑)를, 내 오른쪽이 물이 아니면 오른쪽
+      // 바깥쪽이니 물 16(오른쪽에 돌둑)을 쓴다. 폭이 셋 이상인 강의 가운데
+      // 칸처럼 둘 다 아니면 기본 그림으로 내려간다
+      let waterName = place.tiles.water;
+      if (place.tiles.waterLeft && lookAt(x - 1, y) !== 1) {
+        waterName = place.tiles.waterLeft;
+      } else if (place.tiles.waterRight && lookAt(x + 1, y) !== 1) {
+        waterName = place.tiles.waterRight;
+      }
+
+      const cv = bakeTileSprite(waterName, T);
       if (cv) {
         g.imageSmoothingEnabled = false;
         g.drawImage(cv, 0, 0, cv.width, cv.height, px, py, T, T);
@@ -828,69 +872,31 @@ const Art = (() => {
 
     // 그림 타일이 있는 장소. 도트로 찍는 길을 아예 안 탄다
     if (place.tiles && atlases.tiles) {
-      const wall4 = (xx, yy) => (yy < 0 || yy >= tiles.length || xx < 0 || xx >= W)
-                                ? false : tiles[yy][xx] === 1;
-
-      // **벽이 넷 붙은 자리에는 집이나 우물을 세운다.**
+      // **집·우물·텐트·장터는 서버가 못 박아 준 자리에만 세운다.**
       //
-      // 조각마다 따로 놓인 나무와 돌만으로는 판이 '물건을 늘어놓은 데' 로 보인다.
-      // 크아 맵이 하나의 그림으로 보이는 건 거기에 집이 있고 우물이 있어서다.
+      // 9/4에 두 번 고쳤다. 처음엔 "벽이 W x H 만큼 뭉친 자리"를 화면이
+      // 스스로 찾아 그 크기 후보 중 하나를 얹었다. 그런데 마을은 집(2x2)과
+      // 우물(2x2)이 크기가 같아서, 화면은 찾아낸 자리가 집 자리였는지 우물
+      // 자리였는지 가릴 방법이 없었다. 강가·조각 이음매처럼 우연히 벽이
+      // 뭉친 자리까지 걸려서, 우물 대여섯 채가 서고 집은 하나도 안 서는
+      // 판이 실제로 나왔다 - 사진과 전혀 다른 마을이 된 원인이 이거였다.
       //
-      // 없는 정보를 지어내는 게 아니다. 벽 넷이 붙은 자리는 이미 판에 있는
-      // 정보고, 거기가 마침 두 칸짜리가 들어갈 유일한 자리다.
-      //
-      // 짝수 자리에서만 묶는다. 아무 데서나 묶으면 벽 하나가 여러 묶음에
-      // 동시에 속해서 어느 쪽으로 그릴지가 안 정해진다.
-      //
-      // 그리는 것은 **왼쪽 아래 칸 하나**가 맡는다. 그 칸의 발밑 y 가 곧
-      // 건물의 아랫변이라, 여러 칸짜리도 한 칸짜리와 같은 자로 줄을 선다.
-      // 나머지 칸은 아무것도 안 그린다.
-      //
-      // 크기가 2x2 뿐이 아니다. 텐트·집·우물은 2x2 지만 뼈 유적 같은 건
-      // 2x1(가로로 눕는다) 이다. 그래서 크기별로 묶어서 본다 - 짝 맞추는 기준
-      // (qx = x - x%w) 이 가로세로 폭에 따라 다르기 때문이다.
-      //
-      // 9/4 에 처음 만들 때는 늘 2x2 로 셈해서 x&~1, y&~1 로 짝을 맞췄다.
-      // 그런데 손으로 심어둔 실제 자리(예: village.json 의 집이 x=1)가
-      // 홀수에서 시작하면 그 자리는 **어느 쪽으로 짝지어도 안 맞아서** 통째로
-      // 1x1 칸들로 흩어져 그려졌다. 사람이 그려온 그림과 다르게 보인 원인이
-      // 이거였다 - 작아 보인 게 아니라 애초에 못 만나서 큰 그림 자체가 안 켜졌다.
-      // 이제 자리 자체를 폭·높이의 배수에 맞춰 심는다(SectorTemplates.h) 대신,
-      // 여기서는 크기별로 정확히 재서 한 번에 맞는지만 본다
-      if (t === 1 && place.tiles.big) {
-        const groups = new Map();   // "wxh" -> [이름, 이름, ...]
-        for (const b of place.tiles.big) {
-          const key = b.w + 'x' + b.h;
-          let list = groups.get(key);
-          if (!list) { list = []; groups.set(key, list); }
-          list.push(b);
-        }
-
-        let drawn = false;
-        for (const [, list] of groups) {
-          const { w: bw, h: bh } = list[0];
-          const qx = x - (x % bw), qy = y - (y % bh);
-
-          let ok = true;
-          for (let dy = 0; dy < bh && ok; ++dy) {
-            for (let dx = 0; dx < bw && ok; ++dx) {
-              if (!wall4(qx + dx, qy + dy)) ok = false;
-            }
-          }
-          if (!ok) continue;
-
-          if (x !== qx || y !== qy + bh - 1) return;   // 이 건물의 다른 칸이다
-
-          const pick = list[tileHash(qx, qy) % list.length];
-          const cv = bakeTileSprite(pick.name, T);
+      // 그래서 이제 벽 모양을 아예 안 본다. 조각을 그린 사람이 이미 아는
+      // 자리를 서버가 그대로 보내고(PKT_LANDMARKS, SectorTemplates.h),
+      // 화면은 받은 표에서 찾기만 한다. landmarkCover 에 있으면 이 칸은
+      // 큰 그림의 일부다 - 앵커(왼쪽 아래) 칸이면 그리고, 나머지 칸은
+      // 아무것도 안 그린 채 여기서 끝낸다
+      const lmKey = x + ',' + y;
+      if (landmarkCover.has(lmKey)) {
+        const lm = landmarkAnchor.get(lmKey);
+        if (lm) {
+          const cv = bakeTileSprite(lm.name, T);
           if (cv) {
             g.imageSmoothingEnabled = false;
-            g.drawImage(cv, qx * T + (bw * T - cv.width) / 2, (qy + bh) * T - cv.height);
-            drawn = true;
+            g.drawImage(cv, x * T + (lm.w * T - cv.width) / 2, (y + 1) * T - cv.height);
           }
-          break;
         }
-        if (drawn) return;
+        return;
       }
 
       // 밀 수 있는 상자는 **그림이 다르다.** 덧그리지 않는다.
@@ -907,8 +913,19 @@ const Art = (() => {
       const cv = bakeTileSprite(set[tileHash(x, y) % set.length], T);
       if (cv) {
         g.imageSmoothingEnabled = false;
+
+        // 고정 벽(t===1, 나무·바위·오벨리스크 같은 배경 소품)은 채도와 밝기를
+        // 살짝 낮춰서 뒤로 물러나 보이게 한다. 부술 수 있는 상자(t===2/4)는
+        // 안 건드린다 - 상자가 이 판에서 실제로 만질 수 있는 것이고,
+        // 벽은 "거기 있다"만 알면 되는 배경이다. 지금은 둘이 같은 선·명암·
+        // 채도로 그려져서 화면이 고르게 시끄럽다는 지적을 받았다 - 새 그림을
+        // 더 그리지 않고 필터 하나로 그 둘을 갈라놓는다
+        if (t === 1) {
+          g.filter = 'saturate(0.7) brightness(0.87)';
+        }
         // 아랫변을 칸 바닥에. 그림이 칸보다 넓으면 가운데를 칸 가운데에 맞춘다
         g.drawImage(cv, px - (cv.width - T) / 2, py + T - cv.height);
+        if (t === 1) g.filter = 'none';
         return;
       }
     }
@@ -1981,8 +1998,9 @@ const Art = (() => {
       ? ((Math.floor((o.walk || 0) / (Math.PI * 2) * 4) % 4) + 4) % 4
       : 0;
 
-    // 그림이 있으면 그림으로 그린다. 없으면 아래 도트로 내려간다
-    if (hasAtlas('chars') && drawCharSprite(g, cx, cy, r, o, frame)) return;
+    // 9/4 - AI로 그린 캐릭터 그림을 빼고 원래 쓰던 도트 동물로 되돌리자는
+    // 요청으로, 그림이 있어도 여기서 안 쓴다(hasAtlas 체크를 건너뛴다).
+    // 그림 자체와 굽는 코드는 안 지웠다 - 나중에 다시 켤 수도 있어서다
 
     // 도트 크기는 타일에 맞춘다. 사람이 16 점 폭이고 타일이 16 점이라,
     // 같은 눈금을 쓰면 사람과 바닥의 도트가 어긋나지 않는다.
@@ -2382,7 +2400,7 @@ const Art = (() => {
              Math.round((cy + up - 5.5 * P) / P) * P, P, 'item' + kind);
   }
   return {
-    PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLanes, isLane, placeAt, placeNames, hash2, rr,
+    PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLandmarks, setLanes, isLane, placeAt, placeNames, hash2, rr,
     setLooks, loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
     buildFloor, drawProp, water, foamEdge,
     drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,

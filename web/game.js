@@ -85,12 +85,17 @@ let gameTime = 0, lastFrame = 0, snapAtGame = 0;
 let killFeed = [];
 let banner = null;
 let lastBeep = -1;
+
+// 카운트다운 숫자마다 색을 다르게 쓴다. 3(파랑) -> 2(노랑) -> 1(빨강) 으로
+// 조여들면, 숫자를 안 읽고 색만 봐도 "이제 얼마 안 남았다" 가 몸으로 온다
+const COUNTDOWN_COLOR = { 3: '#bfe3ff', 2: '#ffe066', 1: '#ff6b5e' };
 let lastPhase = -1;
 let danger = false;
 let bubbleTiles = new Set();
+let goAt = -9999;       // 카운트다운이 끝나고 움직일 수 있게 된 순간
 let killPop = -9999;    // 내가 잡은 순간. HUD 킬 수가 튀어오른다
 let alivePop = -9999;   // 누가 죽은 순간. 남은 사람 수가 튀어오른다
-let grazeCell = null;   // 방금 걸치기로 산 자리. 그 칸을 잠깐 보여준다
+let squashAt = new Map();   // id -> 방금 물풍선을 놓은 시각. 몸이 잠깐 움츠렸다 편다
 
 // 이 세션에서 지금까지의 기록.
 //
@@ -119,6 +124,18 @@ function noteSession(myRow) {
 let hasMoved = false;
 let hasPlaced = false;
 const pickFlash = {};   // 아이템 종류별로 마지막에 먹은 시각
+
+// 아이템 세 칸이 아이콘과 숫자뿐이라, 크아를 모르는 사람은 "물줄기 3"이
+// 뭘 뜻하는지 감이 안 온다는 지적을 받았다. 설명 문장을 늘 띄우면 판을
+// 가리므로, WASD 힌트와 같은 방식으로 **그 종류를 처음 먹은 순간에만**
+// 한 줄 띄우고 사라지게 한다 - 아는 사람에게는 한 번도 안 보일 수 있다
+const seenItemHint = new Set();
+let itemHint = null;   // { kind, text, born }
+const ITEM_HINT_TEXT = {
+  [ITEM.BUBBLE]: '한 번에 놓는 개수가 는다',
+  [ITEM.POWER]:  '터지는 길이가 는다',
+  [ITEM.ROLLER]: '걷는 속도가 는다',
+};
 
 // ── 한 판의 기록 ─────────────────────────────────────────────
 //
@@ -214,7 +231,12 @@ function statRows() {
 const PLAYER_COLORS = [
   '#ff6b6b', '#4dabf7', '#51cf66', '#ffd43b', '#cc5de8', '#ff922b',
   '#20c997', '#f06595', '#748ffc', '#94d82d', '#ffa8a8', '#66d9e8',
-  '#e599f7', '#ffc078', '#63e6be', '#faa2c1', '#a5d8ff', '#d8f5a2',
+  // P14 는 원래 #63e6be(민트) 였다. 1형 색맹(protanopia) 시뮬레이터로 24색을
+  // 다 돌려보니 P4(#cc5de8, 보라)와 시뮬레이션 거리 2.4 - 사람 눈에는 보라와
+  // 민트인데 그쪽 눈에는 사실상 같은 색으로 뭉친다. 얼굴 그림(동물)이 달라서
+  // 완전히 못 가리는 건 아니지만, 색만 보는 자리(HUD 생존자 띠 등)에서는
+  // 둘이 겹친다. 짙은 올리브(#3f7d20)로 바꿔서 재확인 - 최악의 쌍이 2.4 -> 13.7
+  '#e599f7', '#ffc078', '#3f7d20', '#faa2c1', '#a5d8ff', '#d8f5a2',
   '#ffe066', '#b197fc', '#38d9a9', '#ff8787', '#4dd4ac', '#f783ac',
 ];
 const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
@@ -247,16 +269,23 @@ function resize() {
   // 캐릭터가 작게 느껴지던 것의 절반이 여기서 풀린다
   const availW = Math.max(360, window.innerWidth  - 16);
   const availH = Math.max(320, window.innerHeight - 34);
-  // 타일 크기를 **16의 배수로** 맞춘다.
+  // 타일 크기를 **정수로만** 맞춘다. (예전엔 16의 배수로만 맞췄었다 - 아래 참고)
   //
-  // 벽과 상자를 16x16 도트 지도로 찍으므로, 타일이 16의 배수가 아니면
-  // 한 점이 정수 픽셀로 안 떨어진다. 38px 타일이면 점 하나가 2.375px 이라
-  // 반올림해서 2px 로 찍고 나면 **한 칸에 6픽셀이 남아 벽 사이에 틈이 생긴다.**
+  // 9/4에 화면 디자인을 다시 보면서 걸린 게 있다. 창 높이가 애매하게 걸치면
+  // (예: 세로 여유가 30px) 16의 배수로 내림해서 16px로 떨어졌다 - 30이면
+  // 24나 28도 되는데 굳이 16까지 반토막 낸 것이다. 그 결과가 "게임 화면이
+  // 창의 반의 반밖에 안 되고 나머지는 다 검은 여백" 이었다.
   //
-  // 픽셀 게임이 배율을 정수로만 쓰는 이유가 이것이다. 조금 작아지더라도
-  // 점이 점으로 떨어지는 쪽이 낫다 — 틈이 벌어진 벽은 벽으로 안 보인다
+  // 16의 배수를 고집한 이유는 옛날 도트 지도(WALL_DOTS 등, 16x16 격자)가
+  // 정수 배율이 아니면 점 사이에 틈이 생겨서였다. 그런데 지금은 그 도트
+  // 지도가 **그림을 못 받았을 때만 쓰는 예비용**이고(README), 실제로 켜져
+  // 있는 그림(구운 스프라이트, bakeTileSprite)은 캔버스로 확대·축소해서
+  // 그리므로 배율이 16의 배수가 아니어도 점이 안 갈라진다 - 필요하지도
+  // 않은 제약 때문에 화면 반을 검게 비워두고 있었다.
+  //
+  // 정수(반올림 없이 내림)면 충분하다 - 소수점 배율만 아니면 그림이 어긋나지 않는다
   const raw = Math.floor(Math.min(availW / view.w, availH / view.h));
-  const ts = Math.max(16, Math.min(64, Math.floor(raw / 16) * 16));
+  const ts = Math.max(16, Math.min(64, raw));
 
   Art.setScale(ts);
 
@@ -695,58 +724,69 @@ function drawWorld(now, dt) {
 
   ctx.drawImage(floorCv, 0, 0, G.C.mapW * T, G.C.mapH * T);
 
-  // ── 물 ─────────────────────────────────────────────────────
+  // ── 구역 경계 ────────────────────────────────────────────────
+  //
+  // 미니맵에는 9칸이 또렷이 나뉘어 있는데, 정작 걸어다니는 메인 화면에는
+  // 그 경계가 아예 안 보인다는 지적을 받았다 - 지금 몇 번 구역에 있는지,
+  // 옆 구역이 언제 시작하는지를 바닥 무늬만 보고는 못 가른다.
+  // 바닥과 소품보다 위, 물·소품보다는 아래(밟는 금이지 그림 위에 뜨는
+  // UI 가 아니다)에 얇은 선만 긋는다 - 진하게 그으면 그 자체가 벽처럼
+  // 보여서 지나갈 수 있는 자리를 막힌 것으로 착각하게 만든다
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = Math.max(1, Math.round(T * 0.05));
+  for (let sx = 1; sx < 3; ++sx) {
+    const gx = sx * G.C.sectorW * T;
+    ctx.beginPath();
+    ctx.moveTo(gx, 0); ctx.lineTo(gx, G.C.mapH * T);
+    ctx.stroke();
+  }
+  for (let sy = 1; sy < 3; ++sy) {
+    const gy = sy * G.C.sectorH * T;
+    ctx.beginPath();
+    ctx.moveTo(0, gy); ctx.lineTo(G.C.mapW * T, gy);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── 물(예고만) ───────────────────────────────────────────────
+  //
+  // 9/4 - 다 잠긴 구역(SECT.FLOODED)과 마지막 안전지대 밖 물은 여기서
+  // 안 그린다. 여기는 아직 소품(집·상자·사람)을 그리기 전이라, 여기서
+  // 그리면 물이 소품보다 **뒤에** 깔려서 "잠긴 구역인데 집은 멀쩡해 보인다"
+  // 는 지적을 받았다. 잠긴 곳은 땅이든 집이든 다 물에 잠긴 것으로 보여야
+  // 하므로, 그 둘은 소품을 다 그린 뒤(아래 paintSorted 다음)로 옮겼다.
+  // 아직 안 잠긴 곳의 예고(비·붉은 맥박)만 여기 남는다 - 예고는 소품을
+  // 가릴 필요가 없는 배경 신호다
   for (let s = 0; s < 9; ++s) {
+    if (G.sectors[s] !== SECT.WARNING) continue;
+
     const sx = (s % 3) * G.C.sectorW * T;
     const sy = Math.floor(s / 3) * G.C.sectorH * T;
     const w  = G.C.sectorW * T, h = G.C.sectorH * T;
 
-    if (G.sectors[s] === SECT.FLOODED) {
-      Art.water(ctx, sx, sy, w, h, now);
-    }
-    else if (G.sectors[s] === SECT.WARNING) {
-      // 비가 먼저 내린다. 테두리를 그으면 그건 UI 인데,
-      // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
-      if (Math.random() < 0.55) FX.rain(sx, sy, w, h, T, now, 2);
+    // 비가 먼저 내린다. 테두리를 그으면 그건 UI 인데,
+    // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
+    if (Math.random() < 0.55) FX.rain(sx, sy, w, h, T, now, 2);
 
-      ctx.fillStyle = 'rgba(20,60,110,' + (0.08 + 0.10 * warnBeat(s, now)) + ')';
-      ctx.fillRect(sx, sy, w, h);
+    ctx.fillStyle = 'rgba(20,60,110,' + (0.08 + 0.10 * warnBeat(s, now)) + ')';
+    ctx.fillRect(sx, sy, w, h);
 
-      // **구역 전체가 붉게 뛴다.**
-      //
-      // 전에는 구역 둘레에 붉은 네모를 그렸다. 그건 지도에 친 표시지
-      // 여기 있으면 안 된다는 말이 아니다. 판 위에 겹쳐서 뛰게 하면
-      // 눈을 감아도 보이는 종류의 신호가 된다.
-      //
-      // 색을 옅게 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
-      // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다.
-      //
-      // 0.30 이었는데 바닥이 채도 높은 사막·마을 그림이 된 뒤로는 최대치에서도
-      // 거의 안 보였다. 물이 찼을 때와 같은 문제였다 - 옅게 쓰겠다는 원칙은
-      // 맞는데, 옅음의 기준을 옛날 칙칙한 바닥에 맞춰놓은 채로 안 고쳤다.
-      // 0.46 까지는 올려도 바닥 무늬가 죽지 않으면서 눈에는 뛴다
-      ctx.fillStyle = 'rgba(210,40,30,' + (0.46 * warnBeat(s, now)) + ')';
-      ctx.fillRect(sx, sy, w, h);
-    }
-  }
-
-  // 최종 구역 안에서 차오르는 물. 안전한 사각형 바깥이 전부 물이다.
-  //
-  // 사각형은 끝까지 줄어들어서 마지막에는 뒤집힌다 (x0 > x1). 그때는
-  // 안전한 칸이 하나도 없다는 뜻이라 판 전체가 물이다.
-  // 뒤집힌 사각형을 그대로 네 조각으로 나누면 높이가 음수인 조각이 나온다
-  if (G.ring.on) {
-    const empty = G.ring.x0 > G.ring.x1 || G.ring.y0 > G.ring.y1;
-    if (empty) {
-      Art.water(ctx, 0, 0, W, H, now);
-    } else {
-      const x0 = G.ring.x0 * T, y0 = G.ring.y0 * T;
-      const x1 = (G.ring.x1 + 1) * T, y1 = (G.ring.y1 + 1) * T;
-      Art.water(ctx, 0, 0, W, y0, now);
-      Art.water(ctx, 0, y1, W, H - y1, now);
-      Art.water(ctx, 0, y0, x0, y1 - y0, now);
-      Art.water(ctx, x1, y0, W - x1, y1 - y0, now);
-    }
+    // **구역 전체가 붉게 뛴다.**
+    //
+    // 전에는 구역 둘레에 붉은 네모를 그렸다. 그건 지도에 친 표시지
+    // 여기 있으면 안 된다는 말이 아니다. 판 위에 겹쳐서 뛰게 하면
+    // 눈을 감아도 보이는 종류의 신호가 된다.
+    //
+    // 색을 옅게 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
+    // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다.
+    //
+    // 0.30 이었는데 바닥이 채도 높은 사막·마을 그림이 된 뒤로는 최대치에서도
+    // 거의 안 보였다. 물이 찼을 때와 같은 문제였다 - 옅게 쓰겠다는 원칙은
+    // 맞는데, 옅음의 기준을 옛날 칙칙한 바닥에 맞춰놓은 채로 안 고쳤다.
+    // 0.46 까지는 올려도 바닥 무늬가 죽지 않으면서 눈에는 뛴다
+    ctx.fillStyle = 'rgba(210,40,30,' + (0.46 * warnBeat(s, now)) + ')';
+    ctx.fillRect(sx, sy, w, h);
   }
 
   Art.foamEdge(ctx, foamSegs, now);
@@ -873,10 +913,39 @@ function drawWorld(now, dt) {
     Art.drawPose(ctx, d.x, d.y, T * 0.40, d.animal, kind, fade);
   }
 
-  // 걸치기로 산 칸. 파티클보다 위에 그려야 고리에 안 묻힌다
-  drawGrazeCell(now, T);
-
   FX.draw(ctx, now);
+
+  // ── 물(다 잠긴 곳) ───────────────────────────────────────────
+  //
+  // 소품·사람·이펙트를 전부 그린 **다음** 덮는다. 집이든 상자든 사람이든
+  // 잠긴 구역에 있으면 다 같이 물에 잠긴 것으로 보여야 한다 - 예고(위)와
+  // 다르게 여기는 실제로 물이 찬 곳이라 가릴 게 없다. 위에서 안 그리고
+  // 여기로 옮긴 이유가 이거다
+  for (let s = 0; s < 9; ++s) {
+    if (G.sectors[s] !== SECT.FLOODED) continue;
+    const sx = (s % 3) * G.C.sectorW * T;
+    const sy = Math.floor(s / 3) * G.C.sectorH * T;
+    Art.water(ctx, sx, sy, G.C.sectorW * T, G.C.sectorH * T, now);
+  }
+
+  // 최종 구역 안에서 차오르는 물. 안전한 사각형 바깥이 전부 물이다.
+  //
+  // 사각형은 끝까지 줄어들어서 마지막에는 뒤집힌다 (x0 > x1). 그때는
+  // 안전한 칸이 하나도 없다는 뜻이라 판 전체가 물이다.
+  // 뒤집힌 사각형을 그대로 네 조각으로 나누면 높이가 음수인 조각이 나온다
+  if (G.ring.on) {
+    const empty = G.ring.x0 > G.ring.x1 || G.ring.y0 > G.ring.y1;
+    if (empty) {
+      Art.water(ctx, 0, 0, W, H, now);
+    } else {
+      const x0 = G.ring.x0 * T, y0 = G.ring.y0 * T;
+      const x1 = (G.ring.x1 + 1) * T, y1 = (G.ring.y1 + 1) * T;
+      Art.water(ctx, 0, 0, W, y0, now);
+      Art.water(ctx, 0, y1, W, H - y1, now);
+      Art.water(ctx, 0, y0, x0, y1 - y0, now);
+      Art.water(ctx, x1, y0, W - x1, y1 - y0, now);
+    }
+  }
 
   // ── 안개 ───────────────────────────────────────────────────
   //
@@ -974,36 +1043,6 @@ function drawWorld(now, dt) {
   FX.done(ctx);
 }
 
-// 걸치기로 산 칸을 잠깐 보여준다.
-//
-// 판 좌표계 안에서 그린다. 0.6초 동안 테두리가 조여들며 사라진다 —
-// 남아 있으면 다음 판단을 방해하고, 너무 짧으면 못 본다
-function drawGrazeCell(now, T) {
-  if (!grazeCell) return;
-
-  const t = (now - grazeCell.at) / 600;
-  if (t >= 1) { grazeCell = null; return; }
-
-  const k = 1 - t;
-  const grow = (1 - k) * T * 0.35;
-  const px = grazeCell.x * T - grow, py = grazeCell.y * T - grow;
-  const sz = T + grow * 2;
-
-  ctx.save();
-  ctx.strokeStyle = 'rgba(160,235,255,' + (0.85 * k) + ')';
-  ctx.lineWidth = Math.max(2, T * 0.07 * k);
-  ctx.strokeRect(px, py, sz, sz);
-
-  // 연속으로 성공했으면 테두리가 겹으로 늘어난다. 숫자를 안 쓰고 겹으로 센다
-  const layers = Math.min(grazeCell.n || 1, 4);
-  for (let i = 1; i < layers; ++i) {
-    const o = i * T * 0.16 * (1 + (1 - k));
-    ctx.strokeStyle = 'rgba(160,235,255,' + (0.4 * k / i) + ')';
-    ctx.strokeRect(px - o, py - o, sz + o * 2, sz + o * 2);
-  }
-  ctx.restore();
-}
-
 // 갇힌 지 얼마나 됐나. 1 이면 방금, 0 이면 곧 풀린다.
 //
 // 서버는 '갇혔다' 만 보내고 남은 틱은 안 보낸다. 익사와 달리 본인만 아는 정보가
@@ -1056,11 +1095,23 @@ function drawPlayer(id, p, alpha, now, T) {
   // 스물넷이 돌아다니면 화면에 흰 네모가 스물넷 깜빡인다. 판이 지저분해진다.
   // 걸치기는 몸이 두 칸에 걸친 것으로 이미 보인다. 네모는 뺀다
 
-  // 내 캐릭터 발밑에만 고리. 스물넷이 엉키면 색만으로는 내가 어디 있는지 못 찾는다
+  // 내 캐릭터 발밑에만 고리. 스물넷이 엉키면 색만으로는 내가 어디 있는지 못 찾는다.
+  //
+  // 흰 테 하나(두께 2)로는 밝은 잔디·모래 바닥 위에서 묻힌다는 지적을 받았다.
+  // 전투 중 "내가 어느 점인지"를 못 찾으면 미니맵이나 색 이름표보다 이게
+  // 먼저 문제다. 색이 다른 고리 두 겹으로 늘렸다 - 바깥은 눈에 잘 띄는
+  // 금색(HUD 강조색과 같다), 안쪽은 기존 흰 테. 두 색이 같이 바닥과
+  // 부딪힐 일은 거의 없다
   if (id === G.myId && !dead) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 + 0.3 * pulse) + ')';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255,224,102,' + (0.55 + 0.35 * pulse) + ')';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(px, py + r * 0.95, r * (1.18 + 0.08 * pulse), r * 0.46, 0, 0, 7);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.6 + 0.35 * pulse) + ')';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.ellipse(px, py + r * 0.95, r * (1.0 + 0.06 * pulse), r * 0.38, 0, 0, 7);
     ctx.stroke();
@@ -1090,6 +1141,24 @@ function drawPlayer(id, p, alpha, now, T) {
   const freeing = p.freeUntil && now < p.freeUntil
                   && Art.drawPose(ctx, px, py, r, animalOf(id), 'free');
 
+  // 물풍선을 놓는 순간 몸이 한 번 움츠러들었다 편다.
+  //
+  // 리서치에서 제일 값싸고 제일 효과가 큰 기법으로 꼽힌 게 이거다 —
+  // 새 그림을 하나도 안 그려도(기존 3프레임 그대로) 캔버스 스케일만
+  // 잠깐 눌렀다 펴면 "무게가 실렸다"는 게 느껴진다.
+  // 발밑을 기준점으로 잡는다 - 배꼽을 기준으로 누르면 발이 붕 뜬다
+  const sqT = squashAt.has(id) ? now - squashAt.get(id) : 9999;
+  const squashOn = sqT >= 0 && sqT < 220;
+  if (squashOn) {
+    const k = Math.exp(-sqT / 90) * Math.cos(sqT / 220 * Math.PI * 2.2);
+    const sx = 1 + 0.16 * k, sy = 1 - 0.16 * k;
+    const fx = px, fy = py + r * 1.4;
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.scale(sx, sy);
+    ctx.translate(-fx, -fy);
+  }
+
   if (!freeing) Art.drawChar(ctx, px, py, r, colorOf(id), {
     // 내 얼굴만 미리 돌린다. 남의 것은 서버가 준 그대로다 —
     // 남이 뭘 누르고 있는지는 여기서 알 길이 없다
@@ -1104,6 +1173,8 @@ function drawPlayer(id, p, alpha, now, T) {
     t: now,
     danger: id === G.myId ? danger : false,
   });
+
+  if (squashOn) ctx.restore();
 
   // 갇힘. 물방울이 통째로 씌워진다.
   // 글자를 안 쓴다. 갇혔다는 건 이 그림 하나로 다 보인다.
@@ -1186,16 +1257,34 @@ function drawPlayer(id, p, alpha, now, T) {
 
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       Art.rr(ctx, bx - 1, by - 1, bw + 2, bh + 2, 2); ctx.fill();
-      ctx.fillStyle = bar > 0.4 ? '#ff9f43' : '#ff4d4d';
+      const urgent = bar <= 0.4;
+      ctx.fillStyle = urgent ? '#ff4d4d' : '#ff9f43';
       ctx.fillRect(bx, by, bw * bar, bh);
 
-      ctx.font = '800 ' + Math.round(T * 0.62) + 'px system-ui';
+      // 익사 직전 숫자가 흰 글씨 하나뿐이라, 밝은 바닥(모래·잔디) 위에서
+      // 잘 안 읽힌다는 지적을 받았다 - 이 게임에서 제일 위급한 순간인데
+      // 정작 그 순간 정보가 제일 안 보였다.
+      //
+      // 셋을 더한다: ① 숫자 뒤에 어두운 알약 배경을 깔아서 바닥 색과
+      // 상관없이 대비를 만든다 ② 글자를 키운다(0.62 -> 0.95) ③ 남은 시간이
+      // 급해지면(0.4 이하) 숫자도 바처럼 빨갛게 바뀌고 살짝 커진다 -
+      // 색이 바뀌는 게 눈에는 숫자를 다시 읽는 것보다 먼저 들어온다
+      const numSize = T * (urgent ? 1.02 : 0.95);
+      const numY = by - T * 0.28;
+      ctx.font = '800 ' + Math.round(numSize) + 'px system-ui';
+      const numText = left.toFixed(1);
+      const numW = ctx.measureText(numText).width;
+
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      Art.rr(ctx, px - numW / 2 - 5, numY - numSize * 0.82, numW + 10, numSize * 0.92, 4);
+      ctx.fill();
+
       ctx.textAlign = 'center';
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-      ctx.strokeText(left.toFixed(1), px, by - T * 0.20);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(left.toFixed(1), px, by - T * 0.20);
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(numText, px, numY);
+      ctx.fillStyle = urgent ? '#ff6b6b' : '#fff';
+      ctx.fillText(numText, px, numY);
       ctx.textAlign = 'left';
     }
   }
@@ -1549,6 +1638,27 @@ function drawHUD(now) {
         ctx.fillRect(x + 6 + m * ((cell - 12) / st.max), by + 6,
                      (cell - 12) / st.max - 2, 3);
       }
+
+      // 이 종류를 처음 먹은 순간에만 한 줄 설명이 칸 위로 떠올랐다 사라진다.
+      // "물줄기 3" 이라는 숫자만으로는 크아를 모르는 사람에게 아무 뜻이 없다는
+      // 지적을 받았다 - 그렇다고 늘 띄우면 판을 아는 사람에게는 방해다
+      if (itemHint && itemHint.kind === st.kind) {
+        const ht = now - itemHint.born;
+        if (ht < 2200) {
+          const rise = Math.min(1, ht / 300);
+          const fade = ht < 1700 ? 1 : 1 - (ht - 1700) / 500;
+          ctx.save();
+          ctx.globalAlpha = fade;
+          const hy = by - 10 - rise * 6;
+          ctx.font = '600 11px "Pretendard", "Segoe UI", system-ui, sans-serif';
+          const tw = ctx.measureText(itemHint.text).width;
+          panel(x + cell / 2 - tw / 2 - 8, hy - 16, tw + 16, 22);
+          label(itemHint.text, x + cell / 2, hy, 11, st.c, 'center');
+          ctx.restore();
+        } else {
+          itemHint = null;
+        }
+      }
     });
   }
 
@@ -1557,7 +1667,9 @@ function drawHUD(now) {
   // 지금은 판이 다 보이니 없어도 된다. 9/3 에 AOI 를 붙이면 화면이 한 구역으로
   // 좁아진다. 그때 어디가 잠겼는지 못 보면 도망칠 방향을 못 정한다
   {
-    const cell = 17, gap = 3, pad = 10;
+    // 17px 칸에 10px 테두리면 액자가 지도보다 커 보인다는 지적을 받았다.
+    // 칸을 키우고 테두리는 그대로 둔다 - 액자 두께는 그대로인데 비율로는 작아진다
+    const cell = 22, gap = 3, pad = 8;
     const mw = 3 * cell + 2 * gap;
 
     // 아이템 패널과 같은 이유로 오른쪽 여백에 놓는다.
@@ -1585,11 +1697,25 @@ function drawHUD(now) {
       const s = sectorOf(p.jtx, p.jty);
       const gx = mx + (s % 3) * (cell + gap) + cell / 2;
       const gy = my + Math.floor(s / 3) * (cell + gap) + cell / 2;
+      const dx = gx + (id % 3 - 1) * 4, dy = gy + ((id / 3 | 0) % 3 - 1) * 4;
+
+      // 내 점이 흰색·1.2배 크기라는 것만으로는 구역 하나에 여럿이 몰렸을 때
+      // 점 스무 개 사이에서 안 찾아진다는 지적을 받았다 - 급한 순간 "내가
+      // 어디 있나"를 메인 화면으로 눈을 돌려 다시 확인해야 했다는 뜻이다.
+      // 색이나 크기가 아니라 **깜빡이는 고리**를 하나 더 두른다 - 움직이는
+      // 것은 가만히 있는 점들 사이에서 시야 구석으로도 걸린다
+      if (id === G.myId) {
+        const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + 0.45 * pulse) + ')';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 3.5 + pulse * 2, 0, 7);
+        ctx.stroke();
+      }
 
       ctx.fillStyle = (id === G.myId) ? '#fff' : colorOf(id);
       ctx.beginPath();
-      ctx.arc(gx + (id % 3 - 1) * 4, gy + ((id / 3 | 0) % 3 - 1) * 4,
-              id === G.myId ? 3 : 1.8, 0, 7);
+      ctx.arc(dx, dy, id === G.myId ? 3 : 1.8, 0, 7);
       ctx.fill();
     }
   }
@@ -1662,6 +1788,8 @@ function drawHUD(now) {
     // 이 순간은 "지금 못 움직인다" 를 알리는 게 유일한 목적이라 세게 어둡힌다
     scrim(0.62);
 
+    const color = COUNTDOWN_COLOR[left] || '#fff';
+
     // 숫자가 튀어나왔다가 커지며 사라진다. 등속으로 하면 시계고, 이러면 카운트다운이다.
     //
     // 사라지는 쪽을 0.75 에서 0.45 로 낮췄다. 1초 구간의 뒷부분에서 숫자가
@@ -1672,20 +1800,48 @@ function drawHUD(now) {
     const k = 0.8 + Art.overshoot(Math.min(1, inSec * 4)) * 0.35 + inSec * 0.5;
     ctx.translate(W / 2, H / 2);
     ctx.scale(k, k);
-    bigNum(String(left), 0, 26, 80, '#fff', 'center');
+    bigNum(String(left), 0, 26, 80, color, 'center');
     ctx.restore();
 
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 * (1 - inSec)) + ')';
-    ctx.lineWidth = 3;
+    // 고리 두 겹. 안쪽은 숫자와 같은 색으로 두껍게, 바깥은 흰색으로 얇게 -
+    // 색 있는 파문이 퍼지고 그 뒤를 흰 테두리가 한 번 더 따라가는 것처럼 보인다.
+    // 하나만 그렸을 때는 "원이 커진다"였는데, 둘이 다른 속도로 퍼지니
+    // "무언가 밀려나간다"로 읽힌다
+    ctx.save();
+    ctx.globalAlpha = 0.55 * (1 - inSec);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(W / 2, H / 2 - 6, 70 + inSec * 60, 0, 7);
+    ctx.arc(W / 2, H / 2 - 6, 46 + inSec * 50, 0, 7);
     ctx.stroke();
+    ctx.globalAlpha = 0.4 * (1 - inSec);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2 - 6, 70 + inSec * 66, 0, 7);
+    ctx.stroke();
+    ctx.restore();
   }
   else if (G.phase === PHASE.WAITING) {
     scrim(0.42);
-    label('한 명 더 들어오면 시작한다', W / 2, H / 2, 20, '#e8f2ff', 'center', 1);
+
+    // 처음 켠 사람이 이 화면에서 제일 오래 멈춰 있는다.
+    //
+    // "한 명 더 들어오면 시작한다"는 지금 상태고, 이 게임이 뭘 하는
+    // 게임인지는 아무 데도 안 적혀 있었다. 낯선 사람이 30초 안에
+    // "지금 뭘 하는 게임이지" 에 답을 못 찾으면 그냥 탭을 닫는다 -
+    // 그 답을 화면 어디에서도 찾을 수 없었던 게 이 화면의 진짜 문제였다
+    const bw = Math.min(BW - 40, 460), bh = 118;
+    const bx = BX + (BW - bw) / 2, by = H / 2 - bh / 2;
+    panel(bx, by, bw, bh);
+
+    label('물풍선 배틀로얄', bx + bw / 2, by + 30, 18, '#ffe066', 'center', 1);
+    label('24명 중 마지막까지 남는 한 명이 이긴다',
+          bx + bw / 2, by + 54, 13, 'rgba(255,238,214,0.85)', 'center');
+    label('한 명 더 들어오면 시작한다',
+          bx + bw / 2, by + 80, 12, 'rgba(255,238,214,0.5)', 'center');
     label('다른 탭에서 같은 주소를 한 번 더 열면 된다',
-          W / 2, H / 2 + 26, 12, 'rgba(255,255,255,0.45)', 'center');
+          bx + bw / 2, by + 100, 11, 'rgba(255,238,214,0.35)', 'center');
   }
   else if (G.phase === PHASE.OVER) {
     drawResults(now);
@@ -1716,10 +1872,34 @@ function drawHUD(now) {
     }
   }
 
+  // 카운트다운이 끝나고 처음 움직일 수 있게 된 순간.
+  //
+  // 숫자가 3-2-1로 색까지 바뀌며 조여들다가, 정작 시작하면 화면에서 아무
+  // 표시도 없이 조용히 풀리면 그동안 쌓은 긴장이 그냥 샌다. 딱 0.4초만
+  // "출발!"을 세게 띄웠다 지운다 - 그 뒤로는 화면에서 완전히 빠져서
+  // 실제 조작을 가리지 않는다
+  if (gameTime - goAt < 400) {
+    const t = (gameTime - goAt) / 400;
+    ctx.save();
+    ctx.globalAlpha = 1 - t * t;
+    const k = 1.3 - Art.overshoot(Math.min(1, t * 2.5)) * 0.3;
+    ctx.translate(W / 2, H * 0.38);
+    ctx.scale(k, k);
+    label('출발!', 0, 0, 34, '#ffe066', 'center', 3);
+    ctx.restore();
+  }
+
   if (!G.connected) {
+    // 9/4에 대기 화면은 판때기로 맞췄는데 이 화면만 옛날처럼 맨 글자였다.
+    // 어쩌다 한 번 보는 화면이라고 대충 두면, 하필 그 순간에 "어? 이 게임
+    // 왜 이렇게 안 다듬어졌지"가 나온다 - 잘 안 보이는 화면일수록 놓치기
+    // 쉽고, 놓친 걸 남이 먼저 본다
     scrim(0.6);
-    label('서버와 끊겼다', W / 2, H / 2, 20, '#ff8f8f', 'center', 1);
-    label('2초마다 다시 붙어 본다', W / 2, H / 2 + 24, 12, 'rgba(255,255,255,0.5)', 'center');
+    const bw = Math.min(BW - 40, 360), bh = 68;
+    const bx = BX + (BW - bw) / 2, by = H / 2 - bh / 2;
+    panel(bx, by, bw, bh);
+    label('서버와 끊겼다', bx + bw / 2, by + 30, 18, '#ff8f8f', 'center', 1);
+    label('2초마다 다시 붙어 본다', bx + bw / 2, by + 52, 12, 'rgba(255,238,214,0.6)', 'center');
   }
 }
 
@@ -1944,11 +2124,23 @@ Hooks.mapRow = function (y) {
   floorDirty = true;
 };
 
+Hooks.landmarks = function () {
+  // 집·우물·텐트·장터가 정확히 어디 서는지 서버가 못 박아 보낸 것.
+  // art.js 는 이제 벽 모양을 보고 되짚어 추측하지 않고 이 표를 그대로 읽는다
+  Art.setLandmarks(G.landmarks);
+  floorDirty = true;
+};
+
 Hooks.conn = function () {
   const el = document.getElementById('conn');
   if (!el) return;
   el.textContent = G.connected ? '연결됨' : '끊김';
   el.className = G.connected ? 'on' : 'off';
+
+  // 옆에 붙은 네모 표시등. 글자만 색이 바뀌고 이 표시등은 늘 빨강으로
+  // 굳어 있던 적이 있다 - class 를 따로 안 씌워서다. 글자와 같이 켠다
+  const dot = document.getElementById('connDot');
+  if (dot) dot.className = 'dot ' + (G.connected ? 'on' : 'off');
 };
 
 Hooks.snapshot = function (prevPhase) {
@@ -2004,11 +2196,27 @@ Hooks.snapshot = function (prevPhase) {
 
   if (G.phase === PHASE.COUNTDOWN) {
     const sec = Math.floor(G.phaseTicks / G.C.tickRate);
-    if (sec !== lastBeep) { lastBeep = sec; Sound.tick(sec); }
+    if (sec !== lastBeep) {
+      lastBeep = sec;
+      Sound.tick(sec);
+
+      // 숫자가 바뀌는 그 순간에 화면도 같이 친다. 소리만 나고 화면은 가만히
+      // 있으면 "숫자가 넘어갔다" 를 귀로만 알아채야 한다 - 눈으로도 오게 한다
+      const n = 3 - sec;
+      FX.punch(n === 1 ? 0.7 : 0.35);
+      FX.flashOut(COUNTDOWN_COLOR[n] || '#ffffff', n === 1 ? 220 : 150, gameTime);
+    }
   }
   if (prevPhase !== G.phase) {
     if (G.phase === PHASE.COUNTDOWN) resetStats();
-    if (G.phase === PHASE.PLAYING) { Sound.start(); FX.flashOut('#ffffff', 220, gameTime); }
+    if (G.phase === PHASE.PLAYING) {
+      Sound.start();
+      FX.flashOut('#ffffff', 220, gameTime);
+      // 카운트다운 세 박자를 쌓아온 결과물이다. 여기서 제일 세게 친다
+      FX.punch(1.1);
+      FX.shake(0.22);
+      goAt = gameTime;
+    }
     if (G.phase === PHASE.OVER) {
       finishStats();
       noteSession(statRows().find((r) => r.id === G.myId));
@@ -2099,6 +2307,7 @@ Hooks.event = function (type, x, y, who, val) {
     case EVT.BUBBLE:
       FX.pickup(cx, cy, T, now, '#8fd8ff');
       S.place(pan, far);
+      squashAt.set(who, now);   // 놓는 순간 몸이 한 번 움츠러든다
       break;
 
     case EVT.BLOCK:
@@ -2178,7 +2387,12 @@ Hooks.event = function (type, x, y, who, val) {
       }
       if (mine) {
         // 뭘 먹었는지 HUD 의 그 칸이 튀어오른다. 먹은 순간에만 눈이 간다
-        pickFlash[val === ITEM.ULTRA ? ITEM.POWER : val] = now;
+        const hintKind = val === ITEM.ULTRA ? ITEM.POWER : val;
+        pickFlash[hintKind] = now;
+        if (!seenItemHint.has(hintKind) && ITEM_HINT_TEXT[hintKind]) {
+          seenItemHint.add(hintKind);
+          itemHint = { kind: hintKind, text: ITEM_HINT_TEXT[hintKind], born: now };
+        }
         (val === ITEM.ULTRA ? S.ultra(pan, far) : S.item(pan, far));
       }
       break;
@@ -2196,15 +2410,9 @@ Hooks.event = function (type, x, y, who, val) {
     // 글자로 설명하지 않는다. 그 순간에만 **내가 서 있던 판정 칸**을 보여준다.
     // 평소에는 안 그린다 — 스물넷이 늘 네모를 달고 다니면 판이 지저분해진다.
     // '네 몸은 여기 걸쳐 있었고 판정은 이 칸이었다' 가 그림 하나로 전해진다
+    // 9/4 - 걸치기 전용 이펙트·소리를 뺐다(요청). 판정 자체(몸이 두 칸에
+    // 걸치는 것)는 그대로다 - 여기서 빼는 건 그 순간에 붙던 화면·소리뿐이다
     case EVT.GRAZE:
-      FX.graze(cx, cy, T, now, val);
-      S.graze(val, pan, far);
-      if (mine) {
-        grazeCell = { x: x, y: y, at: now, n: val };
-        FX.punch(0.4 + Math.min(val, 4) * 0.2);
-        FX.flashOut('rgba(140,225,255,0.5)', 140, now);
-        FX.stop(40, performance.now());   // 아주 짧게. 몸으로 알리되 끊기면 안 된다
-      }
       break;
 
     // 연쇄. 물풍선이 물풍선을 터뜨린다.
@@ -2402,7 +2610,7 @@ addEventListener('keydown', (e) => {
     if (el) { el.textContent = muted ? '소리 꺼짐' : '소리 켜짐'; el.className = muted ? 'off' : 'on'; }
     return;
   }
-  if (k === 'r') { sendRestart(); return; }
+  if (k === 'r') { if (confirmRestart()) sendRestart(); return; }
   if (e.key === ' ') { hasPlaced = true; sendPlace(); return; }
 
   if (!held.has(k)) { held.add(k); pushInput(); }
@@ -2417,11 +2625,26 @@ addEventListener('keyup', (e) => {
 addEventListener('blur', () => { held.clear(); pushInput(); });
 addEventListener('resize', () => { if (G.C) resize(); });
 
+// 다시 시작은 **판 전체를 즉시 끝낸다.** main.cpp 쪽 주석에 그대로
+// "시험용" 이라고 적혀 있다 — 혼자 봇 채워놓고 맵을 빨리 돌려볼 때 쓰라고
+// 남겨둔 것이지, 여럿이 보는 판에서 아무나 누르게 둘 자리가 아니다.
+//
+// 대기 화면이 "다른 탭에서 같은 주소를 한 번 더 열어보라"고 권하는데,
+// 그렇게 두 탭을 띄운 사람이 (실수든 호기심이든) R을 누르면 상대방 판이
+// 예고 없이 통째로 사라진다 - 데모 중에 이게 한 번이라도 일어나면
+// "버그인가?" 소리가 나온다. 아직 남이 살아 있는 판에서만 한 번 되묻는다
+function confirmRestart() {
+  if (G.phase === PHASE.PLAYING && G.aliveCount > 1) {
+    return confirm('아직 다른 사람이 살아있는 판이다. 그래도 다시 시작할까?');
+  }
+  return true;
+}
+
 const restartBtn = document.getElementById('restart');
 if (restartBtn) {
   restartBtn.addEventListener('click', () => {
     Sound.wake();
-    sendRestart();
+    if (confirmRestart()) sendRestart();
     restartBtn.blur();   // 눌린 채로 두면 Space 가 버튼으로 간다
   });
 }

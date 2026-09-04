@@ -8,7 +8,7 @@
 // 그래서 tools/clienttest.js 가 화면 없이도 이 파일을 그대로 돌릴 수 있다.
 
 const PKT  = { ECHO:1, MOVE:2, PLACE:3, EVENT:4, WELCOME:5, MAPROW:6, SNAPSHOT:7,
-               RESTART:8 };
+               RESTART:8, LANDMARKS:9 };
 const EVT  = { GRAZE:1, CHAIN:2, TRAP:3, BREAK:4, DEATH:5, ITEM:6, BLOCK:7, BUBBLE:8, BLAST:9,
                FLOOD_WARN:10, FLOOD:11, DROWN:12, DROP:13, RING:14, POP:15, PUSH:16,
                ITEM_GONE:17 };
@@ -47,6 +47,10 @@ const G = {
   // 아홉 바이트를 더 얹어서 얻는 게 화면 깜빡임의 정확도뿐이다.
   // 예고는 한 번만 오고 그 뒤로는 시계가 알아서 흐른다
   floodAt: new Array(9).fill(0),
+  // 집·우물·텐트·장터가 실제로 서는 자리. 서버가 PKT.LANDMARKS 로 못 박아 준다.
+  // { x, y, kind, theme } 목록 - 화면은 이걸 그대로 그린다(벽 모양을 보고
+  // 되짚어 추측하지 않는다). art.js 의 drawProp 이 읽는다
+  landmarks: [],
   players: new Map(),
   bubbles: [],
   blasts: [],                 // {x,y,born,until}
@@ -65,16 +69,30 @@ const G = {
 
 // 화면 쪽이 갈아 끼운다. 여기서는 비어 있어도 돌아간다
 const Hooks = {
-  welcome() {}, mapRow() {}, snapshot() {}, event() {}, conn() {},
+  welcome() {}, mapRow() {}, snapshot() {}, event() {}, conn() {}, landmarks() {},
 };
 
 // ── 받은 패킷 풀기 ───────────────────────────────────────────
 function onPacket(v) {
   const id = v.getUint16(2, true);
-  if (id === PKT.WELCOME)  return onWelcome(v);
-  if (id === PKT.MAPROW)   return onMapRow(v);
-  if (id === PKT.SNAPSHOT) return onSnapshot(v);
-  if (id === PKT.EVENT)    return onEvent(v);
+  if (id === PKT.WELCOME)   return onWelcome(v);
+  if (id === PKT.MAPROW)    return onMapRow(v);
+  if (id === PKT.SNAPSHOT)  return onSnapshot(v);
+  if (id === PKT.EVENT)     return onEvent(v);
+  if (id === PKT.LANDMARKS) return onLandmarks(v);
+}
+
+// LandmarkEntry 가 { x, y, kind, theme } 네 바이트씩 이어 붙는다 (Protocol.h)
+function onLandmarks(v) {
+  const count = v.getUint8(HEADER_SIZE);
+  const list = [];
+  let o = HEADER_SIZE + 1;
+  for (let i = 0; i < count; ++i) {
+    list.push({ x: v.getUint8(o), y: v.getUint8(o + 1), kind: v.getUint8(o + 2), theme: v.getUint8(o + 3) });
+    o += 4;
+  }
+  G.landmarks = list;
+  Hooks.landmarks();
 }
 
 function onWelcome(v) {
@@ -118,6 +136,7 @@ function onWelcome(v) {
   // 다시 시작하면 WELCOME 이 또 온다. 지난 판의 흔적을 지운다
   G.bubbles = [];
   G.blasts  = [];
+  G.landmarks = [];
   G.players.clear();
   G.sectors.fill(SECT.OPEN);
   G.floodAt.fill(0);

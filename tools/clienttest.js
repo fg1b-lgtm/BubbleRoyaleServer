@@ -685,44 +685,36 @@ let pushOk = false, pushFrom = null;
           '사람은 목록에 한 번만 들어간다 (두 번이면 뒤엣것이 늘 앞에 선다)');
   }
 
-  // ── 걸치기가 보이나 ────────────────────────────────────────
+  // ── 걸치기 이펙트가 빠졌나 ───────────────────────────────────
   //
-  // **이 게임의 정체다.** 몸이 타일보다 작아서 두 칸에 걸쳐 설 수 있고,
-  // 판정은 몸 중심 칸으로만 한다. 반 칸 차이로 사는 게 이 게임의 전부다.
-  //
-  // 그런데 처음 하는 사람은 그게 일어난 줄도 모른다. 그래서 그 순간에만
-  // 판정 칸을 보여준다. 회귀가 나면 게임의 정체가 안 보이게 되므로 시험으로 박는다.
-  //
-  // 남이 걸친 것은 안 보여준다. 내 것만 — 남의 판정 칸까지 뜨면 판이 지저분해진다
+  // 9/4 - 판정 칸 표시(네모)와 소리를 뺐다(요청). 판정 자체(몸이 두 칸에
+  // 걸치는 것)는 그대로고, 여기서 확인하는 건 "그 순간에 뭘 안 그리는가"다.
+  // 예전엔 반대로 "내 판정 칸이 보이는가"를 확인했었다 - 요청으로 방향이
+  // 바뀌었으니 시험도 같이 바뀐다
   console.log();
-  console.log('  --- 걸치기 ---');
+  console.log('  --- 걸치기(이펙트 뺀 뒤) ---');
 
   {
     api.FX.reset();
     feed(snapshot(300, 2, false, 4, 0, true));
     now += 16; api.frame(now);
 
-    // 남이 걸쳤다 (who = 3, 나는 0)
-    const beforeOther = calls.strokeRect || 0;
-    feed(event(1, 9, 9, 3, 1));
+    // 그냥 시간만 16ms 흘렸을 때도 아이템 칸 테두리 같은, 걸치기와
+    // 무관한 strokeRect 가 이미 나올 수 있다. 그래서 0과 비교하지 않고
+    // "이벤트가 있든 없든 같은 시간을 흘렸을 때 나오는 개수"를 대조군으로
+    // 삼는다 - 걸치기가 **더 그리게 만들지 않는지**만 본다
+    const beforeCtrl = calls.strokeRect || 0;
     now += 16; api.frame(now);
-    const otherRects = (calls.strokeRect || 0) - beforeOther;
+    const ctrlRects = (calls.strokeRect || 0) - beforeCtrl;
 
-    // 내가 걸쳤다
-    const beforeMine = calls.strokeRect || 0;
-    feed(event(1, 9, 9, 0, 3));
+    const before = calls.strokeRect || 0;
+    feed(event(1, 9, 9, 0, 3));   // 내가 걸쳤다
     now += 16; api.frame(now);
-    const mineRects = (calls.strokeRect || 0) - beforeMine;
+    const rects = (calls.strokeRect || 0) - before;
 
-    console.log('    남이 걸쳤을 때 네모 ' + otherRects + ' 개,'
-                + '  내가 걸쳤을 때 ' + mineRects + ' 개');
-
-    check(mineRects > otherRects,
-          '내가 걸치면 판정 칸이 보인다 (남이 걸친 것은 안 보여준다)');
-
-    // 연속으로 성공하면 테두리가 겹으로 늘어난다. 숫자를 안 쓰고 겹으로 센다
-    check(mineRects >= 3,
-          '연속 걸치기가 겹 수로 보인다 (' + mineRects + ' 겹)');
+    console.log('    아무 일 없이 16ms 흘렀을 때 ' + ctrlRects + ' 개,'
+                + '  걸쳤을 때 ' + rects + ' 개');
+    check(rects === ctrlRects, '걸쳐도 대조군보다 네모를 더 안 그린다 (이펙트 제거)');
   }
 
   // ── 연출이 시간을 쓰는가 ────────────────────────────────────
@@ -916,9 +908,14 @@ let pushOk = false, pushFrom = null;
   // BLAST 는 일부러 조용하다. 폭발 십자는 칸마다 이벤트가 하나씩 오는데,
   // 칸마다 울리면 한 번 터질 때 스무 겹이 쌓여서 뭉개진다.
   // **가운데 한 칸에서만 울린다.** 처음엔 이걸 모르고 '소리 없는 이벤트' 로 잡았다.
-  // 코드가 틀린 게 아니라 시험이 틀렸다. 그래서 의도를 그대로 시험으로 옮긴다
-  check(silent.length === 1 && silent[0] === 'BLAST',
-        '소리 없는 이벤트는 BLAST 하나뿐이다'
+  // 코드가 틀린 게 아니라 시험이 틀렸다. 그래서 의도를 그대로 시험으로 옮긴다.
+  //
+  // GRAZE 도 9/4 부터 조용하다 - 걸치기 전용 이펙트·소리를 빼달라는 요청으로,
+  // 소리도 같이 뺐다
+  const SILENT_ON_PURPOSE = ['BLAST', 'GRAZE'];
+  check(silent.length === SILENT_ON_PURPOSE.length
+        && SILENT_ON_PURPOSE.every((n) => silent.includes(n)),
+        '소리 없는 이벤트는 ' + SILENT_ON_PURPOSE.join(', ') + '뿐이다'
         + (silent.length ? ' (조용한 것: ' + silent.join(', ') + ')' : ''));
 
   // 물풍선이 있던 자리에서 온 BLAST 는 폭발의 중심이다. 거기서는 울려야 한다.

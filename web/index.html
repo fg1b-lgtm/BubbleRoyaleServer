@@ -1,6 +1,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bubble Royale</title>
+<!-- 탭 아이콘. 파일 없이 SVG 를 그대로 박아 넣는다 - 물풍선 아이템 아이콘과
+     같은 모양이라 브라우저 탭에서부터 "이 게임 것" 이 티가 난다.
+     파일이 없으면 브라우저가 기본 지구본을 그리는데, 그러면 탭을 열어놓은
+     채로 여러 개 겹쳐놨을 때 이 게임 탭을 못 찾는다 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='17' r='13' fill='%234aa8e8'/%3E%3Ccircle cx='16' cy='17' r='13' fill='none' stroke='%230a1a34' stroke-width='2'/%3E%3Cellipse cx='12' cy='12' rx='4' ry='3' fill='%23ffffff' opacity='0.85'/%3E%3C/svg%3E">
+
 
 <style>
   /* 판 위의 HUD 는 캔버스가 직접 그린다.
@@ -44,6 +50,19 @@
     font-size: 11px; color: var(--dim);
     overflow: hidden; white-space: nowrap;
   }
+  /* 창이 좁으면(노트북 화면 등) 띠 전체 너비가 넘쳐서 justify-content:center 가
+     양쪽에서 똑같이 잘라낸다 - 로고("BUBBLE ROYALE")가 왼쪽부터 잘려나가는
+     게 그래서였다. 첫 화면에서 로고 이름이 잘려 보이면 그걸로 완성도 평가가
+     끝난다. 넘칠 때는 가운데 정렬을 버리고 왼쪽부터 채운다 - 로고는 절대
+     안 잘리고, 자리가 모자라면 오른쪽 끝(다시 시작 버튼)부터 밀려난다.
+     남는 자리가 더 모자라면 제일 안 중요한 것(키 안내 - 필드 위에 뜨는
+     힌트와 중복이다)부터 숨긴다 */
+  @media (max-width: 900px) {
+    header { justify-content: flex-start; }
+  }
+  @media (max-width: 760px) {
+    .keys { display: none; }
+  }
   /* 위 띠도 판과 같은 재료로 만든다.
      둥근 알약 모양 칩과 그라데이션 글자는 웹 대시보드의 말투다.
      판이 픽셀 아트인데 그 위가 웹이면 두 개가 다른 게임처럼 보인다.
@@ -61,6 +80,8 @@
   .dot { width: 6px; height: 6px; border-radius: 0; background: var(--bad); }
   .on  { color: var(--good); }
   .off { color: var(--bad); }
+  .dot.on  { background: var(--good); }
+  .dot.off { background: var(--bad); }
   .keys { opacity: .6; }
   .keys kbd + kbd { margin-left: 1px; }
 
@@ -83,13 +104,17 @@
     background: var(--wood-mid); color: var(--ink);
     border: 2px solid var(--wood-line); border-radius: 0;
     padding: 2px 10px; font: inherit; font-size: 11px; cursor: pointer;
+    transition: background-color 0.1s, transform 0.05s;
   }
   button:hover { background: var(--wood-lite); border-color: var(--wood-line); }
+  /* 눌렀을 때 한 칸 내려앉는다. hover 만 있으면 클릭해도 "받았다"는 반응이
+     없어서 두 번 누르게 된다 - 나무 판을 실제로 누른 것처럼 살짝 꺼지게 한다 */
+  button:active { background: var(--wood-dark); transform: translateY(1px); }
 </style>
 
 <header>
   <span class="mark">BUBBLE ROYALE</span>
-  <span class="chip"><span class="dot"></span><span id="conn" class="off">연결 안 됨</span></span>
+  <span class="chip"><span id="connDot" class="dot off"></span><span id="conn" class="off">연결 안 됨</span></span>
   <span class="chip"><b id="theme">—</b></span>
   <span class="keys"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 물풍선 <kbd>R</kbd> 다시 <kbd>M</kbd> 소리</span>
   <span class="chip"><span id="sound" class="on">소리 켜짐</span></span>
