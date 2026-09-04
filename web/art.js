@@ -1129,11 +1129,17 @@ const Art = (() => {
       g.clip();
     }
 
-    // 깊이. 가운데로 갈수록 진해진다
+    // 깊이. 가운데로 갈수록 진해진다.
+    //
+    // 0.34~0.52 였다. 바닥이 색만 칠한 시절에는 그걸로 충분했는데,
+    // 지금 바닥은 채도 높은 그림(모래·잔디)이라 반투명 파랑이 다 비쳐 보였다.
+    // **물에 빠져 죽어가는데 바닥이 멀쩡한 사막으로 보이는** 사고였다 -
+    // 눈으로 한 판 돌려보고서야 드러났다. 침수는 이 게임의 핵심 위협이라
+    // 안 보이면 위협이 아니다. 밑에 뭐가 있든 덮을 만큼 진하게 올린다
     const grad = g.createLinearGradient(x0, y0, x0, y0 + h);
-    grad.addColorStop(0,    css(c, 0.34));
-    grad.addColorStop(0.45, css(c, 0.52));
-    grad.addColorStop(1,    css(c, 0.40));
+    grad.addColorStop(0,    css(c, 0.80));
+    grad.addColorStop(0.45, css(c, 0.90));
+    grad.addColorStop(1,    css(c, 0.84));
     g.fillStyle = grad;
     g.fillRect(x0, y0, w, h);
 

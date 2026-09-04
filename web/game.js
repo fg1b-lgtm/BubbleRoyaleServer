@@ -698,7 +698,7 @@ function drawWorld(now, dt) {
       // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
       if (Math.random() < 0.55) FX.rain(sx, sy, w, h, T, now, 2);
 
-      ctx.fillStyle = 'rgba(20,60,110,' + (0.05 + 0.05 * warnBeat(s, now)) + ')';
+      ctx.fillStyle = 'rgba(20,60,110,' + (0.08 + 0.10 * warnBeat(s, now)) + ')';
       ctx.fillRect(sx, sy, w, h);
 
       // **구역 전체가 붉게 뛴다.**
@@ -707,9 +707,14 @@ function drawWorld(now, dt) {
       // 여기 있으면 안 된다는 말이 아니다. 판 위에 겹쳐서 뛰게 하면
       // 눈을 감아도 보이는 종류의 신호가 된다.
       //
-      // 색을 옅게(0.30 까지) 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
-      // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다
-      ctx.fillStyle = 'rgba(210,40,30,' + (0.30 * warnBeat(s, now)) + ')';
+      // 색을 옅게 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
+      // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다.
+      //
+      // 0.30 이었는데 바닥이 채도 높은 사막·마을 그림이 된 뒤로는 최대치에서도
+      // 거의 안 보였다. 물이 찼을 때와 같은 문제였다 - 옅게 쓰겠다는 원칙은
+      // 맞는데, 옅음의 기준을 옛날 칙칙한 바닥에 맞춰놓은 채로 안 고쳤다.
+      // 0.46 까지는 올려도 바닥 무늬가 죽지 않으면서 눈에는 뛴다
+      ctx.fillStyle = 'rgba(210,40,30,' + (0.46 * warnBeat(s, now)) + ')';
       ctx.fillRect(sx, sy, w, h);
     }
   }
@@ -1641,11 +1646,18 @@ function drawHUD(now) {
     const left = Math.max(1, Math.ceil((G.C.tickRate * 3 - G.phaseTicks) / G.C.tickRate));
     const inSec = (G.phaseTicks % G.C.tickRate) / G.C.tickRate;
 
-    scrim(0.40);
+    // 0.40 이었는데 마을 같은 밝은 판 위에서 숫자가 바닥 무늬에 묻혔다.
+    // 0.40*0.7=0.28 정도의 그늘로는 초록 잔디를 못 이긴다 - 찍어보고서야 보였다.
+    // 이 순간은 "지금 못 움직인다" 를 알리는 게 유일한 목적이라 세게 어둡힌다
+    scrim(0.62);
 
-    // 숫자가 튀어나왔다가 커지며 사라진다. 등속으로 하면 시계고, 이러면 카운트다운이다
+    // 숫자가 튀어나왔다가 커지며 사라진다. 등속으로 하면 시계고, 이러면 카운트다운이다.
+    //
+    // 사라지는 쪽을 0.75 에서 0.45 로 낮췄다. 1초 구간의 뒷부분에서 숫자가
+    // 배경과 거의 안 갈리는 밝기까지 떨어져 있었다 - 애니메이션은 살리되
+    // 안 보일 정도로는 안 옅어지게 최소 밝기를 올렸다
     ctx.save();
-    ctx.globalAlpha = 1 - inSec * 0.75;
+    ctx.globalAlpha = 1 - inSec * 0.45;
     const k = 0.8 + Art.overshoot(Math.min(1, inSec * 4)) * 0.35 + inSec * 0.5;
     ctx.translate(W / 2, H / 2);
     ctx.scale(k, k);
