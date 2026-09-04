@@ -250,7 +250,12 @@ const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 // 그리고 동물은 **실루엣**이라 안개 너머와 작은 표에서도 읽힌다
 // 자리 번호가 곧 캐릭터다. 스물넷이 다 다른 얼굴이라 관전할 때 누가 누군지 보인다.
 // 전에는 여덟 개를 돌려 써서 셋이 같은 얼굴이었다
-const animalOf = (id) => id % 24;
+const animalOf = (id) => {
+  // 내 외형은 로컬 프로필에서, 다른 사람은 서버 자리 번호에서 정한다.
+  // 나중에 서버 프로필 동기화를 붙여도 이 선택 지점만 교체하면 된다.
+  if (id === G.myId && window.BubbleSession) return window.BubbleSession.profile.character % 24;
+  return id % 24;
+};
 
 // ── 화면 크기 ────────────────────────────────────────────────
 //
@@ -2546,11 +2551,13 @@ const held = new Set();
 let sentX = 0, sentY = 0;
 
 function inputDir() {
+  const keys = window.BubbleSession ? window.BubbleSession.profile.keys
+    : { up: 'w', down: 's', left: 'a', right: 'd' };
   let dx = 0, dy = 0;
-  if (held.has('ArrowLeft')  || held.has('a')) dx -= 1;
-  if (held.has('ArrowRight') || held.has('d')) dx += 1;
-  if (held.has('ArrowUp')    || held.has('w')) dy -= 1;
-  if (held.has('ArrowDown')  || held.has('s')) dy += 1;
+  if (held.has('ArrowLeft')  || held.has(keys.left))  dx -= 1;
+  if (held.has('ArrowRight') || held.has(keys.right)) dx += 1;
+  if (held.has('ArrowUp')    || held.has(keys.up))    dy -= 1;
+  if (held.has('ArrowDown')  || held.has(keys.down))  dy += 1;
   return [dx, dy];
 }
 
@@ -2611,7 +2618,12 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (k === 'r') { if (confirmRestart()) sendRestart(); return; }
-  if (e.key === ' ') { hasPlaced = true; sendPlace(); return; }
+  const placeKey = window.BubbleSession ? window.BubbleSession.profile.keys.place : String.fromCharCode(32);
+  if (k === placeKey || (placeKey === String.fromCharCode(32) && e.code === 'Space')) {
+    hasPlaced = true;
+    sendPlace();
+    return;
+  }
 
   if (!held.has(k)) { held.add(k); pushInput(); }
 });

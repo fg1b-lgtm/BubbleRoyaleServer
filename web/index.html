@@ -110,7 +110,61 @@
   /* 눌렀을 때 한 칸 내려앉는다. hover 만 있으면 클릭해도 "받았다"는 반응이
      없어서 두 번 누르게 된다 - 나무 판을 실제로 누른 것처럼 살짝 꺼지게 한다 */
   button:active { background: var(--wood-dark); transform: translateY(1px); }
+
+  /* 게임 화면과 분리된 시작 로비. 게임 캔버스는 시작을 누른 뒤에만 보인다. */
+  [hidden] { display: none !important; }
+  #lobby { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #140b06; }
+  .lobby-card { width: min(680px, calc(100vw - 32px)); padding: 28px; background: var(--wood-dark); border: 3px solid var(--wood-line); box-shadow: 8px 8px 0 #0008; }
+  .lobby-title { margin: 0 0 6px; color: var(--wood-rim); letter-spacing: .16em; font-size: 25px; }
+  .lobby-subtitle { margin: 0 0 22px; color: var(--dim); }
+  .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mode-card { min-height: 110px; text-align: left; padding: 15px; border: 2px solid var(--wood-line); background: var(--wood-mid); }
+  .mode-card.selected { outline: 3px solid var(--good); background: var(--wood-lite); }
+  .mode-card strong, .mode-card small { display: block; }
+  .mode-card strong { font-size: 16px; margin-bottom: 8px; }
+  .mode-card small { color: var(--dim); }
+  .room-panel { margin-top: 14px; padding: 12px; border: 2px solid var(--wood-line); }
+  .room-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+  input, select { width: 100%; padding: 9px; color: var(--ink); background: #241208; border: 2px solid var(--wood-line); font: inherit; }
+  .lobby-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 22px; }
+  .lobby-status { min-height: 20px; color: var(--good); }
+  .lobby-status.bad { color: var(--bad); }
+  .profile-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: #0009; }
+  .profile-card { width: min(470px, calc(100vw - 32px)); padding: 22px; background: var(--wood-dark); border: 3px solid var(--wood-line); }
+  .profile-row { margin: 12px 0; }
+  .profile-row label { display: block; margin-bottom: 5px; color: var(--dim); }
+  .key-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .key-grid button { display: flex; justify-content: space-between; }
+  .profile-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .game-started #lobby { display: none; }
+  @media (max-width: 520px) { .mode-grid { grid-template-columns: 1fr; } .lobby-card { padding: 20px; } }
 </style>
+
+<div id="lobby">
+  <section class="lobby-card" aria-labelledby="lobbyTitle">
+    <h1 id="lobbyTitle" class="lobby-title">BUBBLE ROYALE</h1>
+    <p class="lobby-subtitle">전투 방식을 고르고, 나만의 조작과 캐릭터로 시작하세요.</p>
+    <div class="mode-grid">
+      <button class="mode-card selected" data-mode="bot" type="button"><strong>봇전</strong><small>혼자 바로 시작합니다.<br>빈자리는 봇이 채웁니다.</small></button>
+      <button class="mode-card" data-mode="pvp" type="button"><strong>사람대전</strong><small>방을 만들거나 코드로 입장합니다.<br>방 매칭 UI를 먼저 준비합니다.</small></button>
+    </div>
+    <div id="roomPanel" class="room-panel" hidden>
+      <div class="room-actions"><button id="createRoom" type="button">방 만들기</button><input id="roomCode" maxlength="6" placeholder="방 코드 6자리"></div>
+      <small>방을 만든 뒤 코드를 친구에게 공유하세요.</small>
+    </div>
+    <div class="lobby-footer"><span id="lobbyStatus" class="lobby-status"></span><span><button id="profileOpen" type="button">개인 설정</button> <button id="startGame" type="button">게임 시작</button></span></div>
+  </section>
+</div>
+
+<div id="profileModal" class="profile-modal" hidden>
+  <section class="profile-card" aria-labelledby="profileTitle">
+    <h2 id="profileTitle">개인 설정</h2>
+    <div class="profile-row"><label for="profileName">이름</label><input id="profileName" maxlength="16"></div>
+    <div class="profile-row"><label for="characterSelect">캐릭터</label><select id="characterSelect"><option value="0">캐릭터 1 · 물방울</option><option value="1">캐릭터 2 · 고글</option><option value="2">캐릭터 3 · 여우</option><option value="3">캐릭터 4 · 해적</option></select></div>
+    <div class="profile-row"><label>키 설정 — 버튼을 누르고 새 키를 입력</label><div class="key-grid"><button type="button" data-key="up">위 <b data-key-value="up"></b></button><button type="button" data-key="down">아래 <b data-key-value="down"></b></button><button type="button" data-key="left">왼쪽 <b data-key-value="left"></b></button><button type="button" data-key="right">오른쪽 <b data-key-value="right"></b></button><button type="button" data-key="place">물풍선 <b data-key-value="place"></b></button></div></div>
+    <div class="profile-buttons"><button id="profileClose" type="button">닫기</button><button id="profileSave" type="button">저장</button></div>
+  </section>
+</div>
 
 <header>
   <span class="mark">BUBBLE ROYALE</span>
@@ -126,6 +180,7 @@
 <!-- 순서가 있다.
      audio · art · fx 는 서로를 모른다. net 이 상태를 들고,
      game 이 넷을 엮어서 한 프레임을 그린다 -->
+<script src="lobby.js"></script>
 <script src="audio.js"></script>
 <script src="artdata.js"></script>
 <script src="art.js"></script>
