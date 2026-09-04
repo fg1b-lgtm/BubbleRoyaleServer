@@ -181,7 +181,7 @@ build.bat ..\tools\probe.cpp
 | `movetest.exe` | 아니오 | 이동, 걸치기 임계값, 벽, 코너 보정, 맵 재현 |
 | `bubbletest.exe` | 아니오 | 퓨즈, 십자 폭발, 연쇄 지연, 갇힘, 아이템 |
 | `floodtest.exe` | 아니오 | 침수 일정, 익사, 탈출, 경계에서의 걸치기 |
-| `maptest.exe` | 아니오 | 맵 품질. 죽음의 칸, 뼈대 막다른 길, 파는 깊이, 스폰 공정성 |
+| `maptest.exe` | 아니오 | 맵 품질(죽음의 칸, 뼈대 막다른 길, 파는 깊이, 스폰 공정성) + 조각 약속(관문·연결·스폰 자리) |
 | `roundsim.exe [판수] [드롭%]` | 아니오 | 봇 24명으로 한 판을 통째로. 판이 끝나나, 누가 죽이나, 압박 곡선, 조각별 위험지수, 성장이 언제 멈추나 |
 | `probe.exe` | 예 | 패킷 경계. 쪼개 보내기 / 몰아 보내기 / 브로드캐스트 |
 | `bot.exe [봇수] [초]` | 예 | 부하와 레이스 |
@@ -203,7 +203,7 @@ build.bat ..\tools\probe.cpp
 movetest    40 PASS / 0 FAIL   (누른 만큼 정확히 가나 · 트인 데 밀림 0)
 bubbletest  73 PASS / 0 FAIL
 floodtest   33 PASS / 0 FAIL
-maptest     12 PASS / 0 FAIL   (조각 31종 약속 검사 포함)
+maptest     12 PASS / 0 FAIL   (조각 2종 약속 검사 포함, 9/4 배치 수정 후 재확인)
 probe       10 PASS / 0 FAIL
 wstest      23 PASS / 0 FAIL
 clienttest  50 PASS / 0 FAIL   (UI 대비 · 앞뒤 정렬 · 화면 예측 밀림 0 포함)
@@ -242,7 +242,7 @@ BubbleRoyale.sln
 │   ├─ Flood.h           침수
 │   ├─ Bot.h             봇 두뇌. roundsim 과 서버가 같이 쓴다
 │   ├─ Aoi.h             누구에게 무엇을 보낼 것인가 + 송신량 계측
-│   ├─ SectorTemplates.h 손으로 그린 맵 조각 31종 (테마 10개)
+│   ├─ SectorTemplates.h 손으로 그린 맵 조각 2종 (마을·사막, 사람이 그려준 배치 사진 그대로)
 │   ├─ GameTick.h        한 틱에 무엇을 어떤 순서로 하는가
 │   └─ ServerConfig.h    워커 수 · 동시 접속 상한
 ├─ Client/src/        테스트용 콘솔 클라이언트
@@ -317,7 +317,7 @@ A구역 규칙은 **8/27 당일에 한 번 개정했다**(커밋 `621adf8`).
 
 **코드는 전부 직접 작성했다.** 타사·전 직장 코드는 어떤 형태로도 포함하지 않았다.
 
-**효과음 %d개 (`web/sfx/`, %dKB)** 는 외부 에셋이다.
+**효과음 46개 (`web/sfx/`, 336KB)** 는 외부 에셋이다.
 
 | | |
 |---|---|
@@ -360,9 +360,12 @@ CC0 는 저작자가 저작권을 통째로 포기한 것이라 **상업 이용�
 | 원본 | `web/art/tiles/*.png` — 받은 시트에서 조각을 낱개로 잘라낸 것 |
 | 굽는 법 | `python tools/buildart.py` 의 `build_tiles()` — 발자국 폭을 한 칸으로 맞춰 아틀라스로 묶는다 |
 
-마을 조각 레이아웃(`web/art/maps/village.json`)도 같은 도구로 만든 것을
+마을·사막 두 조각은 배치까지 사람이 직접 그려 보내준 사진이 원본이다.
+마을은 좌표 파일로(`web/art/maps/village.json`), 사막은 사진 두 장으로 받아서,
 우리 조각 규칙(관문 네 곳, 길로 다 이어짐)에 맞게 손으로 옮겼다
-(`Server/src/SectorTemplates.h` 의 `VILLAGE_RIVER`).
+(`Server/src/SectorTemplates.h` 의 `VILLAGE_RIVER` · `DESERT_BAZAAR`).
+집·우물·텐트·장터 같은 두 칸짜리 건물은 사진 자리에서 최대 한 칸만 옮겼다 -
+그래야 화면에서 한 장으로 묶여 그려진다(9/4, 아래 개발 로그 참고).
 
 **그림이 없어도 게임은 돈다.** 아틀라스를 못 받으면 예전처럼 도트를 찍어서 그린다
 (`web/artdata.js` 의 `CHAR_BODY`, `WALL_DOTS`, `CRATE_DOTS`).
