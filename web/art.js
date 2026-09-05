@@ -421,6 +421,11 @@ const Art = (() => {
       for (let x = 0; x < W; ++x) {
         if (tiles[y][x] !== 1) continue;
 
+        // 큰 건물은 서버 판정 때문에 2x2 벽 네 칸 위에 놓인다. 그 네 칸에
+        // 보통 벽 그림자를 먼저 구워버리면, 건물 그림 아래에 회색 사각형 네 개가
+        // 그대로 남는다. 건물 그림 자체에 접지 그림자가 있으므로 여기서는 뺀다.
+        if (landmarkCover.has(x + ',' + y)) continue;
+
         // 그라데이션 대신 두 단. 픽셀 아트의 그림자는 번지지 않고 단으로 진다
         const px = x * T + T * 0.18, py = y * T + T * 0.30;
         g.fillStyle = 'rgba(0,0,0,0.26)';
@@ -2391,11 +2396,68 @@ const Art = (() => {
              Math.round((cx - 5.5 * P) / P) * P,
              Math.round((cy + up - 5.5 * P) / P) * P, P, 'item' + kind);
   }
+
+  // HUD 전용 표지. 바닥에서 먹는 아이템은 반짝임이 먼저지만, 능력치 창은
+  // 뜻을 0.2초 안에 읽는 것이 먼저다. 그래서 물풍선·거리·신발의 실루엣을
+  // 서로 완전히 다르게 잡는다. 원 안의 점/+/번개였던 표시는 작으면 구분이 안 됐다.
+  function drawStatIcon(g, cx, cy, T, kind) {
+    const s = T / 32;
+    g.save();
+    g.translate(cx, cy);
+    g.scale(s, s);
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    g.lineWidth = 2.5;
+    g.strokeStyle = '#183654';
+
+    if (kind === 1) {
+      // 물풍선: 둥근 몸통과 매듭·심지. 그냥 파란 원과 다르게 위쪽이 읽힌다.
+      g.fillStyle = '#4dabf7';
+      g.beginPath();
+      g.arc(-1, 3, 10, 0, Math.PI * 2);
+      g.fill(); g.stroke();
+      g.fillStyle = '#b9e6ff';
+      g.beginPath(); g.arc(-5, -1, 3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#ffd166';
+      g.fillRect(3, -9, 7, 5); g.strokeRect(3, -9, 7, 5);
+      g.beginPath(); g.moveTo(9, -8); g.lineTo(13, -12); g.stroke();
+      g.fillStyle = '#ff7b54';
+      g.beginPath(); g.arc(14, -13, 2, 0, Math.PI * 2); g.fill();
+    } else if (kind === 2) {
+      // 공격 거리: 물풍선에서 세 칸 앞으로 뻗는 물줄기와 화살촉.
+      g.fillStyle = '#4dabf7';
+      g.beginPath(); g.arc(-11, 2, 5, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.strokeStyle = '#b9efff'; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(-5, 2); g.lineTo(10, 2); g.stroke();
+      g.strokeStyle = '#237b99'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(-5, 2); g.lineTo(11, 2); g.stroke();
+      g.fillStyle = '#66d9e8'; g.strokeStyle = '#183654';
+      g.beginPath(); g.moveTo(12, 2); g.lineTo(6, -4); g.lineTo(6, 8); g.closePath();
+      g.fill(); g.stroke();
+      g.fillStyle = '#d8f8ff';
+      for (const x of [-2, 4]) { g.beginPath(); g.arc(x, -2, 1.5, 0, Math.PI * 2); g.fill(); }
+    } else {
+      // 이동 속도: 앞코가 오른쪽을 보는 운동화. 번개보다 무엇이 빨라지는지 분명하다.
+      g.fillStyle = '#51cf66';
+      g.beginPath();
+      g.moveTo(-11, -7); g.lineTo(-2, -7); g.lineTo(2, 0);
+      g.quadraticCurveTo(9, 1, 12, 5); g.lineTo(12, 8);
+      g.lineTo(-12, 8); g.lineTo(-12, 2); g.closePath();
+      g.fill(); g.stroke();
+      g.fillStyle = '#eef7df';
+      g.fillRect(-12, 6, 24, 4); g.strokeRect(-12, 6, 24, 4);
+      g.strokeStyle = '#e8ffe9'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-3, -4); g.lineTo(3, 1); g.moveTo(-6, -1); g.lineTo(0, 3); g.stroke();
+      g.strokeStyle = '#2d6b38';
+      g.beginPath(); g.moveTo(-16, -2); g.lineTo(-12, -2); g.moveTo(-17, 3); g.lineTo(-13, 3); g.stroke();
+    }
+    g.restore();
+  }
   return {
     PLACES, WORLDS, ANIMALS, V, setScale, setPlaces, setLandmarks, setLanes, isLane, placeAt, placeNames, hash2, rr,
     setLooks, loadAtlas, hasAtlas, CHAR_NAMES, drawBlastTile, drawTrapped, drawPose,
     buildFloor, drawProp, water, foamEdge,
-    drawChar, drawFace, drawBubble, drawItem, drawCrate, ITEM_ART, dotText,
+    drawChar, drawFace, drawBubble, drawItem, drawStatIcon, drawCrate, ITEM_ART, dotText,
     rgb, css, mix, lighter, darker,
     easeOut, easeIn, overshoot,
   };
