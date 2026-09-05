@@ -112,7 +112,11 @@ static void SendWelcome(Session* s, int slot)
     w.base_bubble        = (uint8_t)BUBBLE_BASE_COUNT;
     w.base_range         = (uint8_t)BLAST_BASE_RANGE;
     w.cap_bubble         = (uint8_t)(BUBBLE_BASE_COUNT + STAT_CAP_FROM_WALL);
-    w.cap_range          = (uint8_t)(BLAST_BASE_RANGE  + STAT_CAP_FROM_WALL);
+    // 물줄기만 울트라 아이템으로 벽 상한(4) 위 STAT_CAP_ULTRA(6)까지 간다
+    // (Bubble.h의 PickUpItems). 여기를 STAT_CAP_FROM_WALL로 보내면 능력치
+    // 창 막대의 끝(5)이 실제 도달 가능한 값(7)보다 작아서, 울트라를 먹은
+    // 뒤에는 꽉 찬 막대가 진짜 상한을 가린다
+    w.cap_range          = (uint8_t)(BLAST_BASE_RANGE  + STAT_CAP_ULTRA);
     w.cap_speed          = (uint8_t)STAT_CAP_SPEED;
 
     w.move_base          = (uint8_t)MOVE_SPEED_BASE;
