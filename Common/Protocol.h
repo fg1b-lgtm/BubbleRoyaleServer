@@ -298,6 +298,3 @@ constexpr int MOVE_PACKET_SIZE  = HEADER_SIZE + (int)sizeof(MoveBody);
 constexpr int PLACE_PACKET_SIZE = HEADER_SIZE;   // 몸통이 없다. 놓는 자리는 서버가 안다
 constexpr int EVENT_PACKET_SIZE = HEADER_SIZE + (int)sizeof(EventBody);
 constexpr int WELCOME_PACKET_SIZE = HEADER_SIZE + (int)sizeof(WelcomeBody);
-
-// 스냅샷에 담을 수 있는 물풍선 수. 패킷 한도 안에 들어가야 한다
-constexpr int MAX_SNAPSHOT_BUBBLE = 120;

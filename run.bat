@@ -2,7 +2,7 @@
 setlocal
 
 rem ---------------------------------------------------------------
-rem  run.bat - build if needed, start server + bridge, open browser
+rem  run.bat - build, start server + bridge, open browser
 rem
 rem    run.bat                 default round
 rem    run.bat fast            flood schedule 10x faster (6 min -> 36 s)
@@ -22,14 +22,17 @@ pushd "%~dp0"
 set "EXE=bin\x64\Debug\Server.exe"
 set "WEB=http://127.0.0.1:8080"
 
-rem --- a running Server.exe holds the .exe file and the port ---
-taskkill /f /im Server.exe >nul 2>&1
+rem --- old demo processes hold the executable and the ports ---
+rem     Ask the bridge first so its hidden room servers are stopped too.
+curl -s -X POST -H "X-Bubble-Shutdown: run-bat" http://127.0.0.1:8080/api/shutdown >nul 2>&1
+ping -n 2 127.0.0.1 >nul
+taskkill /f /fi "WINDOWTITLE eq BubbleRoyale server*" >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq BubbleRoyale bridge*" >nul 2>&1
 
-rem --- build only when the exe is missing ---
-if not exist "%EXE%" (
-    echo [run] %EXE% not found. building...
-    call :build || goto :fail
-)
+rem --- always ask MSBuild; unchanged files are skipped incrementally ---
+rem     Checking only for a missing exe runs stale code after a source edit.
+echo [run] checking build...
+call :build || goto :fail
 
 rem --- node is required for the bridge ---
 where node >nul 2>&1
@@ -57,7 +60,9 @@ echo.
 echo   Press any key here to shut both down.
 pause >nul
 
-taskkill /f /im Server.exe >nul 2>&1
+curl -s -X POST -H "X-Bubble-Shutdown: run-bat" http://127.0.0.1:8080/api/shutdown >nul 2>&1
+ping -n 2 127.0.0.1 >nul
+taskkill /f /fi "WINDOWTITLE eq BubbleRoyale server*" >nul 2>&1
 taskkill /f /fi "WINDOWTITLE eq BubbleRoyale bridge*" >nul 2>&1
 echo [run] stopped.
 popd

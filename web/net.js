@@ -298,7 +298,9 @@ function sendRestart() {
 }
 
 function connect() {
-  ws = new WebSocket('ws://' + location.host + '/ws');
+  const path = window.BubbleSession && window.BubbleSession.wsPath
+             ? window.BubbleSession.wsPath : '/ws';
+  ws = new WebSocket('ws://' + location.host + path);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => { G.connected = true; Hooks.conn(); };

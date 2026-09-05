@@ -74,7 +74,7 @@ static void SeatViewers()
 // 넘치면 돌려보기 전에 여기서 막힌다
 static_assert(HEADER_SIZE + sizeof(SnapshotHead)
               + PLAYER_MAX * sizeof(PlayerState)
-              + MAX_SNAPSHOT_BUBBLE * sizeof(BubbleState) <= MAX_PACKET_SIZE,
+              + MAX_BUBBLE * sizeof(BubbleState) <= MAX_PACKET_SIZE,
               "snapshot packet is too big");
 // 4 줄 - tiles · items · lanes · looks. 실제로 내려보내는 줄 수와 안 맞으면
 // 이 검사가 아무것도 지키지 못하는 장식이 된다
@@ -286,7 +286,7 @@ static int BuildSnapshot(char* buf, int watch)
         ++sh.player_count;
     }
 
-    for (int i = 0; i < MAX_BUBBLE && sh.bubble_count < MAX_SNAPSHOT_BUBBLE; ++i) {
+    for (int i = 0; i < MAX_BUBBLE; ++i) {
         const Bubble& b = g_game.bubbles[i];
         if (!b.used) {
             continue;
@@ -576,7 +576,7 @@ static DWORD WINAPI WorkerThread(LPVOID param)
         BOOL ok = GetQueuedCompletionStatus(iocp, &bytes, &key, &ov, INFINITE);
 
         // 분기 1. ov 가 없다 = 손님 얘기가 아니라 완료 포트가 닫힌 것. 여기만 Release 를 안 한다
-        if (!ok && ov == nullptr) {
+        if (ov == nullptr) {
             printf("[Server] completion port closed\n");
             break;
         }
@@ -598,8 +598,10 @@ static DWORD WINAPI WorkerThread(LPVOID param)
             else {
                 s->recv_buf.OnWrite(bytes);   // 바구니에 이만큼 찼다고 알린다
                 ProcessPackets(s);
-                if (s->closing == 0) {
-                    PostRecv(s);              // 받기는 항상 다시 건다
+                if (s->closing == 0 && !PostRecv(s)) {
+                    // 첫 수신뿐 아니라 두 번째 이후 등록도 즉시 실패할 수 있다.
+                    // 목록에만 남고 더는 받지 못하는 유령 세션으로 두지 않는다.
+                    CloseSession(s);
                 }
             }
         }
@@ -669,7 +671,11 @@ static DWORD WINAPI TickThread(LPVOID)
         // GameTick 안에서 안 부르는 이유는 Bot.h 가 GameTick.h 를 쓰기 때문이다.
         // 안에서 부르면 서로가 서로를 필요로 하게 된다
         if (g_bot_target > 0 && g_game.phase == ROUND_WAITING) {
-            FillBots(g_bot_target);
+            // bots N은 이제 화면 문구 그대로 "사람 외에 봇 N명"이다.
+            // 사람이 늘어도 봇 수를 빼앗지 않고, 방 정원에서만 자른다.
+            int fill_to = HumanCount() + g_bot_target;
+            if (fill_to > g_room_capacity) fill_to = g_room_capacity;
+            FillBots(fill_to);
         }
         BotThinkAll();
 
@@ -679,6 +685,11 @@ static DWORD WINAPI TickThread(LPVOID)
         // 게임 코드는 소켓을 모르므로 깃발만 세우고 여기서 처리한다
         if (g_game.map_changed) {
             g_game.map_changed = false;
+
+            // 봇의 목표와 직전 이동 기억도 판에 딸린 상태다.
+            // 이걸 남겨두면 새 맵에서 이전 판의 목표 좌표로 가거나, 시작 직후
+            // 존재하지 않는 '방금 떠난 칸'을 피하는 이상 행동이 생긴다.
+            ClearFleeTargets();
 
             SeatViewers();   // 자리를 못 잡고 보고 있던 사람부터 앉힌다
 
@@ -722,14 +733,17 @@ static DWORD WINAPI TickThread(LPVOID)
             int humans = HumanCount();
             if (humans > 0 || g_live_sessions > 0) {
                 printf("[Net] aoi=%d players=%d(+%d bots) live=%ld  %lld pkt/s  %lld B/s  "
-                       "builds %lld/s  dropped pkt %lld life %lld\n",
+                       "builds %lld/s  dropped pkt %lld life %lld event-fx %lld state %lld\n",
                        g_aoi_on ? 1 : 0, humans, BotCount(), g_live_sessions,
                        g_net.packets, g_net.bytes, g_net.builds,
-                       g_job_dropped, g_life_dropped);
+                       g_job_dropped, g_life_dropped,
+                       g_event_fx_dropped, g_event_state_dropped);
             }
             g_net.packets = 0;
             g_net.bytes   = 0;
             g_net.builds  = 0;
+            g_event_fx_dropped    = 0;
+            g_event_state_dropped = 0;
         }
 
         // 1초에 한 번 판 상태를 찍는다. 매 틱 찍으면 로그를 읽을 수 없다.
@@ -830,6 +844,7 @@ int main(int argc, char** argv)
     // 이상한 일이 생겼을 때 그 판을 그대로 재현하는 게 제일 빠른 길이다
     unsigned int map_seed   = 1234;
     int          flood_scale = 1;
+    unsigned short listen_port = SERVER_PORT;
 
     // 첫 글자만 보고 고르던 것을 이름 전체로 바꿨다.
     // 전에는 "banana 3" 이 bots 3 으로 먹혔고, seed 를 넣으니 fast 와 첫 글자가 갈렸다.
@@ -853,15 +868,34 @@ int main(int argc, char** argv)
             if (g_bot_target < 0)          g_bot_target = 0;
             if (g_bot_target > PLAYER_MAX) g_bot_target = PLAYER_MAX;
         }
+        else if (strcmp(argv[i], "players") == 0 && i + 1 < argc) {
+            g_room_capacity = atoi(argv[++i]);
+            if (g_room_capacity < 2 || g_room_capacity > PLAYER_MAX) {
+                printf("[Server] players 는 2..%d 여야 한다\n", PLAYER_MAX);
+                return 1;
+            }
+        }
+        else if (strcmp(argv[i], "port") == 0 && i + 1 < argc) {
+            const long value = strtol(argv[++i], nullptr, 10);
+            if (value < 1024 || value > 65535) {
+                printf("[Server] port 는 1024..65535 여야 한다\n");
+                return 1;
+            }
+            listen_port = (unsigned short)value;
+        }
         else if (strcmp(argv[i], "seed") == 0 && i + 1 < argc) {
             map_seed = (unsigned int)strtoul(argv[++i], nullptr, 10);
         }
         else {
             printf("[Server] 모르는 인자 '%s'. 쓸 수 있는 것: "
-                   "fast | seed N | bots N | aoi 0|1\n", argv[i]);
+                   "fast | seed N | bots N | players N | aoi 0|1 | port N\n", argv[i]);
             return 1;
         }
     }
+
+    // 인자 순서와 상관없이 마지막에 한 번 맞춘다. bots 가 players 보다 먼저
+    // 와도 작은 방의 정원을 넘어서는 봇을 만들면 안 된다.
+    if (g_bot_target > g_room_capacity) g_bot_target = g_room_capacity;
 
     InitGame(map_seed, flood_scale);
 
@@ -883,7 +917,8 @@ int main(int argc, char** argv)
            flood_scale, g_game.flood_warn[0] / TICK_RATE);
     printf("[Server] round starts with %d players, %d s countdown\n",
            ROUND_MIN_PLAYERS, ROUND_COUNTDOWN_TICKS / TICK_RATE);
-    printf("[Server] bots fill up to %d (Server.exe bots N to change)\n", g_bot_target);
+    printf("[Server] room capacity %d players\n", g_room_capacity);
+    printf("[Server] %d bots requested (Server.exe bots N to change)\n", g_bot_target);
 
     WSADATA wsa;
     int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -926,8 +961,10 @@ int main(int argc, char** argv)
 
     sockaddr_in server_addr = {};
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    server_addr.sin_port = htons(listen_port);
+    // 포트폴리오 데모는 같은 PC의 브리지만 붙는다. LAN 전체에 열어두면
+    // 같은 네트워크의 다른 기기도 시험용 RESTART 패킷을 보낼 수 있다.
+    server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     if (bind(listen_sock, (sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
         // 10048(WSAEADDRINUSE) = 그 포트를 이미 누가 쓰고 있다
@@ -948,7 +985,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    printf("[Server] listening on port %d\n", SERVER_PORT);
+    printf("[Server] listening on port %u\n", listen_port);
 
     HANDLE tick_thread = CreateThread(nullptr, 0, TickThread, nullptr, 0, nullptr);
     if (tick_thread == nullptr) {
@@ -991,8 +1028,10 @@ int main(int argc, char** argv)
 
         if (!AddSession(s)) {
             printf("[Server] session list full\n");
-            closesocket(client_sock);
-            delete s;
+            // 처음 든 목록/main 참조 둘을 같은 경로로 놓는다.
+            // 직접 delete 하면 live/ref 진단값만 영원히 어긋난다.
+            Release(s);
+            Release(s);
             continue;
         }
 
@@ -1019,24 +1058,35 @@ int main(int argc, char** argv)
         Release(s);   // main 은 세팅을 끝냈다. 자기 참조를 놓는다
     }
 
-    // 참조를 든 자리와 놓은 자리가 맞는지 마지막에 한 번 센다.
-    //
-    // 9/1 에 AOI 를 붙이면서 세션이 샜다. 부하 시험에서 접속 1047 / 정리 535.
-    // "샌 것 같다" 를 **"어디서 몇 개"** 로 바꾼 게 이 줄이다.
-    // 자리마다 따로 세니까 어느 경로가 안 놓는지가 바로 나온다.
-    // 지금은 다섯 자리가 전부 같은 수로 끝난다
+    closesocket(listen_sock);
+    g_listen_sock = INVALID_SOCKET;
+
+    // 세션을 먼저 닫아야 실패 완료와 Leave 주문을 워커/틱이 처리할 수 있다.
+    // 완료 포트를 먼저 닫으면 참조를 놓을 기회 자체가 사라진다.
+    CloseAllSessions();
+    ULONGLONG close_deadline = GetTickCount64() + 2000;
+    while (g_live_sessions > 0 && GetTickCount64() < close_deadline) {
+        Sleep(10);
+    }
+
+    InterlockedExchange(&g_tick_running, 0);   // 틱 스레드에 나가라고 알린다
+    WaitForSingleObject(tick_thread, 2000);
+    CloseHandle(tick_thread);
+
+    // 핸들을 갑자기 닫는 대신 워커마다 종료 완료를 하나씩 보낸다.
+    for (int i = 0; i < WORKER_COUNT; ++i) {
+        PostQueuedCompletionStatus(iocp, 0, 0, nullptr);
+    }
+    ShutdownWorkers(workers, WORKER_COUNT);
+    CloseHandle(iocp);
+
+    // 모든 정리가 끝난 뒤에 세야 이 줄이 실제 누수 검사다.
     printf("[Ref] live %ld | 목록 %ld/%ld  꽂이 %ld/%ld  받기 %ld/%ld  보내기 %ld/%ld  AOI %ld/%ld\n",
            g_live_sessions,
            g_ref_up[0], g_ref_down[0], g_ref_up[1], g_ref_down[1],
            g_ref_up[2], g_ref_down[2], g_ref_up[3], g_ref_down[3],
            g_ref_up[4], g_ref_down[4]);
 
-    closesocket(listen_sock);
-    InterlockedExchange(&g_tick_running, 0);   // 나가라고 알린다
-    WaitForSingleObject(tick_thread, 2000);    // 나갈 때까지 기다린다
-    CloseHandle(tick_thread);
-    CloseHandle(iocp);
-    ShutdownWorkers(workers, WORKER_COUNT);
     WSACleanup();
     return 0;
 }
