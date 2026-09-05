@@ -45,6 +45,12 @@ struct RoundResult
     int  self_deaths;    // 자기가 놓은 물풍선에 죽은 수
     int  flips;          // 방향을 한 틱 만에 정반대로 뒤집은 횟수 (덜덜 떤다)
     int  wet_flips;      // 그중 물가 한 칸 안에서 일어난 것
+    int  tile_bounces;   // 1초 안에 A칸 -> B칸 -> A칸으로 되돌아온 횟수
+    int  pair_swaps;     // 두 봇이 같은 틱에 서로의 칸을 맞바꾼 횟수
+    int  wet_wrong;      // 물속인데 도망·물탈출 아닌 일을 고른 틱
+    int  warn_wrong;     // 침수 예고 구역인데 떠나지 않은 틱
+    int  bounce_reason[16];
+    int  warn_reason[16];
 
     // 침수 몇 단계까지 갔나. 안 걸리는 단계는 만들어놓고 안 쓰는 것이다
     int  flood_reached;
@@ -225,10 +231,32 @@ static void PlayRound(unsigned int seed, RoundResult& r)
     bool graze_before[PLAYER_MAX];
     int  last_dx[PLAYER_MAX] = {}, last_dy[PLAYER_MAX] = {};
     uint8_t last_why[PLAYER_MAX] = {};
+    int last_cell[PLAYER_MAX], before_last_cell[PLAYER_MAX], last_cell_tick[PLAYER_MAX];
+    for (int i = 0; i < PLAYER_MAX; ++i) {
+        last_cell[i] = -1;
+        before_last_cell[i] = -1;
+        last_cell_tick[i] = 0;
+    }
     int sample = 0;
 
     for (int t = 1; t <= MAX_TICKS; ++t) {
         BotThinkAll();
+
+        // 침수 경고와 실제 물속에서 계속 파밍·사냥을 고르면 물을 모르는 것이다.
+        // 폭발 도망은 물탈출보다 더 급하므로 정상으로 센다.
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            const Player& p = g_game.players[i];
+            if (!Occupied(p) || !p.alive || p.trap_ticks > 0) continue;
+            const bool emergency = g_reason[i] == R_WATER
+                                || g_reason[i] == R_FLEE_KEEP
+                                || g_reason[i] == R_FLEE_NEW
+                                || g_reason[i] == R_FLEE_STUCK;
+            if (IsUnderWater(p.judge_tx, p.judge_ty) && !emergency) ++r.wet_wrong;
+            if (SectorStateAt(p.judge_tx, p.judge_ty) == SECTOR_WARNING && !emergency) {
+                ++r.warn_wrong;
+                if (g_reason[i] < 16) ++r.warn_reason[g_reason[i]];
+            }
+        }
 
         for (int i = 0; i < PLAYER_MAX; ++i) {
             drowning_before[i] = g_game.players[i].flood_ticks;
@@ -247,6 +275,39 @@ static void PlayRound(unsigned int seed, RoundResult& r)
 
         g_game.event_count = 0;
         GameTick();
+
+        // 한 틱 방향 반전만으로는 모서리를 도는 움직임까지 잡힐 수 있다.
+        // 실제 칸 기준 A -> B -> A와, 두 사람이 서로 자리를 바꾼 경우를 따로 센다.
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            const Player& p = g_game.players[i];
+            if (!Occupied(p) || !p.alive) continue;
+            int cell = p.judge_ty * MAP_W + p.judge_tx;
+            if (last_cell[i] < 0) {
+                last_cell[i] = cell;
+                last_cell_tick[i] = t;
+            }
+            else if (cell != last_cell[i]) {
+                // 한참 뒤에 목적상 되돌아온 것은 왕복 동선이지 떨림이 아니다.
+                // 가운데 칸에 1초도 머물지 못한 A-B-A만 화면에서 이상한 왕복으로 센다.
+                if (cell == before_last_cell[i] && t - last_cell_tick[i] <= TICK_RATE) {
+                    ++r.tile_bounces;
+                    if (g_reason[i] < 16) ++r.bounce_reason[g_reason[i]];
+                }
+                before_last_cell[i] = last_cell[i];
+                last_cell[i] = cell;
+                last_cell_tick[i] = t;
+            }
+        }
+        for (int i = 0; i < PLAYER_MAX; ++i) {
+            if (!alive_before[i] || !g_game.players[i].alive) continue;
+            int now_i = g_game.players[i].judge_ty * MAP_W + g_game.players[i].judge_tx;
+            for (int j = i + 1; j < PLAYER_MAX; ++j) {
+                if (!alive_before[j] || !g_game.players[j].alive) continue;
+                int now_j = g_game.players[j].judge_ty * MAP_W + g_game.players[j].judge_tx;
+                if (jt_before[i] != jt_before[j]
+                    && now_i == jt_before[j] && now_j == jt_before[i]) ++r.pair_swaps;
+            }
+        }
 
         // 자기 물풍선에 갇히는 건 봇이 서툴다는 뜻이다. 게임 문제와 구분해서 센다
         for (int e = 0; e < g_game.event_count; ++e) {
@@ -427,6 +488,8 @@ int main(int argc, char** argv)
     long long pushed = 0;
     long long capped = 0, items_at[8] = {};
     long long selfd = 0, flips = 0, wet = 0;
+    long long bounces = 0, swaps = 0, wet_wrong = 0, warn_wrong = 0;
+    long long bounce_reason[16] = {}, warn_reason[16] = {};
     long long tt = 0, tw = 0, town = 0, tage = 0, tsame = 0, tgraze = 0;
     long long treason[16] = {};
     int flood_hit[FLOOD_STAGES + 1] = {};
@@ -459,6 +522,14 @@ int main(int argc, char** argv)
         for (int k = 0; k < 16; ++k) treason[k] += r.trap_reason[k];
         flips += r.flips;
         wet += r.wet_flips;
+        bounces += r.tile_bounces;
+        swaps += r.pair_swaps;
+        wet_wrong += r.wet_wrong;
+        warn_wrong += r.warn_wrong;
+        for (int k = 0; k < 16; ++k) {
+            bounce_reason[k] += r.bounce_reason[k];
+            warn_reason[k] += r.warn_reason[k];
+        }
         if (r.cap_tick > 0) { capped += r.cap_tick; ++cap_rounds; }
         for (int k = 0; k < 8; ++k) items_at[k] += r.items_at[k];
         if (r.first_kill_tick > 0) first += r.first_kill_tick;
@@ -480,12 +551,12 @@ int main(int argc, char** argv)
     printf("  10분 안에 안 끝난 판: %d / %d\n", unfinished, rounds);
     printf("  첫 사망까지: %lld초\n", first / rounds / TICK_RATE);
 
-    printf("\n--- 누가 죽이나 ---\n");
+    printf("\n--- 탈락 원인 (판당 평균) ---\n");
     long long dead = bubble + water;
     printf("  터뜨려짐 %lld명 (%lld%%)   익사 %lld명 (%lld%%)\n",
            bubble / rounds, dead ? bubble * 100 / dead : 0,
            water / rounds,  dead ? water * 100 / dead : 0);
-    printf("  (물줄기는 사람을 못 죽인다. 가두기만 하고, 마무리는 몸으로 한다)\n");
+    printf("  (물줄기는 상대를 물방울에 가둔다. 갇힌 상대와 몸이 닿으면 탈락한다)\n");
     printf("  자기 물풍선에 갇힌 횟수: %lld,  그러다 죽은 수: %lld\n",
            self_kill / rounds, selfd / rounds);
 
@@ -494,11 +565,11 @@ int main(int argc, char** argv)
     // 1틱째면 터지는 순간 거기 있었던 것이고, 그건 못 피한 것이다 — 게임이다.
     // 2틱째 이후면 이미 물이 깔려 있는 칸으로 **걸어 들어간** 것이다.
     // 물줄기가 0.5초 남아 있다는 걸 판단에 못 넣고 있다는 뜻이고, 그건 버그다
-    printf("  갇힌 횟수 %lld  (터질 때 휘말림 %lld,  깔린 데로 걸어 들어감 %lld = %lld%%)\n",
-           tt / rounds, (tt - tw) / rounds, tw / rounds, tt ? tw * 100 / tt : 0);
+    printf("  %d판 합계: 갇힌 횟수 %lld  (터질 때 휘말림 %lld,  깔린 데로 걸어 들어감 %lld = %lld%%)\n",
+           rounds, tt, tt - tw, tw, tt ? tw * 100 / tt : 0);
 
     // 갇힐 때 무슨 생각을 하고 있었나. 이게 있어야 어느 규칙을 고칠지 알 수 있다
-    printf("  갇힐 때 하던 일:");
+    printf("  갇히기 직전 판단:");
     for (int k = 0; k < 16; ++k) {
         if (treason[k] > 0) printf(" %s %lld", BOT_REASON_NAME[k], treason[k]);
     }
@@ -515,6 +586,18 @@ int main(int argc, char** argv)
     // '이상해 보인다' 를 고칠 수 있으려면 숫자여야 한다
     printf("  방향을 한 틱 만에 뒤집은 횟수: %lld (그중 물가에서 %lld)\n",
            flips / rounds, wet / rounds);
+    printf("  1초 안의 두 칸 왕복: %lld,  봇끼리 자리 맞교환: %lld (판당)\n",
+           bounces / rounds, swaps / rounds);
+    printf("  침수 중 대피 외 행동: %lld틱,  예고 중 대피 외 행동: %lld틱 (판당)\n",
+           wet_wrong / rounds, warn_wrong / rounds);
+    printf("  짧은 왕복 당시 판단:");
+    for (int k = 0; k < 16; ++k)
+        if (bounce_reason[k] > 0) printf(" %s %lld", BOT_REASON_NAME[k], bounce_reason[k] / rounds);
+    printf("\n");
+    printf("  예고 중 대피 외 판단:");
+    for (int k = 0; k < 16; ++k)
+        if (warn_reason[k] > 0) printf(" %s %lld", BOT_REASON_NAME[k], warn_reason[k] / rounds);
+    printf("\n");
 
     // 어느 규칙 쌍이 번갈아 나오나. 위에서부터 다섯 개만
     {
@@ -581,7 +664,7 @@ int main(int argc, char** argv)
         printf("  상한을 다 채운 사람이 한 판도 없었다\n");
     }
 
-    printf("\n--- 판 서른 개가 서로 다르게 플레이되나 ---\n");
+    printf("\n--- 맵 조각별 위험이 다른가 ---\n");
 
     long long tick_sum = 0, death_sum = 0;
     for (int k = 0; k < SECTOR_TEMPLATE_COUNT; ++k) {
@@ -609,7 +692,7 @@ int main(int argc, char** argv)
                t_share ? d_share * 100 / t_share : 0,
                g_piece_broken[k] / seen);
     }
-    printf("  (아홉 자리에 골고루 흩어지면 체류도 사망도 11.1%% 다)\n");
+    printf("  (조각 세 종에 체류·사망이 고르면 각각 약 33%%다)\n");
     printf("\n--- 아이템 ---\n");
     printf("  부순 블록 %lld 개, 상자 민 횟수 %lld 번, 살아남은 사람의 아이템 %lld.%lld 개\n",
            broken / rounds, pushed / rounds,

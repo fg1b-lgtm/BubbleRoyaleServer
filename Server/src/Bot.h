@@ -24,7 +24,7 @@
 
 #include "GameTick.h"
 
-// 자리를 봇으로 몇 명까지 채울 것인가. 명령줄로 바꾼다 (Server.exe bots N).
+// 사람과 별개로 봇을 몇 명 둘 것인가. 명령줄로 바꾼다 (Server.exe bots N).
 //
 // 소유 스레드 : main 이 시작할 때 한 번 쓰고, 그 뒤로는 tick 만 읽는다
 inline int g_bot_target = BOT_FILL_TO;
@@ -35,13 +35,13 @@ inline const int DY[4] = {  0,  0,  1, -1 };
 // ── 봇 ───────────────────────────────────────────────────────
 //
 // 너무 멍청하면 자기 물풍선에 다 죽어서 숫자가 의미 없어진다.
-// 너무 똑똑하면 만들다 날 샌다. 아래 다섯 줄이면 사람 흉내는 난다.
+// 너무 똑똑하면 만들다 날 샌다. 판단 순서는 사람이 화면을 읽는 순서와 맞춘다.
 //
 //   1) 지금 위험하면 안전한 칸으로 도망친다
-//   2) 물에 잠긴 구역이면 가운데로 간다
-//   3) 가까이 아이템이 있으면 주우러 간다
-//   4) 블록 옆이고 놓고 도망칠 수 있으면 놓는다
-//   5) 아니면 가운데 쪽으로 걷는다
+//   2) 침수 예고나 물속이면 안전 구역부터 찾는다
+//   3) 갇힌 적은 몸으로 잡고, 공격선 안의 적에게만 물풍선을 놓는다
+//   4) 가까운 아이템을 줍고 막힌 길은 블록을 부숴 연다
+//   5) 할 일이 없으면 적을 찾거나 중앙 쪽으로 이동한다
 
 // 위험을 두 겹으로 나눈다.
 //
@@ -122,6 +122,18 @@ inline bool Passable(int x, int y)
     return g_game.map.tile[y][x] == TILE_EMPTY;
 }
 
+// 물이 이미 찼거나 곧 찰 구역인가.
+//
+// 사람은 붉은 예고를 보고 미리 떠난다. 봇이 SECTOR_FLOODED만 보면 예고 30초를
+// 통째로 서 있다가 파란 물이 덮인 다음에야 움직인다. 관전 화면에서는 물을
+// 인식하지 못하는 것처럼 보이고, 실제로도 탈출 시간을 버리는 행동이다.
+inline bool FloodThreatAt(int x, int y)
+{
+    if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return true;
+    if (IsUnderWater(x, y)) return true;
+    return SectorStateAt(x, y) == SECTOR_WARNING;
+}
+
 // (x,y) 에서 d 방향으로 한 걸음 갈 때, 그 자리의 상자를 밀어낼 수 있나.
 // 조건은 Game.h 의 TryPushBox 와 같아야 한다. 어긋나면 봇이 안 밀리는 상자를 향해 선다
 inline bool CanPushInto(int x, int y, int d)
@@ -150,6 +162,11 @@ inline int g_enemy_at[MAP_H][MAP_W];
 // 그중 갇혀 있는 사람. 몸으로 부딪치면 터진다
 inline int g_prey_at[MAP_H][MAP_W];
 
+// 막 건너온 칸. 급하지 않은 목표가 곧바로 그 칸을 다시 고르는 것을 잠깐 막는다.
+// A-B-A 왕복은 목표 종류가 달라도 첫걸음이 방금 온 칸이라는 공통점이 있다.
+inline int g_last_x[PLAYER_MAX], g_last_y[PLAYER_MAX];
+inline int g_back_x[PLAYER_MAX], g_back_y[PLAYER_MAX], g_back_ticks[PLAYER_MAX];
+
 inline void BuildEnemyMap()
 {
     for (int y = 0; y < MAP_H; ++y)
@@ -166,6 +183,29 @@ inline void BuildEnemyMap()
     }
 }
 
+// 이 칸에서 놓은 물풍선이 실제로 적에게 닿나.
+//
+// BFS 거리만 가까우면 벽 모서리 뒤의 적에게도 물풍선을 놓던 문제가 있었다.
+// 물줄기는 직선이고 첫 벽·상자에서 멈추므로 같은 규칙으로 직접 훑는다.
+inline bool EnemyInBlastLine(int tx, int ty, int range, int me)
+{
+    if (g_enemy_at[ty][tx] >= 0 && g_enemy_at[ty][tx] != me) return true;
+
+    for (int d = 0; d < 4; ++d) {
+        for (int step = 1; step <= range; ++step) {
+            int x = tx + DX[d] * step;
+            int y = ty + DY[d] * step;
+            if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) break;
+
+            uint8_t tile = g_game.map.tile[y][x];
+            if (tile == TILE_WALL) break;
+            if (g_enemy_at[y][x] >= 0 && g_enemy_at[y][x] != me) return true;
+            if (IsBreakableTile(tile) || tile == TILE_BUBBLE) break;
+        }
+    }
+    return false;
+}
+
 // 목표 칸 자체도 돌려준다 (out_gx/out_gy).
 //
 // 전에는 첫 걸음 방향만 줬다. 그래서 SafeToPlace 가 '그 방향으로 직선으로' 훑어
@@ -180,7 +220,7 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
                      // 나오면 다시 아이템이 이겨서 들어간다. 판당 1028회 왕복했다.
                      // 목숨 걸 이유가 없는 일에는 위험한 길을 안 고르면 된다.
                      // 도망은 이걸 안 쓴다 — 도망은 급한 일이고, 다 막으면 나갈 길이 없어진다
-                     bool strict = false)
+                     bool strict = false, int attack_range = BLAST_BASE_RANGE)
 {
     static int  dist[MAP_H][MAP_W];
     static int  fromd[MAP_H][MAP_W];
@@ -205,6 +245,7 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
     //
     // 이미 물 안에 있으면 예외다. 그때는 물을 지나야만 나올 수 있다
     const bool start_wet = IsUnderWater(sx, sy);
+    const bool start_warn = SectorStateAt(sx, sy) == SECTOR_WARNING;
 
     // **위험한 칸은 지나가지 않는다.**
     //
@@ -243,7 +284,7 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             hit = (g_game.item[y][x] != ITEM_NONE) && !g_danger[y][x];
             break;
         case Goal::Center:
-            hit = !IsUnderWater(x, y) && !g_danger[y][x]
+            hit = !FloodThreatAt(x, y) && !g_danger[y][x]
                   && (abs(x - cx) + abs(y - cy) < abs(sx - cx) + abs(sy - cy));
             break;
         case Goal::Block:
@@ -254,7 +295,9 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             if (g_danger[y][x]) hit = false;
             break;
         case Goal::Enemy:
-            hit = (g_enemy_at[y][x] >= 0 && g_enemy_at[y][x] != me);
+            // 적이 서 있는 옛 칸이 아니라, 지금 물풍선을 놓으면 실제로 닿는 칸.
+            // 둘이 서로의 이전 위치를 목표로 삼아 교차한 뒤 되돌아가던 원인을 없앤다.
+            hit = EnemyInBlastLine(x, y, attack_range, me) && !g_danger[y][x];
             break;
         case Goal::Prey:
             // 갇힌 적. 물줄기로는 못 죽이니 직접 가서 부딪쳐야 한다
@@ -282,7 +325,15 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
             // 이제 막힌 칸도 들여다보므로 범위를 먼저 본다
             if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
             if (dist[ny][nx] >= 0) continue;
+            // 아이템·사냥·부수기는 방금 건너온 칸으로 즉시 되돌아가지 않는다.
+            // 폭발 도망과 침수 대피는 목숨이 먼저라 이 제한을 적용하지 않는다.
+            const bool urgent = goal == Goal::Safe
+                             || (goal == Goal::Center && FloodThreatAt(sx, sy));
+            if (!urgent && me >= 0 && g_back_ticks[me] > 0
+                && x == sx && y == sy
+                && nx == g_back_x[me] && ny == g_back_y[me]) continue;
             if (!start_wet && IsUnderWater(nx, ny)) continue;
+            if (!start_wet && !start_warn && SectorStateAt(nx, ny) == SECTOR_WARNING) continue;
             // **타는 칸은 도망칠 때도 안 밟는다.** 여기가 9/2 에 고친 자리다.
             // 위 두 줄과 달리 start_danger 로 안 풀린다 — 위험해졌다고 해서
             // 확정으로 갇히는 길이 답이 되지는 않기 때문이다
@@ -295,6 +346,12 @@ inline bool FindStep(int sx, int sy, Goal goal, int max_steps, int* out_dx, int*
                 // 실제로는 한 번 밀 때마다 PUSH_COOLDOWN_TICKS 를 쉰다.
                 // 그래서 보통 길로 못 갈 때만 켜서 다시 부른다
                 if (!allow_push || !CanPushInto(x, y, d)) continue;
+            }
+            // 다른 사람이 서 있는 칸을 빈 통로로 보면 좁은 길에서 서로를 관통해
+            // 자리를 맞바꾼다. 몸으로 닿아야 하는 갇힌 상대만 예외다.
+            if (goal != Goal::Prey) {
+                int occupant = g_enemy_at[ny][nx];
+                if (occupant >= 0 && occupant != me) continue;
             }
             dist[ny][nx] = dist[y][x] + 1;
             fromd[ny][nx] = d;
@@ -357,10 +414,12 @@ inline bool SafeToPlace(int tx, int ty, int range, int reach, int* out_gx, int* 
     int dx, dy;
     int gx = tx, gy = ty;
 
-    // 놓을 자리는 위험해질 자리다. 그러니 위험을 밟고 나가는 것을 허용해서 찾는다.
-    // 찾은 칸을 그대로 목표로 쓴다. 직선으로 다시 훑지 않는다
+    // 놓을 자리는 자기 물풍선의 미래 십자라서 g_danger는 밟고 나갈 수 있어야 한다.
+    // 하지만 g_soon은 **이미 1초 안에 터질 다른 물풍선**이다. 설치는 선택 행동이므로
+    // 그런 길밖에 없으면 이번에는 놓지 않는다. 예전 true는 그 길까지 허용했다.
+    // 찾은 칸을 그대로 목표로 쓴다. 직선으로 다시 훑지 않는다.
     bool ok = FindStep(tx, ty, Goal::Safe, reach, &dx, &dy,
-                       -1, nullptr, false, true, &gx, &gy);
+                       -1, nullptr, false, false, &gx, &gy);
 
     if (ok && out_gx) { *out_gx = gx; *out_gy = gy; }
 
@@ -416,11 +475,14 @@ inline void ClearFleeTargets()
         g_flee_x[i] = -1; g_flee_y[i] = -1;
         g_hold[i] = 0;
         g_goal_x[i] = -1; g_goal_ttl[i] = 0; g_settle[i] = 0;
+        g_last_x[i] = -1; g_last_y[i] = -1;
+        g_back_x[i] = -1; g_back_y[i] = -1; g_back_ticks[i] = 0;
     }
 }
 
 // 정해둔 칸으로 가는 첫 걸음
-inline bool StepToward(int sx, int sy, int gx, int gy, int* out_dx, int* out_dy)
+inline bool StepToward(int sx, int sy, int gx, int gy, int* out_dx, int* out_dy,
+                       int me = -1)
 {
     static int dist[MAP_H][MAP_W];
     static int fromd[MAP_H][MAP_W];
@@ -433,6 +495,14 @@ inline bool StepToward(int sx, int sy, int gx, int gy, int* out_dx, int* out_dy)
     int head = 0, tail = 0;
     dist[sy][sx] = 0;
     qx[tail] = sx; qy[tail] = sy; ++tail;
+
+    // 목표를 처음 고를 때만 물과 폭발을 피하면 부족하다. 목표를 들고 가는 사이
+    // 구역이 잠기거나 새 물풍선이 놓일 수 있다. 매 틱 다시 찾는 이 길도 같은
+    // 금지 칸을 보아야 예전 목표를 따라 물속으로 걸어 들어가지 않는다.
+    const bool start_wet = IsUnderWater(sx, sy);
+    const bool start_warn = SectorStateAt(sx, sy) == SECTOR_WARNING;
+    const bool start_soon = g_soon[sy][sx];
+    const bool start_burn = g_burn[sy][sx];
 
     while (head < tail) {
         int x = qx[head], y = qy[head];
@@ -453,6 +523,12 @@ inline bool StepToward(int sx, int sy, int gx, int gy, int* out_dx, int* out_dy)
         for (int d = 0; d < 4; ++d) {
             int nx = x + DX[d], ny = y + DY[d];
             if (!Passable(nx, ny) || dist[ny][nx] >= 0) continue;
+            if (!start_wet && IsUnderWater(nx, ny)) continue;
+            if (!start_wet && !start_warn && SectorStateAt(nx, ny) == SECTOR_WARNING) continue;
+            if (!start_burn && g_burn[ny][nx]) continue;
+            if (!start_soon && g_soon[ny][nx]) continue;
+            int occupant = g_enemy_at[ny][nx];
+            if (occupant >= 0 && occupant != me) continue;
             dist[ny][nx] = dist[y][x] + 1;
             fromd[ny][nx] = d;
             qx[tail] = nx; qy[tail] = ny; ++tail;
@@ -481,9 +557,9 @@ enum BotReason {
 };
 
 inline const char* BOT_REASON_NAME[R_COUNT] = {
-    "없음", "붙잡기", "도망(유지)", "도망(새로)", "도망못함", "물탈출",
-    "마무리", "놓기(적)", "아이템", "아이템(밀기)", "놓기(블록)",
-    "사냥", "부수기", "가운데", "멍때림",
+    "없음", "방향 유지", "폭발 회피(유지)", "폭발 회피", "탈출로 없음", "침수 탈출",
+    "갇힌 적 추격", "적 공격", "아이템 이동", "아이템 밀기", "블록 공격",
+    "적 추격", "블록 이동", "중앙 이동", "대기",
 };
 
 inline uint8_t g_reason[PLAYER_MAX];
@@ -552,7 +628,7 @@ inline void FleeTo(int slot, Player& p, int tx, int ty, int gx, int gy)
 
     int dx = 0, dy = 0;
     if (gx != tx || gy != ty) {
-        if (StepToward(tx, ty, gx, gy, &dx, &dy)) {
+        if (StepToward(tx, ty, gx, gy, &dx, &dy, slot)) {
             p.dir_x = dx; p.dir_y = dy;
             return;
         }
@@ -589,6 +665,19 @@ inline void ThinkBot(int slot)
 
     int tx = p.judge_tx, ty = p.judge_ty;
     int dx = 0, dy = 0;
+    int range = BLAST_BASE_RANGE + p.power_lv;
+
+    if (g_last_x[slot] < 0) {
+        g_last_x[slot] = tx; g_last_y[slot] = ty;
+    }
+    else if (g_last_x[slot] != tx || g_last_y[slot] != ty) {
+        g_back_x[slot] = g_last_x[slot]; g_back_y[slot] = g_last_y[slot];
+        g_last_x[slot] = tx; g_last_y[slot] = ty;
+        g_back_ticks[slot] = HoldTicks(p) * 2;
+    }
+    else if (g_back_ticks[slot] > 0) {
+        --g_back_ticks[slot];
+    }
 
     // 방향을 몇 틱 붙잡는 장치가 여기 있었다. 뺐다.
     //
@@ -615,10 +704,18 @@ inline void ThinkBot(int slot)
 
         int gx = g_goal_x[slot], gy = g_goal_y[slot];
         const bool fleeing = (g_goal_why[slot] == R_FLEE_KEEP);
+        const bool evacuating = (g_goal_why[slot] == R_WATER);
 
         bool drop = (gx == tx && gy == ty)          // 도착했다
                  || !Passable(gx, gy)               // 막혔다
                  || g_soon[gy][gx];                 // 목표가 곧 터진다
+
+        // 평소 목표를 따라가는 중에 침수 예고가 켜지거나 실제 물이 차면
+        // 그 목표는 즉시 버린다. 전에는 이 블록이 아래 물탈출 규칙보다 먼저라서
+        // 아이템·사냥 목표의 TTL이 끝날 때까지 물속으로 계속 걸었다.
+        if (!fleeing && !evacuating && FloodThreatAt(tx, ty)) drop = true;
+        if (!fleeing && !evacuating && FloodThreatAt(gx, gy)) drop = true;
+        if (fleeing && !IsUnderWater(tx, ty) && IsUnderWater(gx, gy)) drop = true;
 
         // 아이템을 주우러 가는 중이었는데 남이 먼저 먹었으면 그만둔다
         if (g_goal_why[slot] == R_ITEM && g_game.item[gy][gx] == ITEM_NONE) drop = true;
@@ -626,7 +723,7 @@ inline void ThinkBot(int slot)
         // 도망이 아닌 목표는 발밑이 위험해지면 버린다. 목숨이 먼저다
         if (!fleeing && g_danger[ty][tx]) drop = true;
 
-        if (!drop && StepToward(tx, ty, gx, gy, &dx, &dy)) {
+        if (!drop && StepToward(tx, ty, gx, gy, &dx, &dy, slot)) {
             // 가는 도중에도 한 번 더 본다.
             //
             // 목표를 고를 때는 길찾기가 위험 칸을 다 빼고 길을 뽑는다. 그런데
@@ -638,6 +735,15 @@ inline void ThinkBot(int slot)
             // 중이었다. 이미 물이 깔린 칸은 들어가면 확정으로 갇히므로 무슨
             // 목표든 이것보다 급하지 않다
             if (!Bad(tx + dx, ty + dy)) {
+                // 사냥 중 상대가 서 있는 칸으로 그대로 들어가면 둘이 자리를 바꾼 뒤
+                // 서로의 옛 목표로 되돌아간다. 공격할 여유가 없을 때는 잠깐 대치한다.
+                int next_enemy = g_enemy_at[ty + dy][tx + dx];
+                if (g_goal_why[slot] == R_HUNT
+                    && next_enemy >= 0 && next_enemy != slot) {
+                    p.dir_x = 0; p.dir_y = 0;
+                    g_reason[slot] = R_HUNT;
+                    return;
+                }
                 p.dir_x = dx; p.dir_y = dy;
                 g_reason[slot] = fleeing ? R_FLEE_KEEP : g_goal_why[slot];
                 return;
@@ -683,10 +789,10 @@ inline void ThinkBot(int slot)
         // 그 길이 길면 도중에 터진다. 그래서 두 번 찾는다.
         // 깨끗한 길이 없을 때만 위험을 밟는다. 그때는 밟고서라도 나가야 한다
         bool found = FindStep(tx, ty, Goal::Safe, flee_reach, &dx, &dy,
-                              -1, nullptr, false, false, &gx, &gy);
+                              slot, nullptr, false, false, &gx, &gy);
         if (!found) {
             found = FindStep(tx, ty, Goal::Safe, flee_reach, &dx, &dy,
-                             -1, nullptr, false, true, &gx, &gy);
+                             slot, nullptr, false, true, &gx, &gy);
         }
 
         if (found) {
@@ -699,16 +805,50 @@ inline void ThinkBot(int slot)
         }
         g_reason[slot] = R_FLEE_STUCK;   // 위험한데 갈 데가 없다. 아래 규칙으로 내려간다
     }
-    // 2) 잠긴 구역이면 가운데로
-    if (IsUnderWater(tx, ty)) {
-        if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy, -1, nullptr, false, false, nullptr, nullptr, true)) {
+    // 2) 침수 예고 또는 실제 물이면 안전한 안쪽 구역으로.
+    // 코너에서 중앙까지는 20칸보다 멀 수 있으므로 맵 전체 최단거리까지 찾는다.
+    if (FloodThreatAt(tx, ty)) {
+        int safe_x = -1, safe_y = -1;
+        if (FindStep(tx, ty, Goal::Center, MAP_W + MAP_H, &dx, &dy,
+                     slot, nullptr, false, false, &safe_x, &safe_y, true, range)) {
             p.dir_x = dx; p.dir_y = dy;
             g_reason[slot] = R_WATER;
+            SetGoal(slot, p, safe_x, safe_y, R_WATER);
             return;
         }
-    }
 
-    int range = BLAST_BASE_RANGE + p.power_lv;
+        // 열린 길이 없으면 출구를 막은 블록부터 부순다. 전에는 일반 규칙으로
+        // 내려가 가까운 아이템을 줍거나 멍하니 서서 예고 시간을 버렸다.
+        bool near_exit_block = false;
+        for (int d = 0; d < 4; ++d) {
+            if (g_game.map.IsBlock(tx + DX[d], ty + DY[d])) near_exit_block = true;
+        }
+        int escape_reach = EscapeReach(p);
+        int flee_x = -1, flee_y = -1;
+        if (near_exit_block
+            && SafeToPlace(tx, ty, range, escape_reach, &flee_x, &flee_y)) {
+            if (PlaceBubble(slot)) {
+                FleeTo(slot, p, tx, ty, flee_x, flee_y);
+                g_reason[slot] = R_WATER;
+                return;
+            }
+        }
+
+        int block_x = -1, block_y = -1;
+        if (FindStep(tx, ty, Goal::Block, MAP_W + MAP_H, &dx, &dy,
+                     slot, nullptr, false, false, &block_x, &block_y, true, range)) {
+            p.dir_x = dx; p.dir_y = dy;
+            g_reason[slot] = R_WATER;
+            SetGoal(slot, p, block_x, block_y, R_WATER);
+            return;
+        }
+
+        // 새 길이 생기는지 다음 틱에 다시 본다. 파밍·사냥으로 내려가면 침수
+        // 경고를 무시한 행동이 되므로 여기서는 안전한 칸 안쪽으로 몸만 모은다.
+        g_reason[slot] = R_WATER;
+        StandStill(p, tx, ty);
+        return;
+    }
 
     // 2.5) 갇힌 적이 가까이 있으면 마무리하러 간다.
     //      물줄기로는 못 죽인다. 몸으로 가야 한다
@@ -719,11 +859,10 @@ inline void ThinkBot(int slot)
     }
 
     // 3) 사거리 안에 적이 있으면 놓는다. 이게 없으면 아무도 안 죽어서 판이 안 끝난다
-    int enemy_dist = 0;
     int reach = EscapeReach(p);
     int gx = -1, gy = -1;
 
-    bool enemy_near = FindStep(tx, ty, Goal::Enemy, range, &dx, &dy, slot, &enemy_dist);
+    bool enemy_near = EnemyInBlastLine(tx, ty, range, slot);
     if (enemy_near && SafeToPlace(tx, ty, range, reach, &gx, &gy)) {
         if (PlaceBubble(slot)) {
             FleeTo(slot, p, tx, ty, gx, gy);
@@ -738,13 +877,13 @@ inline void ThinkBot(int slot)
     //    아이템은 봇이 굳이 가려는 유일한 목표라 '막혔다' 가 성립하는 자리다.
     //    도망칠 때는 안 켠다. 미는 데 쉬는 시간이 붙어서 그동안 맞는다
     int gx2 = -1, gy2 = -1;
-    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2, true)) {
+    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, slot, nullptr, false, false, &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_ITEM;
         SetGoal(slot, p, gx2, gy2, R_ITEM);
         return;
     }
-    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, -1, nullptr, true, false, nullptr, nullptr, true)) {
+    if (FindStep(tx, ty, Goal::Item, 8, &dx, &dy, slot, nullptr, true, false, nullptr, nullptr, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_ITEM_PUSH;
         return;
@@ -772,7 +911,14 @@ inline void ThinkBot(int slot)
         return;
     }
 
-    if (FindStep(tx, ty, Goal::Enemy, 18, &dx, &dy, slot, nullptr, false, false, &gx2, &gy2, true)) {
+    if (FindStep(tx, ty, Goal::Enemy, 18, &dx, &dy, slot, nullptr, false, false,
+                 &gx2, &gy2, true, range)) {
+        int next_enemy = g_enemy_at[ty + dy][tx + dx];
+        if (next_enemy >= 0 && next_enemy != slot) {
+            g_reason[slot] = R_HUNT;
+            StandStill(p, tx, ty);
+            return;
+        }
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_HUNT;
         SetGoal(slot, p, gx2, gy2, R_HUNT);
@@ -780,7 +926,7 @@ inline void ThinkBot(int slot)
     }
 
     // 7) 부술 게 있는 쪽으로
-    if (FindStep(tx, ty, Goal::Block, 14, &dx, &dy, -1, nullptr, false, false, &gx2, &gy2, true)) {
+    if (FindStep(tx, ty, Goal::Block, 14, &dx, &dy, slot, nullptr, false, false, &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_BLOCK;
         SetGoal(slot, p, gx2, gy2, R_BLOCK);
@@ -792,7 +938,7 @@ inline void ThinkBot(int slot)
     // 나머지를 다 고치고 나니 뒤집기 1등이 가운데->가운데(판당 385)로 남았다.
     // 이 규칙만 목표를 안 들고 매 틱 처음부터 골랐다. 기준 칸이 한 칸 바뀌면
     // '가운데에 더 가까운 칸' 이 좌우로 번갈아 나온다. 앞에서 고친 것과 같은 병이다
-    if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy, -1, nullptr, false, false,
+    if (FindStep(tx, ty, Goal::Center, 20, &dx, &dy, slot, nullptr, false, false,
                  &gx2, &gy2, true)) {
         p.dir_x = dx; p.dir_y = dy;
         g_reason[slot] = R_CENTER;
