@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="ko">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bubble Royale</title>
@@ -107,75 +110,184 @@
     transition: background-color 0.1s, transform 0.05s;
   }
   button:hover { background: var(--wood-lite); border-color: var(--wood-line); }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
   /* 눌렀을 때 한 칸 내려앉는다. hover 만 있으면 클릭해도 "받았다"는 반응이
      없어서 두 번 누르게 된다 - 나무 판을 실제로 누른 것처럼 살짝 꺼지게 한다 */
   button:active { background: var(--wood-dark); transform: translateY(1px); }
 
-  /* 게임 화면과 분리된 시작 로비. 게임 캔버스는 시작을 누른 뒤에만 보인다. */
+  /* 게임 화면과 분리된 시작 로비. 게임 캔버스와 서버 연결은 시작 뒤에만 연다. */
   [hidden] { display: none !important; }
-  #lobby { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #140b06; }
-  .lobby-card { width: min(680px, calc(100vw - 32px)); padding: 28px; background: var(--wood-dark); border: 3px solid var(--wood-line); box-shadow: 8px 8px 0 #0008; }
-  .lobby-title { margin: 0 0 6px; color: var(--wood-rim); letter-spacing: .16em; font-size: 25px; }
-  .lobby-subtitle { margin: 0 0 22px; color: var(--dim); }
-  .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .mode-card { min-height: 110px; text-align: left; padding: 15px; border: 2px solid var(--wood-line); background: var(--wood-mid); }
-  .mode-card.selected { outline: 3px solid var(--good); background: var(--wood-lite); }
-  .mode-card strong, .mode-card small { display: block; }
-  .mode-card strong { font-size: 16px; margin-bottom: 8px; }
-  .mode-card small { color: var(--dim); }
-  .room-panel { margin-top: 14px; padding: 12px; border: 2px solid var(--wood-line); }
-  .room-actions { display: flex; gap: 8px; margin-bottom: 8px; }
-  input, select { width: 100%; padding: 9px; color: var(--ink); background: #241208; border: 2px solid var(--wood-line); font: inherit; }
-  .lobby-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 22px; }
-  .lobby-status { min-height: 20px; color: var(--good); }
+  #lobby { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 18px; overflow-x: hidden; overflow-y: auto; background: radial-gradient(circle at 50% 30%, #30241d 0, #17110d 65%); }
+  .lobby-card { width: min(560px, calc(100vw - 36px)); padding: 34px; background: #2d211a; border: 1px solid #6c513f; border-radius: 10px; box-shadow: 0 22px 70px #0009; }
+  .lobby-kicker { margin: 0 0 9px; color: #af9a89; font-size: 10px; letter-spacing: .15em; }
+  .lobby-title { margin: 0 0 10px; color: #f0d3a2; letter-spacing: .10em; font-size: 29px; line-height: 1.2; }
+  .lobby-subtitle { margin: 0 0 24px; color: #d4c2b4; font-size: 13px; line-height: 1.6; }
+  .lobby-main-actions { display: grid; grid-template-columns: 1fr auto; gap: 9px; }
+  .lobby-main-actions .primary { min-height: 46px; font-size: 13px; }
+  .lobby-main-actions #profileOpen { min-width: 100px; }
+  .lobby-folds { margin-top: 24px; border-top: 1px solid #5a4436; }
+  .lobby-fold { border-bottom: 1px solid #5a4436; }
+  .lobby-fold > summary { display: flex; align-items: center; gap: 12px; padding: 16px 2px; color: #eadacb; cursor: pointer; list-style: none; }
+  .lobby-fold > summary::-webkit-details-marker { display: none; }
+  .lobby-fold > summary::after { content: '+'; margin-left: auto; color: #b99b7e; font-size: 20px; font-weight: 400; }
+  .lobby-fold[open] > summary::after { content: '−'; }
+  .fold-title { font-size: 13px; font-weight: 800; }
+  .fold-note { color: #9f8b7c; font-size: 10px; }
+  .fold-body { padding: 0 0 18px; }
+  .lobby-facts { display: grid; gap: 4px; margin: 0; }
+  .rule-card { display: grid; grid-template-columns: 88px 1fr; grid-template-rows: auto auto; align-items: center; min-height: 68px; color: #a99687; font-size: 10px; line-height: 1.5; }
+  .rule-card + .rule-card { border-top: 1px solid #4c382d; }
+  .rule-card b { align-self: end; color: #e6d6c8; font-size: 12px; }
+  .rule-card .rule-copy { align-self: start; }
+  .rule-visual { grid-row: 1 / 3; height: 42px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #ffe066; }
+  .rule-bubble { position: relative; width: 28px; height: 28px; border: 3px solid #183654; background: #4dabf7; box-shadow: inset 5px 5px 0 #a9dcff; border-radius: 50%; }
+  .rule-bubble::after { content: ''; position: absolute; width: 5px; height: 5px; right: 1px; top: -6px; background: #ffd166; border: 2px solid #3a210f; }
+  .rule-arrow { color: var(--wood-rim); font-size: 20px; font-weight: 900; }
+  .rule-crate { width: 30px; height: 30px; display: grid; place-items: center; color: #3a210f; background: #a56a34; border: 3px solid #3a210f; font: 900 20px/1 monospace; }
+  .rule-person { width: 24px; height: 29px; display: grid; place-items: center; color: #fff; background: #e85959; border: 3px solid #3a210f; border-radius: 50% 50% 42% 42%; font-size: 13px; }
+  .rule-person.trapped { width: 34px; height: 34px; background: #4dabf7aa; border-color: #a9dcff; box-shadow: 0 0 0 3px #183654; }
+  .safe-grid { display: grid; grid-template-columns: repeat(3, 12px); grid-template-rows: repeat(3, 12px); gap: 2px; }
+  .safe-grid i { background: #27658f; border: 1px solid #183654; }
+  .safe-grid i:nth-child(5) { background: #7ed957; border-color: #315d21; box-shadow: 0 0 0 2px #ffe066; }
+  .room-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: stretch; }
+  .room-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; gap: 8px; min-width: 0; padding: 14px; background: #241a15; border-left: 3px solid #765941; }
+  .room-row > label { grid-column: 1 / -1; color: #d7c6b8; font-size: 11px; font-weight: 800; }
+  .room-row input, .room-row select {
+    min-width: 0; width: 100%; padding: 8px; color: var(--ink);
+    background: #34261e; border: 1px solid #6b5040; font: inherit;
+  }
+  .room-row input { text-transform: uppercase; letter-spacing: .18em; font-weight: 700; }
+  .room-options { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .room-option { display: grid; gap: 4px; color: var(--dim); font-size: 10px; }
+  .room-check { display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 9px; color: var(--ink); background: #34261e; border: 1px solid #6b5040; cursor: pointer; }
+  .room-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--good); }
+  .room-create > button { grid-column: 1 / -1; }
+  .room-option.disabled { opacity: .42; }
+  select { width: 100%; padding: 9px; color: var(--ink); background: #241208; border: 2px solid var(--wood-line); font: inherit; }
+  .lobby-status { display: block; margin-top: 14px; color: var(--good); line-height: 1.5; }
+  .lobby-status:empty { display: none; }
   .lobby-status.bad { color: var(--bad); }
-  .profile-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: #0009; }
-  .profile-card { width: min(470px, calc(100vw - 32px)); padding: 22px; background: var(--wood-dark); border: 3px solid var(--wood-line); }
+  .primary { padding: 8px 15px; background: #8d5f20; border-color: var(--wood-rim); color: #fff3c4; }
+  .profile-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: #000b; }
+  .profile-card { width: min(470px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 22px; background: var(--wood-dark); border: 3px solid var(--wood-line); }
+  .profile-card h2 { margin-top: 0; color: var(--wood-rim); }
   .profile-row { margin: 12px 0; }
   .profile-row label { display: block; margin-bottom: 5px; color: var(--dim); }
+  .profile-note { display: block; margin-top: 6px; color: var(--dim); font-size: 10px; line-height: 1.5; }
   .key-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
   .key-grid button { display: flex; justify-content: space-between; }
+  .key-grid button.listening { outline: 2px solid var(--good); color: var(--good); }
+  .volume-grid { display: grid; gap: 10px; }
+  .volume-control { display: grid; grid-template-columns: 76px minmax(0, 1fr) 42px; align-items: center; gap: 9px; }
+  .volume-control label { margin: 0; color: var(--ink); }
+  .volume-control input[type="range"] { width: 100%; accent-color: var(--good); cursor: pointer; }
+  .volume-control output { color: var(--good); text-align: right; font-variant-numeric: tabular-nums; }
   .profile-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   .game-started #lobby { display: none; }
-  @media (max-width: 520px) { .mode-grid { grid-template-columns: 1fr; } .lobby-card { padding: 20px; } }
+  .touch-controls { position: absolute; inset: 0; z-index: 4; pointer-events: none; line-height: normal; }
+  .touch-dpad { position: absolute; width: 124px; height: 124px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 3px; }
+  .touch-dpad button, .touch-place { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; background: #6b3c1cdd; border-width: 3px; box-shadow: 3px 3px 0 #0008; color: #fff3d8; font-weight: 800; }
+  .touch-dpad button { padding: 0; font-size: 20px; }
+  .touch-dpad button[data-touch-dir="up"] { grid-column: 2; grid-row: 1; }
+  .touch-dpad button[data-touch-dir="left"] { grid-column: 1; grid-row: 2; }
+  .touch-dpad button[data-touch-dir="right"] { grid-column: 3; grid-row: 2; }
+  .touch-dpad button[data-touch-dir="down"] { grid-column: 2; grid-row: 3; }
+  .touch-place { position: absolute; width: 84px; height: 84px; padding: 0 6px; font-size: 12px; line-height: 1.25; }
+  .touch-place::before { content: ''; display: block; width: 30px; height: 30px; margin: 0 auto 4px; border: 3px solid #183654; border-radius: 50%; background: #4dabf7; box-shadow: inset 6px 6px 0 #a9dcff; }
+  .touch-dpad button.pressed, .touch-place.pressed { background: #3d2110; transform: translateY(2px); box-shadow: 1px 1px 0 #0008; }
+  @media (max-width: 520px) {
+    header { gap: 4px; padding: 0 4px; }
+    header .mark { display: none; }
+    #themeChip { display: none; }
+    header .chip { padding-inline: 5px; }
+    .lobby-card { width: min(100%, 560px); padding: 24px 20px; }
+    .lobby-title { font-size: 23px; }
+    .lobby-main-actions { grid-template-columns: 1fr; }
+    .lobby-main-actions #profileOpen { min-height: 40px; }
+    .room-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-height: 760px) {
+    #lobby { place-items: start center; }
+  }
 </style>
+</head>
+<body>
 
 <div id="lobby">
   <section class="lobby-card" aria-labelledby="lobbyTitle">
+    <p class="lobby-kicker">최대 24명 · 실시간 서바이벌</p>
     <h1 id="lobbyTitle" class="lobby-title">BUBBLE ROYALE</h1>
-    <p class="lobby-subtitle">전투 방식을 고르고, 나만의 조작과 캐릭터로 시작하세요.</p>
-    <div class="mode-grid">
-      <button class="mode-card selected" data-mode="bot" type="button"><strong>봇전</strong><small>혼자 바로 시작합니다.<br>빈자리는 봇이 채웁니다.</small></button>
-      <button class="mode-card" data-mode="pvp" type="button"><strong>사람대전</strong><small>방을 만들거나 코드로 입장합니다.<br>방 매칭 UI를 먼저 준비합니다.</small></button>
+    <p class="lobby-subtitle">물풍선으로 길을 열고, 마지막까지 살아남으세요.</p>
+    <div class="lobby-main-actions">
+      <button id="startGame" class="primary" type="button">공개 게임 바로 시작</button>
+      <button id="profileOpen" type="button">설정</button>
     </div>
-    <div id="roomPanel" class="room-panel" hidden>
-      <div class="room-actions"><button id="createRoom" type="button">방 만들기</button><input id="roomCode" maxlength="6" placeholder="방 코드 6자리"></div>
-      <small>방을 만든 뒤 코드를 친구에게 공유하세요.</small>
+    <div class="lobby-folds">
+      <details class="lobby-fold">
+        <summary><span class="fold-title">친구와 코드 방</span><span class="fold-note">인원과 봇을 직접 선택</span></summary>
+        <div class="fold-body room-grid">
+          <div class="room-row room-create">
+            <label>새 방 만들기</label>
+            <div class="room-options">
+              <label class="room-option" for="roomCapacity">최대 인원<select id="roomCapacity"><option value="2">2명</option><option value="4">4명</option><option value="8" selected>8명</option><option value="12">12명</option><option value="16">16명</option><option value="24">24명</option></select></label>
+              <label class="room-check" for="roomUseBots"><input id="roomUseBots" type="checkbox">봇 추가</label>
+              <label id="roomBotWrap" class="room-option disabled" for="roomBots">추가할 봇<select id="roomBots" disabled></select></label>
+            </div>
+            <button id="createRoom" type="button">방 만들기</button>
+          </div>
+          <div class="room-row">
+            <label for="roomCodeInput">코드로 입장</label>
+            <input id="roomCodeInput" type="text" maxlength="6" autocomplete="off" spellcheck="false" inputmode="text" placeholder="6자리 코드">
+            <button id="joinRoom" type="button">입장</button>
+          </div>
+        </div>
+      </details>
+      <details class="lobby-fold">
+        <summary><span class="fold-title">게임 방법</span><span class="fold-note">세 가지만 보기</span></summary>
+        <div class="fold-body lobby-facts" aria-label="게임 핵심 규칙">
+          <article class="rule-card"><div class="rule-visual" aria-hidden="true"><span class="rule-bubble"></span><span class="rule-arrow">→</span><span class="rule-crate">×</span></div><b>상자를 부숴 길 열기</b><span class="rule-copy">물풍선은 가로·세로로 터집니다.</span></article>
+          <article class="rule-card"><div class="rule-visual" aria-hidden="true"><span class="rule-person trapped">!</span><span class="rule-arrow">→</span><span class="rule-person">✓</span></div><b>갇힌 상대에게 몸으로 닿기</b><span class="rule-copy">닿는 순간 상대가 탈락합니다.</span></article>
+          <article class="rule-card"><div class="rule-visual" aria-hidden="true"><span class="safe-grid"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><b>붉은 경고가 뜨면 중앙으로</b><span class="rule-copy">30초 뒤 바깥 구역부터 물이 차오릅니다.</span></article>
+        </div>
+      </details>
     </div>
-    <div class="lobby-footer"><span id="lobbyStatus" class="lobby-status"></span><span><button id="profileOpen" type="button">개인 설정</button> <button id="startGame" type="button">게임 시작</button></span></div>
+    <span id="lobbyStatus" class="lobby-status" role="status" aria-live="polite"></span>
   </section>
 </div>
 
-<div id="profileModal" class="profile-modal" hidden>
+<div id="profileModal" class="profile-modal" role="dialog" aria-modal="true" aria-labelledby="profileTitle" hidden>
   <section class="profile-card" aria-labelledby="profileTitle">
-    <h2 id="profileTitle">개인 설정</h2>
-    <div class="profile-row"><label for="profileName">이름</label><input id="profileName" maxlength="16"></div>
-    <div class="profile-row"><label for="characterSelect">캐릭터</label><select id="characterSelect"><option value="0">캐릭터 1 · 물방울</option><option value="1">캐릭터 2 · 고글</option><option value="2">캐릭터 3 · 여우</option><option value="3">캐릭터 4 · 해적</option></select></div>
-    <div class="profile-row"><label>키 설정 — 버튼을 누르고 새 키를 입력</label><div class="key-grid"><button type="button" data-key="up">위 <b data-key-value="up"></b></button><button type="button" data-key="down">아래 <b data-key-value="down"></b></button><button type="button" data-key="left">왼쪽 <b data-key-value="left"></b></button><button type="button" data-key="right">오른쪽 <b data-key-value="right"></b></button><button type="button" data-key="place">물풍선 <b data-key-value="place"></b></button></div></div>
-    <div class="profile-buttons"><button id="profileClose" type="button">닫기</button><button id="profileSave" type="button">저장</button></div>
+    <h2 id="profileTitle">게임 설정</h2>
+    <div class="profile-row"><label for="characterSelect">내 화면에 보이는 캐릭터</label><select id="characterSelect"></select><small class="profile-note">이 설정은 내 화면에만 적용됩니다. 다른 사람에게는 기본 캐릭터로 보입니다.</small></div>
+    <div class="profile-row"><label>소리 크기</label><div class="volume-grid"><div class="volume-control"><label for="musicVolume">배경음악</label><input id="musicVolume" type="range" min="0" max="100" step="1"><output id="musicVolumeValue" for="musicVolume">42%</output></div><div class="volume-control"><label for="sfxVolume">효과음</label><input id="sfxVolume" type="range" min="0" max="100" step="1"><output id="sfxVolumeValue" for="sfxVolume">85%</output></div></div><small class="profile-note">움직이면 바로 미리 들을 수 있습니다. M은 배경음악과 효과음을 한꺼번에 끕니다.</small></div>
+    <div class="profile-row"><label>조작 키</label><div class="key-grid"><button type="button" data-key="up">위 <b data-key-value="up"></b></button><button type="button" data-key="down">아래 <b data-key-value="down"></b></button><button type="button" data-key="left">왼쪽 <b data-key-value="left"></b></button><button type="button" data-key="right">오른쪽 <b data-key-value="right"></b></button><button type="button" data-key="place">물풍선 <b data-key-value="place"></b></button></div><small class="profile-note">버튼을 누른 뒤 새 키를 입력하세요. R(다시 시작)과 M(소리)은 지정할 수 없습니다.</small></div>
+    <div class="profile-buttons"><button id="profileClose" type="button">취소</button><button id="profileSave" class="primary" type="button">저장</button></div>
   </section>
 </div>
 
 <header>
   <span class="mark">BUBBLE ROYALE</span>
   <span class="chip"><span id="connDot" class="dot off"></span><span id="conn" class="off">연결 안 됨</span></span>
-  <span class="chip"><b id="theme">—</b></span>
-  <span class="keys"><kbd>WASD</kbd> 이동 <kbd>Space</kbd> 물풍선 <kbd>R</kbd> 다시 <kbd>M</kbd> 소리</span>
+  <span id="roomChip" class="chip" hidden>방 <b id="roomCode">—</b></span>
+  <span id="themeChip" class="chip"><b id="theme">—</b></span>
+  <span class="keys"><kbd id="moveKeys">W A S D</kbd> 이동 <kbd id="placeKey">Space</kbd> 물풍선 <kbd>R</kbd> 다시 <kbd>M</kbd> 소리</span>
   <span class="chip"><span id="sound" class="on">소리 켜짐</span></span>
+  <button id="profileGameOpen" type="button">설정</button>
   <button id="restart">다시 시작</button>
 </header>
 
-<div id="stage"><canvas id="cv"></canvas></div>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="touchControls" class="touch-controls" aria-label="모바일 조작" hidden>
+    <div class="touch-dpad" aria-label="이동 방향">
+      <button type="button" data-touch-dir="up" aria-label="위로 이동">▲</button>
+      <button type="button" data-touch-dir="left" aria-label="왼쪽으로 이동">◀</button>
+      <button type="button" data-touch-dir="right" aria-label="오른쪽으로 이동">▶</button>
+      <button type="button" data-touch-dir="down" aria-label="아래로 이동">▼</button>
+    </div>
+    <button id="touchPlace" class="touch-place" type="button" aria-label="물풍선 놓기">물풍선</button>
+  </div>
+</div>
 
 <!-- 순서가 있다.
      audio · art · fx 는 서로를 모른다. net 이 상태를 들고,
@@ -188,3 +300,5 @@
 <script src="predict.js"></script>
 <script src="net.js"></script>
 <script src="game.js"></script>
+</body>
+</html>

@@ -165,6 +165,7 @@ function FakeAudioContext() {
 let now = 0;
 const sent = [];
 const timers = [];
+let websocketCount = 0;
 
 const sandbox = {
     console,
@@ -196,7 +197,7 @@ sandbox.fetch = (url) => {
     // **어느 파일인지를 버퍼에 달아 보낸다.**
     // 이게 없으면 '소리를 냈다' 까지만 알고 '무슨 소리를 냈나' 는 모른다.
     // 발소리가 재료마다 다른지 보려면 어느 녹음을 골랐는지가 필요하다
-    const name = url.replace(/^.*\//, '').replace(/\.ogg$/, '');
+    const name = url.replace(/^.*\//, '').replace(/\.(ogg|mp3)$/, '');
     const ab = new ArrayBuffer(64);
     ab.__name = name;
     return Promise.resolve({ arrayBuffer: () => Promise.resolve(ab) });
@@ -205,6 +206,7 @@ sandbox.setImmediate = setImmediate;
 sandbox.Promise = Promise;
 
 sandbox.WebSocket = function () {
+    ++websocketCount;
     this.readyState = 1;
     this.binaryType = '';
     this.send = (b) => sent.push(b);
@@ -231,7 +233,28 @@ for (const f of files) {
         process.exit(1);
     }
 }
-check(true, '다섯 파일이 처음부터 끝까지 돌았다');
+check(true, '웹 파일이 처음부터 끝까지 돌았다');
+
+check(websocketCount === 0, '시작 화면에서는 아직 게임 서버에 붙지 않는다');
+sandbox.window.startBubbleGame();
+check(websocketCount === 1, '바로 시작을 누를 때 게임 서버에 한 번만 붙는다');
+
+const migratedProfile = vm.runInContext(`Profile.copy({
+    character: 10,
+    keys: { up: 'arrowup', down: 'w', left: 'w', right: 'r', place: 'spacebar' }
+})`, sandbox);
+const migratedKeys = Object.values(migratedProfile.keys);
+check(migratedProfile.character === 2
+      && migratedProfile.keys.up === 'ArrowUp'
+      && new Set(migratedKeys).size === migratedKeys.length
+      && !migratedKeys.includes('r') && !migratedKeys.includes('m')
+      && migratedProfile.audio.music === 0.42
+      && migratedProfile.audio.sfx === 0.85,
+      '예전 로비 설정도 키와 새 음량 기본값을 안전하게 채운다');
+
+const clampedAudio = vm.runInContext(`Profile.copy({ audio: { music: -3, sfx: 8 } })`, sandbox);
+check(clampedAudio.audio.music === 0 && clampedAudio.audio.sfx === 1,
+      '저장된 음량이 깨져도 0~100% 밖으로 나가지 않는다');
 
 // 스크립트 맨 위의 const 는 전역 **객체**에 안 붙는다. 전역 렉시컬 환경에 들어간다.
 // 브라우저에서는 스크립트끼리 그 환경을 같이 쓰므로 서로 잘 보이는데,
@@ -438,6 +461,10 @@ function event(type, x, y, who, value) {
 // 진짜 클라이언트도 첫 입력에서 이걸 부른다. 그래야 소리 코드가 돌기 시작한다
 api.Sound.wake();
 check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
+api.Sound.setVolumes(0.25, 0.60);
+check(api.Sound.musicState().musicVolume === 0.25
+      && api.Sound.musicState().sfxVolume === 0.60,
+      '설정에서 배경음악과 효과음을 따로 조절한다');
 
 // 소리 파일은 받아서 푸는 데 시간이 걸린다. 여기서부터는 기다렸다 이어간다.
 // 안 기다리면 아직 안 온 소리를 내려다 조용히 지나가서, 시험이 아무것도 안 재게 된다
@@ -447,7 +474,11 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
   console.log('  소리 파일 ' + fetched.length + ' 개를 받았다 ('
               + (api.Sound.progress() * 100).toFixed(0) + '% 풀림)');
   check(fetched.length >= 20, '소리를 파일에서 받아 온다 (만들어 내지 않는다)');
-  check(fetched.every(u => u.endsWith('.ogg')), '받는 것이 전부 소리 파일이다');
+  check(fetched.every(u => /\.(ogg|mp3)$/.test(u)), '받는 것이 전부 오디오 파일이다');
+  check(fetched.includes('music/rock-trailer.mp3')
+        && api.Sound.musicState().loaded
+        && api.Sound.musicState().playing,
+        '보내준 MP3를 배경음악으로 받아 반복 재생한다');
 
   let crashed = null;
 // ── 화면 예측이 옆으로 미나 ─────────────────────────────────
@@ -533,6 +564,7 @@ check(api.Sound.isReady(), '첫 입력에 소리 장치가 깨어난다');
 }
 
 let pushOk = false, pushFrom = null;
+let ringWaterRects = [];
   try {
       for (let t = 0; t < 4; ++t) {
           now = 1000 + t * 16;
@@ -569,8 +601,16 @@ let pushOk = false, pushFrom = null;
       pushFrom = bothBlocked ? '미는 동안 두 칸 다 막힘' : '미는 동안 한 칸만 막힘';
 
       // 최종 구역 물 + 단계별 화면
+      // 물 함수에 들어간 네모를 기록한다. 캔버스 크기와 맵 크기를 섞으면
+      // 아래·오른쪽 조각의 폭/높이가 음수가 되어 안전 구역 안으로 거꾸로 그려진다.
+      const drawWater = api.Art.water;
+      api.Art.water = function (g, x, y, w, h, t, clip) {
+          ringWaterRects.push([x, y, w, h]);
+          return drawWater(g, x, y, w, h, t, clip);
+      };
       feed(snapshot(9, 2, true));
       now += 16; api.frame(now);
+      api.Art.water = drawWater;
 
       // 기다림 -> 카운트다운 순으로 넘긴다. 카운트다운에서 판의 기록이 초기화된다
       for (const phase of [0, 1]) {
@@ -605,6 +645,8 @@ let pushOk = false, pushFrom = null;
       check(pushOk,
             '상자가 미끄러지는 동안 두 칸을 막고, 다 밀리면 떠난 칸이 빈다 ('
             + pushFrom + ')');
+      check(ringWaterRects.length >= 4 && ringWaterRects.every(r => r[2] >= 0 && r[3] >= 0),
+            '마지막 구역 물 사각형은 화면 크기와 무관하게 모두 바깥쪽으로 그린다');
   }
 
   // ── 무엇을 그렸나 ────────────────────────────────────────────
