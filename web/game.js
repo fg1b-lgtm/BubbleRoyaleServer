@@ -1252,6 +1252,40 @@ function drawPlayer(id, p, alpha, now, T) {
 
   ctx.globalAlpha = 1;
 
+  // 내가 선 구역이 곧 잠긴다. 지금까지는 tickWarnSound의 박동음뿐이라
+  // "위험하다"까지만 전해지고 "몇 초 남았나"를 몰랐다는 지적을 받았다.
+  // 익사 숫자와 같은 머리 위 자리를 쓰되, 이미 잠긴 뒤(DROWNING)나 갇힌
+  // 동안은 안 띄운다 - 갇힌 사람은 몸부림 말고 할 수 있는 게 없어서
+  // 숫자를 더 얹어봐야 혼란만 커진다
+  if (id === G.myId && !dead && !(p.flags & (PF.DROWNING | PF.TRAPPED))) {
+    const mySector = sectorOf(p.jtx, p.jty);
+    if (G.sectors[mySector] === SECT.WARNING) {
+      const left = warnLeft(mySector, now);
+      if (left >= 0) {
+        const secs = Math.ceil(left / 1000);
+        const urgent = left < WARN_BEEP_FROM_MS;   // 박동음이 급해지는 지점과 맞춘다
+        const numSize = T * (urgent ? 0.85 : 0.72);
+        const numY = py - r * 2.1;
+
+        ctx.font = '800 ' + Math.round(numSize) + 'px system-ui';
+        const numText = String(secs);
+        const numW = ctx.measureText(numText).width;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        Art.rr(ctx, px - numW / 2 - 6, numY - numSize * 0.80, numW + 12, numSize * 0.90, 4);
+        ctx.fill();
+
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.strokeText(numText, px, numY);
+        ctx.fillStyle = urgent ? '#ff6b6b' : '#ffe066';
+        ctx.fillText(numText, px, numY);
+        ctx.textAlign = 'left';
+      }
+    }
+  }
+
   // 물에 잠긴 데 서 있다. 숨방울이 올라가고 **머리 위에 남은 시간이 뜬다.**
   //
   // 숨방울만으로는 "위험하다" 까지만 전해지고 "몇 초 남았나" 를 모른다.
@@ -2093,26 +2127,40 @@ function drawResults(now) {
     label('P' + G.winner + ' 승리', 0, 0, 24, '#8ab4ff', 'center', 2);
   }
   ctx.restore();
-  const show = Math.min(rows.length, 8);
-  const rowH = 28;
-  const pw = Math.min(420, W - 40);
+
+  // 예전엔 여덟 줄만 그리고 내가 그 밖이면 맨 아래에 따로 붙였다.
+  // 사람이 많은 방(16·24명)에서는 아홉 등부터 스물몇 등까지가 통째로 안
+  // 보였다 - 결과표인데 결과가 없는 사람이 절반 넘게 생긴 것이다.
+  // 여덟 줄이 넘으면 두 단으로 나눠 **전원**을 담는다. 줄이 늘어난 만큼
+  // 한 줄 높이를 줄여서 세로로 안 넘치게 한다
+  const cols = rows.length > 8 ? 2 : 1;
+  const perCol = Math.ceil(rows.length / cols);
+  const rowH = cols > 1 ? 24 : 28;
+  const colW = cols > 1 ? Math.min(340, (W - 64) / 2) : Math.min(420, W - 40);
+  const gap = 16;
+  const pw = colW * cols + gap * (cols - 1);
   const px = (W - pw) / 2;
   const py = H * 0.28;
 
-  panel(px, py, pw, 26 + show * rowH + 10);
+  panel(px, py, pw, 26 + perCol * rowH + 10);
 
-  label('순위', px + 16,  py + 18, 10, 'rgba(255,255,255,0.40)', 'left', 1);
-  label('처치', px + 210, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
-  label('생존', px + 290, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
-  label('아이템', px + pw - 16, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+  for (let c = 0; c < cols; ++c) {
+    const cx = px + c * (colW + gap);
+    label('순위', cx + 16,  py + 18, 10, 'rgba(255,255,255,0.40)', 'left', 1);
+    label('처치', cx + colW - 96, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+    label('생존', cx + colW - 30, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+    if (cols === 1) label('아이템', cx + colW - 16, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+  }
 
-  for (let i = 0; i < show; ++i) {
+  for (let i = 0; i < rows.length; ++i) {
     const r = rows[i];
-    const y = py + 26 + i * rowH;
+    const col = Math.floor(i / perCol);
+    const cx = px + col * (colW + gap);
+    const y = py + 26 + (i - col * perCol) * rowH;
     const mine = (r.id === G.myId);
 
     // 한 줄씩 차례로 나타난다. 한꺼번에 뜨면 어디를 볼지 모른다
-    const appear = Math.min(1, Math.max(0, (G.phaseTicks - i * 3) / (G.C.tickRate * 0.3)));
+    const appear = Math.min(1, Math.max(0, (G.phaseTicks - i * 2) / (G.C.tickRate * 0.3)));
     if (appear <= 0) continue;
 
     ctx.save();
@@ -2123,46 +2171,34 @@ function drawResults(now) {
       // 둥근 모서리 대신 각진 띠 + 왼쪽에 세로 표식.
       // 스물넷이 늘어서면 옅은 배경색만으로는 내 줄을 못 찾는다
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(px + 8, y, pw - 16, rowH - 3);
+      ctx.fillRect(cx + 8, y, colW - 16, rowH - 3);
       ctx.fillStyle = '#ffd166';
-      ctx.fillRect(px + 8, y, 3, rowH - 3);
+      ctx.fillRect(cx + 8, y, 3, rowH - 3);
     }
 
     const medal = r.place === 1 ? '#ffd166' : r.place === 2 ? '#d0d7e2' : r.place === 3 ? '#d08c5a' : 'rgba(255,255,255,0.45)';
-    Art.dotText(ctx, String(r.place), px + 20, y + 5, r.place <= 3 ? 15 : 12, medal, 'left');
+    Art.dotText(ctx, String(r.place), cx + 20, y + (cols > 1 ? 3 : 5), r.place <= 3 ? 15 : 12, medal, 'left');
 
-    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(r.id), animalOf(r.id));
-    label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), px + 72, y + 16, 12,
+    Art.drawFace(ctx, cx + 58, y + rowH / 2 - 2, cols > 1 ? 7 : 8, colorOf(r.id), animalOf(r.id));
+    label('P' + r.id + (r.id === G.myId ? ' (나)' : ''), cx + 72, y + rowH / 2 + 2, 12,
           mine ? '#fff' : 'rgba(255,255,255,0.78)');
 
-    label(String(r.kills), px + 210, y + 16, 13, r.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
+    label(String(r.kills), cx + colW - 96, y + rowH / 2 + 2, 13, r.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
 
     const mm = Math.floor(r.secs / 60), ss = Math.floor(r.secs % 60);
-    label(mm + ':' + String(ss).padStart(2, '0'), px + 290, y + 16, 12,
+    label(mm + ':' + String(ss).padStart(2, '0'), cx + colW - 30, y + rowH / 2 + 2, 12,
           'rgba(255,255,255,0.65)', 'right');
 
-    label(String(r.items), px + pw - 16, y + 16, 12, 'rgba(255,255,255,0.65)', 'right');
+    if (cols === 1) {
+      label(String(r.items), cx + colW - 16, y + rowH / 2 + 2, 12, 'rgba(255,255,255,0.65)', 'right');
+    }
     ctx.restore();
-  }
-
-  // 내가 여덟 줄 안에 없으면 맨 아래에 따로 붙인다.
-  // **내 줄이 없는 결과표는 남의 결과표다**
-  if (myRow && rows.indexOf(myRow) >= show) {
-    const y = py + 26 + show * rowH + 4;
-    ctx.fillStyle = 'rgba(255,255,255,0.10)';
-    ctx.fillRect(px + 8, y, pw - 16, rowH - 3);
-
-    Art.dotText(ctx, String(myRow.place), px + 20, y + 5, 12, '#e8eef7', 'left');
-    Art.drawFace(ctx, px + 58, y + 12, 8, colorOf(myRow.id), animalOf(myRow.id));
-    label('P' + myRow.id + ' (나)', px + 72, y + 16, 12, '#fff');
-    label(String(myRow.kills), px + 210, y + 16, 13,
-          myRow.kills ? '#ff9f6b' : 'rgba(255,255,255,0.30)', 'right');
   }
 
   // 이번 세션의 기록. **두 판째부터만** 보여준다 —
   // 첫 판에 '1판 · 최고 3등' 을 띄우면 방금 본 것을 되풀이하는 것뿐이다.
   // 두 판째부터는 '아까보다 나은가' 라는 질문이 생긴다. 그게 다음 판을 하게 만든다
-  const sy2 = py + 26 + show * rowH + 40;
+  const sy2 = py + 26 + perCol * rowH + 40;
   if (session.rounds >= 2) {
     const bits = [session.rounds + '판째'];
     if (session.best <= 24) bits.push('최고 ' + session.best + '등');
