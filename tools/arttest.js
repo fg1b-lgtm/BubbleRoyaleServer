@@ -350,14 +350,17 @@ check(dotBad.length === 0,
       '도트 지도가 전부 네모나고 모르는 글자가 없다'
       + (dotBad.length ? ' — ' + dotBad.slice(0, 3).join(', ') : ''));
 
-// 같은 자세를 두 번 그리면 두 번째는 붙이기만 해야 한다.
-// 스물넷이 돌아다니면 매 프레임 스물넷을 새로 그리게 되므로 여기가 프레임을 정한다
+console.log('\n=== 벡터 캐릭터 비용 ===\n');
+
+// 현재 캐릭터는 연속적인 흔들림이 있는 벡터 그림이라 자세를 통째로 굽지 않는다.
+// 대신 같은 입력은 같은 그림을 내고, 한 명의 명령 수가 정한 범위 안인지 확인한다.
+// 24명일 때의 전체 비용은 clienttest의 붐비는 프레임 검사에서 따로 잰다.
 const pose1 = { face: 0, moving: false, animal: 3, walk: 0, t: 0 };
 const first  = draw(() => Art.drawChar(ctx, 100, 100, 18, '#2f9e44', pose1));
 const second = draw(() => Art.drawChar(ctx, 100, 100, 18, '#2f9e44', pose1));
 console.log('  같은 자세 첫 번째 ' + first.length + ' 명령, 두 번째 ' + second.length + ' 명령');
-check(second.length < first.length,
-      '같은 자세는 한 번만 굽고 그다음엔 붙이기만 한다');
+check(second.join('|') === first.join('|') && first.length < 200,
+      '같은 입력은 같은 자세이며 한 명의 그리기 비용이 제한 안에 있다');
 
 console.log('\n=== 이펙터: 한 번에 얼마나 튀나 ===\n');
 
