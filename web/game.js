@@ -77,7 +77,7 @@ let foamKey = '';          // 구역 상태가 바뀔 때만 다시 계산한다
 let camSector = 0;
 // x0,y0 는 지금 화면이 보고 있는 자리(픽셀). tx,ty 는 가야 할 자리.
 // 둘을 나눠두고 매 프레임 조금씩 따라가게 하면 화면이 미끄러지듯 넘어간다
-let view = { x0: 0, y0: 0, tx: 0, ty: 0, w: 21, h: 19 };
+let view = { x0: 0, y0: 0, tx: 0, ty: 0, w: 17, h: 15, peek: 2 };
 let noiseCv = null;
 
 // 시간. 멈춤(hit stop) 동안 gameTime 이 안 흐른다
@@ -132,9 +132,9 @@ const pickFlash = {};   // 아이템 종류별로 마지막에 먹은 시각
 const seenItemHint = new Set();
 let itemHint = null;   // { kind, text, born }
 const ITEM_HINT_TEXT = {
-  [ITEM.BUBBLE]: '한 번에 놓는 개수가 는다',
-  [ITEM.POWER]:  '터지는 길이가 는다',
-  [ITEM.ROLLER]: '걷는 속도가 는다',
+  [ITEM.BUBBLE]: '물풍선을 하나 더 놓을 수 있어요',
+  [ITEM.POWER]:  '물줄기가 한 칸 더 길어졌어요',
+  [ITEM.ROLLER]: '이동 속도가 빨라졌어요',
 };
 
 // ── 한 판의 기록 ─────────────────────────────────────────────
@@ -253,7 +253,7 @@ const colorOf = (id) => PLAYER_COLORS[id % PLAYER_COLORS.length];
 const animalOf = (id) => {
   // 내 외형은 로컬 프로필에서, 다른 사람은 서버 자리 번호에서 정한다.
   // 나중에 서버 프로필 동기화를 붙여도 이 선택 지점만 교체하면 된다.
-  if (id === G.myId && window.BubbleSession) return window.BubbleSession.profile.character % 24;
+  if (id === G.myId && window.BubbleSession) return window.BubbleSession.profile.character % 8;
   return id % 24;
 };
 
@@ -267,8 +267,12 @@ const animalOf = (id) => {
 function resize() {
   if (!G.C) return;
 
-  view.w = G.C.sectorW + G.C.peek * 2;
-  view.h = G.C.sectorH + G.C.peek * 2;
+  // 서버가 보내는 peek보다 두 칸 가까이 당긴다. 전에는 한 화면에 21x19칸이
+  // 보여 캐릭터가 지도 표식처럼 작았다. 현재 구역과 도망칠 이웃 한두 칸은
+  // 그대로 보이면서 캐릭터·아이템은 약 25% 커진다.
+  view.peek = Math.max(1, G.C.peek - 2);
+  view.w = G.C.sectorW + view.peek * 2;
+  view.h = G.C.sectorH + view.peek * 2;
 
   // 화면을 최대한 쓴다. 위에 얇은 띠 하나만 빼고 나머지는 전부 판이다.
   // 캐릭터가 작게 느껴지던 것의 절반이 여기서 풀린다
@@ -299,10 +303,10 @@ function resize() {
   BH = view.h * ts;
 
   W = Math.max(BW, Math.floor(availW));
-  H = BH;
+  H = Math.max(BH, Math.floor(availH));
 
   BX = Math.floor((W - BW) / 2);
-  BY = 0;
+  BY = Math.floor((H - BH) / 2);
 
   dpr = Math.min(2, window.devicePixelRatio || 1);
   cv.width  = Math.round(W * dpr);
@@ -310,6 +314,7 @@ function resize() {
   cv.style.width  = W + 'px';
   cv.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  updateTouchControls();
 
   // 미리 그려두는 종이는 **판 전체** 크기다. 화면만 그 일부를 잘라 쓴다
   const mapPxW = G.C.mapW * ts, mapPxH = G.C.mapH * ts;
@@ -452,8 +457,8 @@ function updateCamera(dt) {
   const sy = Math.min(2, Math.floor(target.jty / sh));
   camSector = sy * 3 + sx;
 
-  view.tx = Math.max(0, Math.min(G.C.mapW - view.w, sx * sw - G.C.peek)) * T;
-  view.ty = Math.max(0, Math.min(G.C.mapH - view.h, sy * sh - G.C.peek)) * T;
+  view.tx = Math.max(0, Math.min(G.C.mapW - view.w, sx * sw - view.peek)) * T;
+  view.ty = Math.max(0, Math.min(G.C.mapH - view.h, sy * sh - view.peek)) * T;
 
   // 목표까지 남은 거리의 일정 비율씩 좁힌다.
   // 한 프레임에 정해진 픽셀만큼 가게 하면 프레임이 흔들릴 때 속도가 달라진다.
@@ -775,24 +780,16 @@ function drawWorld(now, dt) {
     // 비가 내리기 시작하면 그건 세계에서 일어나는 일이 된다
     if (Math.random() < 0.55) FX.rain(sx, sy, w, h, T, now, 2);
 
-    ctx.fillStyle = 'rgba(20,60,110,' + (0.08 + 0.10 * warnBeat(s, now)) + ')';
-    ctx.fillRect(sx, sy, w, h);
-
-    // **구역 전체가 붉게 뛴다.**
-    //
-    // 전에는 구역 둘레에 붉은 네모를 그렸다. 그건 지도에 친 표시지
-    // 여기 있으면 안 된다는 말이 아니다. 판 위에 겹쳐서 뛰게 하면
-    // 눈을 감아도 보이는 종류의 신호가 된다.
-    //
-    // 색을 옅게 쓴다. 진하게 칠하면 도망칠 길이 안 보인다 —
-    // 나가라고 말하면서 나갈 길을 가리면 그건 경고가 아니라 방해다.
-    //
-    // 0.30 이었는데 바닥이 채도 높은 사막·마을 그림이 된 뒤로는 최대치에서도
-    // 거의 안 보였다. 물이 찼을 때와 같은 문제였다 - 옅게 쓰겠다는 원칙은
-    // 맞는데, 옅음의 기준을 옛날 칙칙한 바닥에 맞춰놓은 채로 안 고쳤다.
-    // 0.46 까지는 올려도 바닥 무늬가 죽지 않으면서 눈에는 뛴다
-    ctx.fillStyle = 'rgba(210,40,30,' + (0.46 * warnBeat(s, now)) + ')';
-    ctx.fillRect(sx, sy, w, h);
+    // 예고 중인 땅에는 물색을 한 겹 깔지 않는다. 이전 푸른 막은 아직 안전한
+    // 구역을 이미 잠긴 곳처럼 보이게 했다. 비와 붉은 가장자리만으로 뜻을 전한다.
+    // 가운데 길은 끝까지 원래 색으로 남겨서 도망칠 때 지형을 가리지 않는다.
+    const beat = warnBeat(s, now);
+    const edge = Math.max(4, T * 0.18);
+    ctx.fillStyle = 'rgba(210,40,30,' + (0.12 + 0.20 * beat) + ')';
+    ctx.fillRect(sx, sy, w, edge);
+    ctx.fillRect(sx, sy + h - edge, w, edge);
+    ctx.fillRect(sx, sy + edge, edge, h - edge * 2);
+    ctx.fillRect(sx + w - edge, sy + edge, edge, h - edge * 2);
   }
 
   Art.foamEdge(ctx, foamSegs, now);
@@ -941,15 +938,36 @@ function drawWorld(now, dt) {
   // 뒤집힌 사각형을 그대로 네 조각으로 나누면 높이가 음수인 조각이 나온다
   if (G.ring.on) {
     const empty = G.ring.x0 > G.ring.x1 || G.ring.y0 > G.ring.y1;
+    // 여기서 필요한 것은 캔버스(현재 보이는 화면) 크기가 아니라 전체 맵 크기다.
+    // W/H를 쓰면 카메라를 확대했을 때 y1이 H보다 커져 음수 높이가 생긴다.
+    // Canvas는 음수 높이도 반대 방향으로 그리므로, 안전선 안쪽에 파란 사각형이
+    // 생기고 카메라를 따라 위치가 바뀌는 것처럼 보였다.
+    const mapPxW = G.C.mapW * T;
+    const mapPxH = G.C.mapH * T;
     if (empty) {
-      Art.water(ctx, 0, 0, W, H, now);
+      Art.water(ctx, 0, 0, mapPxW, mapPxH, now);
     } else {
       const x0 = G.ring.x0 * T, y0 = G.ring.y0 * T;
       const x1 = (G.ring.x1 + 1) * T, y1 = (G.ring.y1 + 1) * T;
-      Art.water(ctx, 0, 0, W, y0, now);
-      Art.water(ctx, 0, y1, W, H - y1, now);
+      Art.water(ctx, 0, 0, mapPxW, y0, now);
+      Art.water(ctx, 0, y1, mapPxW, mapPxH - y1, now);
       Art.water(ctx, 0, y0, x0, y1 - y0, now);
-      Art.water(ctx, x1, y0, W - x1, y1 - y0, now);
+      Art.water(ctx, x1, y0, mapPxW - x1, y1 - y0, now);
+
+      // 물결 애니메이션만 있으면 같은 위험 구역도 매 프레임 다른 파란 얼룩처럼
+      // 보인다. 실제 판정 경계에 고정 선을 먼저 긋고 그 위에 거품을 얹어서,
+      // 물 무늬가 움직여도 안전한 사각형은 같은 자리에 있다고 읽히게 한다.
+      ctx.save();
+      ctx.strokeStyle = 'rgba(197,241,255,0.92)';
+      ctx.lineWidth = Math.max(2, T * 0.06);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.restore();
+      Art.foamEdge(ctx, [
+        x0, y0, x1, y0,
+        x1, y0, x1, y1,
+        x1, y1, x0, y1,
+        x0, y1, x0, y0,
+      ], now);
     }
   }
 
@@ -969,7 +987,9 @@ function drawWorld(now, dt) {
     ctx.rect(sx, sy, sw, sh);
     ctx.clip('evenodd');
 
-    ctx.fillStyle = 'rgba(150,175,200,0.30)';
+    // 시야 밖을 파랗게 만들면 실제 침수와 구분할 수 없다. 중립적인 흙빛 그림자로
+    // 바꿔서 "정보가 흐린 곳"과 "물이 찬 곳"이 색만 봐도 갈리게 한다.
+    ctx.fillStyle = 'rgba(30,20,14,0.34)';
     ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
 
     // 천천히 흐르는 안개 덩어리 둘
@@ -978,8 +998,8 @@ function drawWorld(now, dt) {
       const gx = sx + sw * (0.5 + Math.cos(t2) * 0.9);
       const gy = sy + sh * (0.5 + Math.sin(t2 * 0.8) * 0.9);
       const g2 = ctx.createRadialGradient(gx, gy, 0, gx, gy, sw * 0.5);
-      g2.addColorStop(0, 'rgba(200,215,235,0.18)');
-      g2.addColorStop(1, 'rgba(200,215,235,0)');
+      g2.addColorStop(0, 'rgba(177,140,92,0.12)');
+      g2.addColorStop(1, 'rgba(177,140,92,0)');
       ctx.fillStyle = g2;
       ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
     }
@@ -988,7 +1008,7 @@ function drawWorld(now, dt) {
     if (noiseCv) {
       const pat = ctx.createPattern(noiseCv, 'repeat');
       if (pat) {
-        ctx.globalAlpha = 0.55;
+        ctx.globalAlpha = 0.28;
         ctx.fillStyle = pat;
         ctx.fillRect(view.x0, view.y0, view.w * T, view.h * T);
         ctx.globalAlpha = 1;
@@ -997,7 +1017,7 @@ function drawWorld(now, dt) {
     ctx.restore();
 
     // 내가 아는 데의 경계
-    ctx.strokeStyle = 'rgba(190,225,255,0.30)';
+    ctx.strokeStyle = 'rgba(213,168,108,0.24)';
     ctx.lineWidth = 2;
     ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
   }
@@ -1470,6 +1490,8 @@ function bigNum(text, x, y, size, color, align) {
 
 function drawHUD(now) {
   const T = Art.V.TS;
+  const compactHUD = W < 640;
+  const sideRails = BX >= 225;
 
   // ── 위쪽 띠 ────────────────────────────────────────────────
   //
@@ -1480,42 +1502,57 @@ function drawHUD(now) {
   //   자명한 것은 라벨을 뺀다   0:07 은 시간 말고 읽을 게 없다
   //   숫자에 붙는 것은 단위로   '2 판', '3 처치' 처럼 숫자 뒤에 붙인다
   //   뜻이 없는 것은 지운다     칸 스물넷 위의 SLOT 은 아무 말도 안 하고 있었다
-  panel(10, 10, 132, 44);
+  const roundX = sideRails ? Math.floor((BX - 132) / 2) : (compactHUD ? 6 : 10);
+  const roundY = 10;
+  const roundW = compactHUD ? 84 : 132;
+  panel(roundX, roundY, roundW, 44);
   // 숫자 폭을 measureText 로 재면 그 순간 걸린 글꼴에 따라 달라진다.
   // bigNum 이 save/restore 안에서 글꼴을 바꾸므로 밖에서 잰 값은 못 믿는다.
   // 자릿수로 자리를 잡는다. 판 번호는 한두 자리다
   // 라벨은 숫자 **위**에 작게 둔다.
   // 한 줄에 나란히 놓아봤더니 숫자가 커질 때 라벨을 덮었다. 자릿수를 못 재기 때문이다
-  label('판', 22, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
-  bigNum(String(G.roundNo + 1), 22, 48, 20, '#fff');
-
   const phaseName = ['대기', '시작', '진행', '결과'][G.phase] || '';
-  label(phaseName, 128, 48, 12, 'rgba(255,255,255,0.55)', 'right');
+  if (compactHUD) {
+    label((G.roundNo + 1) + '판', roundX + 8, roundY + 17, 11, '#fff', 'left', 1);
+    label(phaseName, roundX + roundW - 8, roundY + 17, 10, 'rgba(255,255,255,0.55)', 'right');
+  }
+  else {
+    label('판', roundX + 12, roundY + 18, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+    bigNum(String(G.roundNo + 1), roundX + 12, roundY + 38, 20, '#fff');
+    label(phaseName, roundX + roundW - 10, roundY + 38, 12, 'rgba(255,255,255,0.55)', 'right');
+  }
 
   // 남은 사람. 숫자 하나가 제일 크다. 이 게임에서 제일 중요한 숫자다
   // 패널을 넓혔다. 칸 스물넷이 오른쪽 절반을 통째로 쓰므로
   // 좁게 두면 숫자와 칸이 겹친다
-  panel(W / 2 - 110, 10, 220, 44);
+  const aliveW = compactHUD ? 170 : 220;
+  const aliveX = sideRails ? Math.floor((BX - aliveW) / 2) : W / 2 - aliveW / 2;
+  const aliveY = sideRails ? 64 : 10;
+  panel(aliveX, aliveY, aliveW, 44);
 
   // 누가 죽으면 남은 수가 한 번 튀어오른다.
   // 이 숫자가 이 게임에서 제일 중요한 숫자인데 조용히 바뀌면 바뀐 줄 모른다
   {
     const ap = Math.max(0, 1 - (now - alivePop) / 420);
     ctx.save();
-    ctx.translate(W / 2 - 62, 44);
+    ctx.translate(aliveX + (compactHUD ? 41 : 52), aliveY + 34);
     const k = 1 + Art.overshoot(Math.min(1, ap * 2)) * 0.45 * ap;
     ctx.scale(k, k);
     bigNum(String(G.aliveCount), 0, 0, 26, ap > 0 ? '#ffd166' : '#fff', 'right');
     ctx.restore();
   }
-  label('생존', W / 2 - 54, 44, 13, 'rgba(255,255,255,0.55)');
+  label('생존', aliveX + (compactHUD ? 47 : 60), aliveY + 34, compactHUD ? 11 : 13,
+        'rgba(255,255,255,0.55)');
 
   // 누가 살아 있나. 칸 스물넷. 내 칸만 하얗다.
   // 숫자만 있으면 몇인지는 알아도 누가 남았는지는 모른다
   {
-    const n = 24, pw = 3, gap = 1.2;
+    const n = window.BubbleSession ? window.BubbleSession.capacity : 24;
+    const barW = compactHUD ? 76 : 96;
+    const gap = n > 16 ? 1.2 : 2;
+    const pw = Math.max(3, Math.min(8, (barW - gap * (n - 1)) / n));
     const total = n * pw + (n - 1) * gap;
-    let x = W / 2 + 100 - total;
+    let x = aliveX + aliveW - 10 - total;
     for (let i = 0; i < n; ++i) {
       // 서버가 보내준 전역 마스크를 쓴다. 내 구역 사람만 보고 그리면
       // 옆 구역 사람이 전부 죽은 것처럼 보인다
@@ -1524,7 +1561,7 @@ function drawHUD(now) {
       ctx.fillStyle = !known ? 'rgba(255,255,255,0.08)'
                     : alive ? (i === G.myId ? '#ffffff' : colorOf(i))
                     : 'rgba(255,255,255,0.14)';
-      ctx.fillRect(x, 22, pw, alive ? 11 : 5);
+      ctx.fillRect(x, aliveY + 12, pw, alive ? 11 : 5);
       x += pw + gap;
     }
   }
@@ -1536,16 +1573,22 @@ function drawHUD(now) {
   {
     const kills = statOf(G.myId).kills;
     const pop = Math.max(0, 1 - (now - killPop) / 450);
-
-    panel(W / 2 - 110 - 72, 10, 66, 44);
-    label('처치', W / 2 - 110 - 60, 28, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+    const killX = sideRails ? Math.floor((BX - 66) / 2) : W / 2 - 110 - 72;
+    const killY = sideRails ? 118 : 10;
 
     ctx.save();
-    ctx.translate(W / 2 - 110 - 18, 48);
+    if (!compactHUD) {
+      panel(killX, killY, 66, 44);
+      label('처치', killX + 12, killY + 18, 10, 'rgba(255,255,255,0.45)', 'left', 2);
+    }
+    ctx.translate(compactHUD ? roundX + 18 : killX + 52, compactHUD ? roundY + 38 : killY + 38);
     const k = 1 + Art.overshoot(Math.min(1, pop * 2)) * 0.5 * pop;
     ctx.scale(k, k);
-    bigNum(String(kills), 0, 0, 20, pop > 0 ? '#ffd166' : '#fff', 'right');
+    bigNum(String(kills), 0, 0, compactHUD ? 16 : 20, pop > 0 ? '#ffd166' : '#fff', 'right');
     ctx.restore();
+    if (compactHUD) {
+      label('처치', roundX + 24, roundY + 37, 9, 'rgba(255,255,255,0.50)', 'left', 1);
+    }
   }
 
   // 시각. 침수 일정이 몇 분에 오는지가 이 숫자로만 읽힌다
@@ -1555,11 +1598,15 @@ function drawHUD(now) {
     const ss = String(sec % 60).padStart(2, '0');
     // 시간은 라벨이 없다. mm:ss 를 시간 말고 다르게 읽을 방법이 없다.
     // 라벨이 빠진 만큼 숫자를 패널 가운데에 놓는다
-    panel(W - 106, 10, 96, 44);
-    bigNum(mm + ':' + ss, W - 20, 42, 22, '#fff', 'right');
+    const timeW = compactHUD ? 84 : 96;
+    const timeX = sideRails
+      ? BX + BW + Math.floor((W - BX - BW - timeW) / 2)
+      : W - timeW - (compactHUD ? 6 : 10);
+    panel(timeX, 10, timeW, 44);
+    bigNum(mm + ':' + ss, timeX + timeW - 10, 42, compactHUD ? 18 : 22, '#fff', 'right');
   }
 
-  // ── 내 능력치 ──────────────────────────────────────────────
+  // ── 능력치 ─────────────────────────────────────────────────
   //
   // 숫자만 적으면 몇 개인지는 알아도 상한까지 얼마 남았는지를 모른다.
   // 칸으로 그리면 둘 다 한눈에 보인다
@@ -1571,90 +1618,93 @@ function drawHUD(now) {
   // 그래서 아이템 그림을 판에서 쓰는 것과 **똑같이** 그리고, 숫자를 크게 붙인다.
   // 먹은 직후에는 그 칸이 튀어오르고 밝아진다. 뭘 먹었는지가 그 순간 보인다
   const me = G.players.get(G.myId);
-  if (me) {
-    const cell = 62, gap = 8;
-    const cols = 3;
-    const bw = cell * cols + gap * (cols + 1), bh = 68;
-
-    // 여백이 넉넉하면 판 아래가 아니라 **왼쪽 여백**에 놓는다.
-    // 판 위에 얹으면 아래 두 줄이 가려지는데, 거기가 도망칠 자리다.
-    // 여백이 좁은 화면에서는 원래대로 판 아래에 둔다
-    const roomy = BX >= bw + 20;
-    const bx = roomy ? (BX - bw) / 2 : (W - bw) / 2;
-    const by = roomy ? H / 2 - bh / 2 : H - bh - 10;
-    panel(bx, by, bw, bh);
-
-    // 시작값도 상한도 서버가 준 것을 쓴다. 여기 숫자를 적어두면
-    // 상수를 바꾼 날 화면만 거짓말을 하게 된다
+  const spectating = !me || !(me.flags & PF.ALIVE);
+  // 죽은 뒤에도 내 마지막 수치를 계속 보여주면 관전 대상과 정보가 어긋난다.
+  // 관전 중에는 지금 따라가는 플레이어의 능력치를 같은 자리에 보여준다.
+  const statsPlayer = spectating ? G.players.get(specId) : me;
+  if (statsPlayer) {
+    // 세 숫자를 같은 큰 상자에 몰아넣던 HUD를 장비표처럼 다시 만들었다.
+    // 아이콘, 뜻, 현재/최대가 한 카드 안에서 같이 읽혀야 숫자를 외울 필요가 없다.
     const stats = [
       { kind: ITEM.BUBBLE, c: '#4dabf7',
-        v: G.C.baseBubble + me.bubble_lv, max: G.C.capBubble, t: '물풍선' },
-      { kind: ITEM.POWER,  c: '#ff922b',
-        v: G.C.baseRange  + me.power_lv,  max: G.C.capRange,  t: '물줄기' },
+        v: G.C.baseBubble + statsPlayer.bubble_lv, max: G.C.capBubble,
+        t: '물풍선', d: '동시에 놓기' },
+      { kind: ITEM.POWER,  c: '#66d9e8',
+        v: G.C.baseRange  + statsPlayer.power_lv,  max: G.C.capRange,
+        t: '공격 거리', d: '물줄기 칸 수' },
       { kind: ITEM.ROLLER, c: '#51cf66',
-        v: me.speed_lv,                   max: G.C.capSpeed,  t: '속도'   },
+        v: statsPlayer.speed_lv,                   max: G.C.capSpeed,
+        t: '이동 속도', d: '강화 단계' },
     ];
 
+    const vertical = sideRails;
+    const cardW = vertical ? Math.min(180, BX - 24) : 66;
+    const cardH = vertical ? 54 : 70;
+    const gap = vertical ? 7 : 6;
+    const totalW = vertical ? cardW : stats.length * cardW + (stats.length - 1) * gap;
+    const totalH = vertical ? stats.length * cardH + (stats.length - 1) * gap : cardH;
+    const topMargin = !vertical && BY >= cardH + 66;
+    const baseX = vertical ? Math.floor((BX - cardW) / 2)
+                : topMargin ? 8 : Math.floor((W - totalW) / 2);
+    const baseY = vertical ? Math.max(174, Math.floor((H - totalH) / 2))
+                : topMargin ? BY - cardH - 12
+                : H - cardH - 10 - (spectating ? 44 : 0);
+
+    // 바깥 틀은 한 번만 그린다. 카드마다 같은 나무판을 세 겹 만들면 작은 HUD가
+    // 배경 타일만큼 많은 네모를 매 프레임 찍게 된다. 빈 간격이 카드 경계가 된다.
+    panel(baseX, baseY, totalW, totalH);
+
     stats.forEach((st, i) => {
-      const x = bx + gap + i * (cell + gap);
-      const flash = Math.max(0, 1 - (now - (pickFlash[st.kind] || -9999)) / 500);
+      const x = baseX + (vertical ? 0 : i * (cardW + gap));
+      const y = baseY + (vertical ? i * (cardH + gap) : 0);
+      const flash = spectating ? 0
+                  : Math.max(0, 1 - (now - (pickFlash[st.kind] || -9999)) / 500);
 
-      if (flash > 0) {
-        ctx.fillStyle = 'rgba(255,255,255,' + (flash * 0.16) + ')';
-        Art.rr(ctx, x - 2, by + 4, cell + 4, bh - 8, 7); ctx.fill();
-      }
+      ctx.fillStyle = st.c;
+      ctx.fillRect(x + 3, y + 3, vertical ? 3 : cardW - 6, vertical ? cardH - 6 : 3);
 
-      // 판에서 쓰는 것과 같은 그림. 같은 걸 봐야 연결이 된다
       ctx.save();
-      ctx.translate(x + cell / 2, by + 22);
+      ctx.translate(x + (vertical ? 27 : 18), y + (vertical ? 27 : 23));
       const k = 1 + flash * 0.35;
       ctx.scale(k, k);
-      Art.drawItem(ctx, 0, 0, 30, st.kind, now);
+      Art.drawStatIcon(ctx, 0, 0, vertical ? 30 : 26, st.kind);
       ctx.restore();
 
-      if (st.cd !== undefined) {
-        // 남은 초. 다 찼으면 숫자 대신 '준비' 를 뜻하는 밝은 테두리를 두른다.
-        // 0 이라고 써두면 0개 가진 것처럼 읽힌다
-        if (st.cd > 0) {
-          bigNum(((st.cd / 30) + 0.9).toFixed(0), x + cell / 2, by + 50, 19,
-                 'rgba(255,255,255,0.40)', 'center');
-        }
-        else {
-          ctx.strokeStyle = st.c;
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x + 4, by + 4, cell - 8, bh - 8);
-        }
+      if (vertical) {
+        label(st.t, x + 50, y + 20, 11, '#fff3df', 'left', 1);
+        label(st.d, x + 50, y + 37, 9, 'rgba(255,238,214,0.48)', 'left');
+        bigNum(st.v + '/' + st.max, x + cardW - 10, y + 34, 16,
+               flash > 0 ? '#fff' : st.c, 'right');
       }
       else {
-        bigNum(String(st.v), x + cell / 2, by + 50, 19,
-               flash > 0 ? '#ffffff' : st.c, 'center');
-      }
-      // 판때기를 6px 키우고 글자를 그 안으로 넣는다.
-      // 처음엔 글자만 위로 올렸다가 숫자와 겹쳤다. 자리가 없으면 자리를 만들어야 한다
-      label(st.t, x + cell / 2, by + bh - 7, 9, 'rgba(255,255,255,0.45)', 'center', 1);
-
-      // 상한까지 얼마 남았나. 가는 선으로만
-      for (let m = 0; m < st.max; ++m) {
-        ctx.fillStyle = m < st.v ? st.c : 'rgba(255,255,255,0.14)';
-        ctx.fillRect(x + 6 + m * ((cell - 12) / st.max), by + 6,
-                     (cell - 12) / st.max - 2, 3);
+        bigNum(st.v + '/' + st.max, x + cardW - 6, y + 29, 13,
+               flash > 0 ? '#fff' : st.c, 'right');
+        label(st.t, x + cardW / 2, y + 49, 10, '#fff3df', 'center', 1);
+        label(st.d, x + cardW / 2, y + 62, 8, 'rgba(255,238,214,0.44)', 'center');
       }
 
-      // 이 종류를 처음 먹은 순간에만 한 줄 설명이 칸 위로 떠올랐다 사라진다.
-      // "물줄기 3" 이라는 숫자만으로는 크아를 모르는 사람에게 아무 뜻이 없다는
-      // 지적을 받았다 - 그렇다고 늘 띄우면 판을 아는 사람에게는 방해다
-      if (itemHint && itemHint.kind === st.kind) {
+      // 현재/최대 숫자와 같은 정보를 한 줄 막대로 한 번 더 준다.
+      // 칸을 단계마다 따로 찍지 않아 그리기 비용도 강화 상한과 무관하다.
+      const meterX = vertical ? x + 50 : x + 7;
+      const meterY = vertical ? y + cardH - 7 : y + cardH - 5;
+      const meterW = vertical ? cardW - 62 : cardW - 14;
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillRect(meterX, meterY, meterW, 3);
+      ctx.fillStyle = st.c;
+      ctx.fillRect(meterX, meterY, Math.max(0, meterW * st.v / st.max), 3);
+
+      if (!spectating && itemHint && itemHint.kind === st.kind) {
         const ht = now - itemHint.born;
         if (ht < 2200) {
           const rise = Math.min(1, ht / 300);
           const fade = ht < 1700 ? 1 : 1 - (ht - 1700) / 500;
           ctx.save();
           ctx.globalAlpha = fade;
-          const hy = by - 10 - rise * 6;
+          const hy = y - 10 - rise * 6;
           ctx.font = '600 11px "Pretendard", "Segoe UI", system-ui, sans-serif';
           const tw = ctx.measureText(itemHint.text).width;
-          panel(x + cell / 2 - tw / 2 - 8, hy - 16, tw + 16, 22);
-          label(itemHint.text, x + cell / 2, hy, 11, st.c, 'center');
+          panel(x + cardW / 2 - tw / 2 - 8, hy - 16, tw + 16, 22);
+          label(itemHint.text, x + cardW / 2, hy, 11, st.c, 'center');
           ctx.restore();
         } else {
           itemHint = null;
@@ -1670,14 +1720,25 @@ function drawHUD(now) {
   {
     // 17px 칸에 10px 테두리면 액자가 지도보다 커 보인다는 지적을 받았다.
     // 칸을 키우고 테두리는 그대로 둔다 - 액자 두께는 그대로인데 비율로는 작아진다
-    const cell = 22, gap = 3, pad = 8;
+    const compactMap = compactHUD && BY >= 100;
+    const cell = compactMap ? 18 : 22;
+    const gap = compactMap ? 2 : 3;
+    const pad = compactMap ? 7 : 8;
     const mw = 3 * cell + 2 * gap;
 
     // 아이템 패널과 같은 이유로 오른쪽 여백에 놓는다.
     // 미니맵은 도망칠 방향을 정하는 데 쓰는데, 그게 판 구석을 가리면 앞뒤가 안 맞는다
     const roomyR = (W - BX - BW) >= mw + pad * 2 + 20;
-    const mx = roomyR ? BX + BW + (W - BX - BW - mw) / 2 : W - mw - pad - 10;
-    const my = roomyR ? H / 2 - mw / 2 : H - mw - pad - 10;
+    const topMarginMap = !roomyR && BY >= mw + pad + 66;
+    const mx = roomyR ? BX + BW + (W - BX - BW - mw) / 2
+             : topMarginMap ? W - mw - pad - 8
+             : W - mw - pad - 10;
+    // 좁은 화면에서는 능력치와 미니맵도 가로로 겹친다. 480px 아래에서는
+    // 미니맵을 한 줄 위로 올리고, 관전 중이면 아래 관전 바 자리도 비운다.
+    const bottomLift = (spectating ? 44 : 0) + (W < 480 ? 78 : 0);
+    const my = roomyR ? H / 2 - mw / 2
+             : topMarginMap ? BY - mw - pad - 10
+             : H - mw - pad - 10 - bottomLift;
 
     panel(mx - pad, my - pad, mw + pad * 2, mw + pad * 2);
 
@@ -1705,7 +1766,8 @@ function drawHUD(now) {
       // 어디 있나"를 메인 화면으로 눈을 돌려 다시 확인해야 했다는 뜻이다.
       // 색이나 크기가 아니라 **깜빡이는 고리**를 하나 더 두른다 - 움직이는
       // 것은 가만히 있는 점들 사이에서 시야 구석으로도 걸린다
-      if (id === G.myId) {
+      const focusId = spectating ? specId : G.myId;
+      if (id === focusId) {
         const pulse = 0.5 + 0.5 * Math.sin(now / 260);
         ctx.strokeStyle = 'rgba(255,255,255,' + (0.35 + 0.45 * pulse) + ')';
         ctx.lineWidth = 1.5;
@@ -1714,24 +1776,30 @@ function drawHUD(now) {
         ctx.stroke();
       }
 
-      ctx.fillStyle = (id === G.myId) ? '#fff' : colorOf(id);
+      ctx.fillStyle = (id === focusId) ? '#fff' : colorOf(id);
       ctx.beginPath();
-      ctx.arc(dx, dy, id === G.myId ? 3 : 1.8, 0, 7);
+      ctx.arc(dx, dy, id === focusId ? 3 : 1.8, 0, 7);
       ctx.fill();
     }
   }
 
   // ── 킬 피드 ────────────────────────────────────────────────
   killFeed = killFeed.filter(k => now - k.born < 5200);
-  for (let i = 0; i < killFeed.length; ++i) {
-    const k = killFeed[i];
+  // 좁은 화면에서는 판을 가리는 작은 상자가 정보보다 방해가 컸다.
+  // 사망은 생존 숫자와 효과음으로 이미 보이므로 킬 피드는 넓은 화면에만 둔다.
+  const feed = compactHUD ? [] : killFeed;
+  for (let i = 0; i < feed.length; ++i) {
+    const k = feed[i];
     const t = (now - k.born) / 5200;
     const slide = Art.easeOut(Math.min(1, (now - k.born) / 220));
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, (1 - t) * 3);
     const y = 66 + i * 30;
-    const x = W - 10 - 150 + (1 - slide) * 40;
+    const rightRail = W - BX - BW;
+    const x = sideRails
+      ? BX + BW + Math.floor((rightRail - 150) / 2) + (1 - slide) * 40
+      : W - 10 - 150 + (1 - slide) * 40;
 
     panel(x, y, 150, 26);
     Art.drawFace(ctx, x + 18, y + 14, 7, colorOf(k.killer), animalOf(k.killer));
@@ -1760,10 +1828,18 @@ function drawHUD(now) {
     const inn = Art.easeOut(Math.min(1, (now - (banner.until - banner.life)) / 200));
     const P = Art.V.P;
 
-    // 위쪽 HUD(처치·생존) 아래에 둔다. 46 에 뒀더니 그 판때기와 겹쳤다
-    const bw = Math.min(BW - 40, 300), bh = 30;
-    const bx = BX + (BW - bw) / 2;
-    const by = BY + 84;
+    // 넓은 화면은 오른쪽 여백, 세로 화면은 위쪽 여백을 쓴다.
+    // 둘 다 없을 때만 판의 맨 위 가장자리에 작게 붙는다.
+    const rightRail = W - BX - BW;
+    const bw = sideRails ? Math.min(rightRail - 20, 220) : Math.min(W - 16, 270);
+    const bh = 24;
+    const bx = sideRails
+      ? BX + BW + Math.floor((rightRail - bw) / 2)
+      : Math.floor((W - bw) / 2);
+    const lowerMargin = H - BY - BH;
+    const by = sideRails ? H - bh - 10
+             : lowerMargin >= 132 && !spectating ? BY + BH + 6
+             : (BY >= 100 ? 58 : BY + 6);
 
     ctx.save();
     ctx.globalAlpha = Math.min(1, (1 - t) * 4) * inn;
@@ -1775,7 +1851,7 @@ function drawHUD(now) {
     ctx.fillRect(Math.round(bx / P) * P, Math.round((by + P) / P) * P,
                  P * 2, Math.round((bh - P * 2) / P) * P);
 
-    label(banner.text, bx + bw / 2 + P, by + bh / 2 + 5, 13, '#fff', 'center', 1);
+    label(banner.text, bx + bw / 2 + P, by + bh / 2 + 4, 11, '#fff', 'center', 1);
     ctx.restore();
   }
 
@@ -1837,11 +1913,13 @@ function drawHUD(now) {
     panel(bx, by, bw, bh);
 
     label('물풍선 배틀로얄', bx + bw / 2, by + 30, 18, '#ffe066', 'center', 1);
-    label('24명 중 마지막까지 남는 한 명이 이긴다',
+    label('마지막까지 살아남으면 우승!',
           bx + bw / 2, by + 54, 13, 'rgba(255,238,214,0.85)', 'center');
-    label('한 명 더 들어오면 시작한다',
+    label('한 명이 더 들어오면 시작합니다',
           bx + bw / 2, by + 80, 12, 'rgba(255,238,214,0.5)', 'center');
-    label('다른 탭에서 같은 주소를 한 번 더 열면 된다',
+    const roomCode = window.BubbleSession && window.BubbleSession.roomCode;
+    label(roomCode ? '다른 창에 방 코드 ' + roomCode + '를 입력하세요'
+                   : '공개 게임에 한 명 더 참가하면 시작합니다',
           bx + bw / 2, by + 100, 11, 'rgba(255,238,214,0.35)', 'center');
   }
   else if (G.phase === PHASE.OVER) {
@@ -1854,14 +1932,18 @@ function drawHUD(now) {
     // 9/4 에 판때기를 나무로 다 바꾸면서 여기를 빼먹었다 - 화면 전체를 가로지르는
     // 납작한 검정 띠만 옛날 그대로 남아서, 죽고 나면 갑자기 다른 게임 화면으로
     // 바뀐 것처럼 보였다. 다른 HUD 판때기와 같은 나무 상자로 맞춘다
-    const bw = Math.min(BW - 40, 460), bh = 34;
-    const bx = BX + (BW - bw) / 2, by = H - 60;
+    const bw = Math.min(sideRails ? BX - 20 : BW - 20, 320), bh = 34;
+    const bx = sideRails ? Math.floor((BX - bw) / 2) : BX + (BW - bw) / 2;
+    const lowerMargin = H - BY - BH;
+    const by = sideRails ? H - bh - 10
+             : lowerMargin >= bh + 8 ? BY + BH + 4
+             : H - bh - 10;
     panel(bx, by, bw, bh);
 
     const list = aliveList();
     const who  = list.indexOf(specId);
 
-    label('관전 중', bx + 16, by + bh / 2 + 5, 13, '#ffcf9e', 'left', 1);
+    label('관전', bx + 14, by + bh / 2 + 5, 13, '#ffcf9e', 'left', 1);
 
     if (who >= 0) {
       // 누구를 보고 있는지와, 바꾸는 방법을 같이 적는다.
@@ -1899,39 +1981,46 @@ function drawHUD(now) {
     const bw = Math.min(BW - 40, 360), bh = 68;
     const bx = BX + (BW - bw) / 2, by = H / 2 - bh / 2;
     panel(bx, by, bw, bh);
-    label('서버와 끊겼다', bx + bw / 2, by + 30, 18, '#ff8f8f', 'center', 1);
-    label('2초마다 다시 붙어 본다', bx + bw / 2, by + 52, 12, 'rgba(255,238,214,0.6)', 'center');
+    label('연결이 끊겼습니다', bx + bw / 2, by + 30, 18, '#ff8f8f', 'center', 1);
+    label('잠시 뒤 다시 연결합니다', bx + bw / 2, by + 52, 12, 'rgba(255,238,214,0.6)', 'center');
   }
 }
 
 // ── 첫 조작 안내 ─────────────────────────────────────────────
 //
 // 처음 온 사람에게 딱 두 가지만 알린다. 움직이는 법과 놓는 법.
-// 규칙 설명은 안 한다 — 물풍선을 한 번 놓아보면 나머지는 저절로 안다.
+// 시작 화면에서 핵심 규칙 세 가지를 이미 보여주므로 판 안에서는 반복하지 않는다.
 //
 // 판 한가운데를 피해 아래쪽에 둔다. 가운데는 판을 보는 자리다.
 // 그리고 **하고 나면 그 줄만 지운다.** 움직일 줄 아는 사람에게 이동 안내는 방해다
 function drawFirstHints(now) {
   if (G.phase !== PHASE.PLAYING) return;
 
+  // 터치 버튼 자체가 조작 설명이다. 모바일에 W/A/S/D 그림까지 겹쳐 띄우면
+  // 쓸 수 없는 키를 안내하면서 시야만 가린다.
+  const touch = document.getElementById('touchControls');
+  if (touch && !touch.hidden) return;
+
   const me = G.players.get(G.myId);
   if (!me || !(me.flags & PF.ALIVE)) return;
 
-  const y = BY + BH - 74;
+  const sideHint = BX >= 225;
+  const hintCenter = sideHint ? BX / 2 : W / 2;
+  const y = sideHint ? H - 74 : BY + BH - 74;
   const pulse = 0.72 + 0.28 * Math.sin(now / 420);
 
   if (hasMoved && hasPlaced) return;
 
   if (!hasMoved) {
-    keyCap('W', W / 2 - 60, y - 26, pulse);
-    keyCap('A', W / 2 - 86, y, pulse);
-    keyCap('S', W / 2 - 60, y, pulse);
-    keyCap('D', W / 2 - 34, y, pulse);
-    label('움직인다', W / 2 - 60, y + 40, 12, 'rgba(255,255,255,' + pulse + ')', 'center');
+    keyCap('W', hintCenter - 60, y - 26, pulse);
+    keyCap('A', hintCenter - 86, y, pulse);
+    keyCap('S', hintCenter - 60, y, pulse);
+    keyCap('D', hintCenter - 34, y, pulse);
+    label('이동', hintCenter - 60, y + 40, 12, 'rgba(255,255,255,' + pulse + ')', 'center');
   }
 
   if (!hasPlaced) {
-    const bx = hasMoved ? W / 2 - 40 : W / 2 + 30;
+    const bx = hasMoved ? hintCenter - 40 : hintCenter + 30;
     keyCap('SPACE', bx, y, pulse, 70);
     label('물풍선', bx + 35, y + 40, 12, 'rgba(255,255,255,' + pulse + ')', 'center');
   }
@@ -1988,7 +2077,7 @@ function drawResults(now) {
   ctx.scale(0.7 + k * 0.3, 0.7 + k * 0.3);
 
   if (myRow && myRow.place === 1) {
-    label('이겼다', 0, -6, 30, '#7ee787', 'center', 3);
+    label('우승!', 0, -6, 30, '#7ee787', 'center', 3);
   }
   else if (myRow) {
     // 등수를 크게, '등' 을 작게. 숫자가 주인공이다
@@ -2013,7 +2102,7 @@ function drawResults(now) {
   panel(px, py, pw, 26 + show * rowH + 10);
 
   label('순위', px + 16,  py + 18, 10, 'rgba(255,255,255,0.40)', 'left', 1);
-  label('킬',   px + 210, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
+  label('처치', px + 210, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
   label('생존', px + 290, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
   label('아이템', px + pw - 16, py + 18, 10, 'rgba(255,255,255,0.40)', 'right', 1);
 
@@ -2135,7 +2224,7 @@ Hooks.landmarks = function () {
 Hooks.conn = function () {
   const el = document.getElementById('conn');
   if (!el) return;
-  el.textContent = G.connected ? '연결됨' : '끊김';
+  el.textContent = G.connected ? '연결됨' : (gameStarted ? '다시 연결 중…' : '연결 안 됨');
   el.className = G.connected ? 'on' : 'off';
 
   // 옆에 붙은 네모 표시등. 글자만 색이 바뀌고 이 표시등은 늘 빨강으로
@@ -2181,7 +2270,7 @@ Hooks.snapshot = function (prevPhase) {
   bubbleTiles = new Set();
   for (const b of G.bubbles) bubbleTiles.add(b.tx + ',' + b.ty);
 
-  // 내가 위험한가. 음악의 층수와 캐릭터 표정이 여기서 갈린다
+  // 내가 위험한가. 배경음악의 믹스와 캐릭터 표정이 여기서 갈린다
   const me = G.players.get(G.myId);
   danger = false;
   if (me && (me.flags & PF.ALIVE)) {
@@ -2193,7 +2282,9 @@ Hooks.snapshot = function (prevPhase) {
 
   noteRoster();
 
-  Sound.setMood(G.phase, G.aliveCount / 24, danger || (G.ring.on && G.aliveCount <= 3));
+  const roomCapacity = window.BubbleSession ? window.BubbleSession.capacity : 24;
+  Sound.setMood(G.phase, G.aliveCount / roomCapacity,
+                danger || (G.ring.on && G.aliveCount <= 3));
 
   if (G.phase === PHASE.COUNTDOWN) {
     const sec = Math.floor(G.phaseTicks / G.C.tickRate);
@@ -2394,7 +2485,7 @@ Hooks.event = function (type, x, y, who, val) {
           seenItemHint.add(hintKind);
           itemHint = { kind: hintKind, text: ITEM_HINT_TEXT[hintKind], born: now };
         }
-        (val === ITEM.ULTRA ? S.ultra(pan, far) : S.item(pan, far));
+        (val === ITEM.ULTRA ? S.ultra(pan, far) : S.item(val, pan, far));
       }
       break;
     }
@@ -2521,19 +2612,19 @@ Hooks.event = function (type, x, y, who, val) {
     // 화면이 알아서 붉게 뛴다 — 남은 시간이 줄수록 빨리 뛴다
     case EVT.FLOOD_WARN:
       G.floodAt[x] = now + val * 1000;
-      banner = { text: val + '초 뒤 이 구역에 물이 찬다', until: now + 2600, life: 2600 };
+      banner = { text: '빨간 구역을 떠나세요 · ' + val + '초', until: now + 2600, life: 2600 };
       Sound.warn();
       break;
 
     case EVT.FLOOD:
       G.floodAt[x] = 0;
-      banner = { text: '물이 찼다', until: now + 1600, life: 1600 };
+      banner = { text: '물이 찼습니다 · 중앙으로 이동', until: now + 1600, life: 1600 };
       FX.shake(0.35);
       Sound.flood();
       break;
 
     case EVT.RING:
-      banner = { text: '물이 차오른다', until: now + 1800, life: 1800 };
+      banner = { text: '안전한 땅이 한 칸 줄어듭니다', until: now + 1800, life: 1800 };
       FX.shake(0.25);
       Sound.flood();
       break;
@@ -2543,15 +2634,16 @@ Hooks.event = function (type, x, y, who, val) {
 // ── 입력 ─────────────────────────────────────────────────────
 const held = new Set();
 let sentX = 0, sentY = 0;
+let gameStarted = false;
 
 function inputDir() {
   const keys = window.BubbleSession ? window.BubbleSession.profile.keys
     : { up: 'w', down: 's', left: 'a', right: 'd' };
   let dx = 0, dy = 0;
-  if (held.has('ArrowLeft')  || held.has(keys.left))  dx -= 1;
-  if (held.has('ArrowRight') || held.has(keys.right)) dx += 1;
-  if (held.has('ArrowUp')    || held.has(keys.up))    dy -= 1;
-  if (held.has('ArrowDown')  || held.has(keys.down))  dy += 1;
+  if (held.has('ArrowLeft')  || held.has(keys.left)  || held.has('TouchLeft'))  dx -= 1;
+  if (held.has('ArrowRight') || held.has(keys.right) || held.has('TouchRight')) dx += 1;
+  if (held.has('ArrowUp')    || held.has(keys.up)    || held.has('TouchUp'))    dy -= 1;
+  if (held.has('ArrowDown')  || held.has(keys.down)  || held.has('TouchDown'))  dy += 1;
   return [dx, dy];
 }
 
@@ -2591,6 +2683,7 @@ function pushInput() {
 }
 
 addEventListener('keydown', (e) => {
+  if (!gameStarted) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   // 죽었으면 좌우로 관전 대상을 넘긴다. 살아 있으면 좌우는 이동이다
   {
@@ -2623,12 +2716,129 @@ addEventListener('keydown', (e) => {
 });
 
 addEventListener('keyup', (e) => {
+  if (!gameStarted) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   held.delete(k);
   pushInput();
 });
 
-addEventListener('blur', () => { held.clear(); pushInput(); });
+addEventListener('blur', () => {
+  held.clear();
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll('.touch-controls .pressed').forEach((el) => el.classList.remove('pressed'));
+  }
+  pushInput();
+});
+
+// ── 모바일 조작 ──────────────────────────────────────────────
+//
+// 세로 화면은 판 위·아래에, 가로 화면은 판 좌우에 남는 공간이 생긴다.
+// 버튼은 그 여백에 놓고, 정말 여백이 없을 때만 판 아래 모서리에 반투명하게 둔다.
+function updateTouchControls() {
+  const controls = document.getElementById('touchControls');
+  const stage = document.getElementById('stage');
+  if (!controls || !stage || !G.C || typeof controls.querySelector !== 'function') return;
+
+  const coarse = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+              || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+  const showTouch = coarse || window.innerWidth <= 520;
+  controls.hidden = !showTouch;
+  if (!showTouch) return;
+
+  const dpad = controls.querySelector('.touch-dpad');
+  const place = document.getElementById('touchPlace');
+  const canvasLeft = Math.floor((stage.clientWidth - W) / 2);
+  const canvasTop = Math.floor((stage.clientHeight - H) / 2);
+  const bottomRoom = H - BY - BH;
+  const rightRoom = W - BX - BW;
+
+  let dx, dy, px, py;
+  if (bottomRoom >= 132) {
+    dx = canvasLeft + 12;
+    dy = canvasTop + H - 128;
+    px = canvasLeft + W - 96;
+    py = canvasTop + H - 108;
+  }
+  else if (BX >= 132 && rightRoom >= 96) {
+    dx = canvasLeft + Math.floor((BX - 124) / 2);
+    dy = canvasTop + Math.floor((H - 124) / 2);
+    px = canvasLeft + BX + BW + Math.floor((rightRoom - 84) / 2);
+    py = canvasTop + Math.floor((H - 84) / 2);
+  }
+  else {
+    dx = canvasLeft + BX + 12;
+    dy = canvasTop + BY + BH - 136;
+    px = canvasLeft + BX + BW - 96;
+    py = canvasTop + BY + BH - 100;
+  }
+
+  dpad.style.left = Math.round(dx) + 'px';
+  dpad.style.top = Math.round(dy) + 'px';
+  place.style.left = Math.round(px) + 'px';
+  place.style.top = Math.round(py) + 'px';
+}
+
+function watchingNow() {
+  const me = G.players.get(G.myId);
+  return !me || !(me.flags & PF.ALIVE);
+}
+
+const touchDirectionButtons = typeof document.querySelectorAll === 'function'
+  ? document.querySelectorAll('[data-touch-dir]') : [];
+touchDirectionButtons.forEach((button) => {
+  const name = button.dataset.touchDir;
+  const key = 'Touch' + name[0].toUpperCase() + name.slice(1);
+
+  const release = (event) => {
+    if (event) event.preventDefault();
+    held.delete(key);
+    button.classList.remove('pressed');
+    pushInput();
+  };
+
+  button.addEventListener('pointerdown', (event) => {
+    if (!gameStarted) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    button.classList.add('pressed');
+    Sound.wake();
+
+    // 관전 중 좌우 버튼은 이동 대신 대상을 바꾼다. 화면에 보이는 버튼과
+    // 키보드 화살표가 같은 일을 하게 맞춘다.
+    if (watchingNow() && (name === 'left' || name === 'right')) {
+      specShift(name === 'right' ? 1 : -1);
+      return;
+    }
+    held.add(key);
+    pushInput();
+  });
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', release);
+  button.addEventListener('contextmenu', (event) => event.preventDefault());
+});
+
+{
+  const place = document.getElementById('touchPlace');
+  const release = (event) => {
+    if (event) event.preventDefault();
+    place.classList.remove('pressed');
+  };
+  if (place) place.addEventListener('pointerdown', (event) => {
+    if (!gameStarted || watchingNow()) return;
+    event.preventDefault();
+    place.setPointerCapture(event.pointerId);
+    place.classList.add('pressed');
+    Sound.wake();
+    hasPlaced = true;
+    sendPlace();
+  });
+  if (place) place.addEventListener('pointerup', release);
+  if (place) place.addEventListener('pointercancel', release);
+  if (place) place.addEventListener('lostpointercapture', release);
+  if (place) place.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
 addEventListener('resize', () => { if (G.C) resize(); });
 
 // 다시 시작은 **판 전체를 즉시 끝낸다.** main.cpp 쪽 주석에 그대로
@@ -2641,7 +2851,7 @@ addEventListener('resize', () => { if (G.C) resize(); });
 // "버그인가?" 소리가 나온다. 아직 남이 살아 있는 판에서만 한 번 되묻는다
 function confirmRestart() {
   if (G.phase === PHASE.PLAYING && G.aliveCount > 1) {
-    return confirm('아직 다른 사람이 살아있는 판이다. 그래도 다시 시작할까?');
+    return confirm('아직 다른 사람이 플레이 중입니다. 그래도 새 판을 시작할까요?');
   }
   return true;
 }
@@ -2656,5 +2866,11 @@ if (restartBtn) {
 }
 cv.addEventListener('mousedown', () => Sound.wake());
 
-connect();
+// 로비가 숨겨졌을 때만 서버 자리를 잡는다. 페이지를 열어두기만 한 사람은
+// 관전자나 플레이어로 세지 않는다.
+window.startBubbleGame = () => {
+  if (gameStarted) return;
+  gameStarted = true;
+  connect();
+};
 requestAnimationFrame(frame);
