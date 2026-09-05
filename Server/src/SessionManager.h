@@ -74,3 +74,25 @@ inline void CloseSession(Session* s)
     shutdown(s->sock, SD_BOTH);    // 걸린 주문들이 실패로라도 완료되게 깨운다
     Release(s);                    // 목록이 들고 있던 참조를 놓는다
 }
+
+// 서버 종료 때 목록에 남은 세션을 전부 정상 CloseSession 경로로 보낸다.
+// 목록 자물쇠 안에서는 참조만 들고, shutdown과 로그는 밖에서 한다.
+inline void CloseAllSessions()
+{
+    Session* targets[MAX_SESSION];
+    int count = 0;
+
+    AcquireSRWLockShared(&g_session_lock);
+    for (int i = 0; i < MAX_SESSION; ++i) {
+        Session* s = g_sessions[i];
+        if (s == nullptr) continue;
+        AddRef(s);
+        targets[count++] = s;
+    }
+    ReleaseSRWLockShared(&g_session_lock);
+
+    for (int i = 0; i < count; ++i) {
+        CloseSession(targets[i]);
+        Release(targets[i]);
+    }
+}
