@@ -10,7 +10,8 @@
 #   0 1 2  앞     3 4 5  뒤     6 7 8  왼쪽     9 10 11  오른쪽
 # 세 칸이 걷기 세 프레임이다.
 import os, sys, json
-from PIL import Image
+from collections import deque
+from PIL import Image, ImageEnhance
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cutsheet import cut, cut_even
@@ -221,7 +222,8 @@ TILE_W = 96          # 한 칸을 아틀라스에서 몇 픽셀로 담나
 # 두 칸을 차지하는 것들. 나머지는 다 한 칸이다
 TILE_WIDE = {'house': 2, 'well': 2, 'desert_house_red': 2, 'desert_house_blue': 2,
              'desert_market': 2, 'desert_palm_big': 2, 'desert_rock_big': 2,
-             'desert17_tent': 2, 'desert17_bazaar': 2}
+             'desert17_tent': 2, 'desert17_bazaar': 2,
+             'snow_castle': 2, 'snow_igloo': 2, 'snow_spring': 2}
 
 # 바닥으로 까는 타일. 테두리를 잘라낸다.
 #
@@ -236,10 +238,108 @@ FLOOR_TRIM = 0.09
 def is_floor(name):
     for head in ('grass', 'dirt_', 'water_', 'desert_sand_0', 'desert_sand_1',
                  'desert_water_', 'desert_carpet',
-                 'desert17_sand_', 'desert17_pave_'):
+                 'desert17_sand_', 'desert17_pave_', 'snow_floor_'):
         if name.startswith(head):
             return True
     return False
+
+
+# 눈 맵 시트는 한 장에 바닥·소품·건물·상자가 함께 있다. 좌표를 이곳 한 군데에
+# 적어두면 원본을 바꿔도 어떤 조각을 어디서 잘랐는지 다시 확인할 수 있다.
+# 큰 건물 셋은 판정에서도 2x2 칸을 차지한다(SectorTemplates.h).
+SNOW_CROPS = {
+    'snow_floor_a': (66, 33, 232, 197),
+    'snow_floor_b': (290, 32, 461, 197),
+    'snow_floor_c': (522, 32, 695, 197),
+    'snow_floor_d': (752, 32, 928, 197),
+    'snow_wall_rock': (987, 33, 1157, 197),
+    'snow_wall_ice': (1216, 33, 1388, 197),
+    'snow_boulder_tall': (32, 253, 198, 431),
+    'snow_pillar_tall': (231, 226, 366, 429),
+    'snow_pillar_short': (406, 260, 540, 429),
+    'snow_sign': (584, 237, 709, 432),
+    'snow_snowman': (744, 241, 904, 435),
+    'snow_pine': (927, 230, 1081, 436),
+    'snow_rocks': (1114, 297, 1267, 437),
+    'snow_lamp': (1288, 226, 1421, 442),
+    'snow_crystal': (39, 440, 188, 621),
+    'snow_grave': (249, 451, 420, 619),
+    'snow_boulder': (512, 458, 693, 616),
+    'snow_igloo': (43, 618, 462, 935),
+    'snow_spring': (521, 575, 948, 944),
+    'snow_castle': (994, 484, 1408, 946),
+    'snow_crate': (53, 949, 179, 1069),
+    'snow_xcrate': (222, 949, 342, 1069),
+}
+
+
+def _add_snow_crate_depth(im):
+    """정면뿐인 설원 상자 밑에 어두운 앞면을 붙여 한 칸짜리 입체 상자로 만든다."""
+    w, h = im.size
+    depth = max(12, round(h * 0.27))
+    overlap = max(2, round(h * 0.035))
+
+    # 원본의 나무판·기둥 무늬를 그대로 재료로 써야 새 면도 같은 그림체다.
+    # 아래 절반을 낮게 눌러 앞면으로 만들고, 빛을 덜 받는 면이라 어둡게 한다.
+    front = im.crop((0, round(h * 0.43), w, h))
+    front = front.resize((w, depth + overlap), Image.Resampling.LANCZOS)
+    front = ImageEnhance.Color(front).enhance(0.82)
+    front = ImageEnhance.Brightness(front).enhance(0.54)
+
+    out = Image.new('RGBA', (w, h + depth), (0, 0, 0, 0))
+    out.alpha_composite(front, (0, h - overlap))
+    out.alpha_composite(im, (0, 0))
+    return out
+
+
+def extract_snow_tiles():
+    """사용자가 준 눈 맵 시트를 이름 붙은 타일 파일로 다시 자른다."""
+    sheet_path = os.path.join(SRC, 'snow.png')
+    if not os.path.isfile(sheet_path):
+        print('!! web/art/src/snow.png 가 없다')
+        return
+
+    dst = os.path.join(OUT, 'tiles')
+    os.makedirs(dst, exist_ok=True)
+    sheet = Image.open(sheet_path).convert('RGBA')
+    for name, box in SNOW_CROPS.items():
+        im = sheet.crop(box)
+        # 큰 건물의 사각 범위가 위 줄 소품과 조금 겹친다. 사각형만 자르면
+        # 이글루 머리 위에 이전 줄 바위의 밑동이 따라온다. 가운데 본체와
+        # 이어진 가장 큰 알파 덩어리만 남겨서 서로 다른 소품을 확실히 가른다.
+        px = im.load()
+        seen = bytearray(im.width * im.height)
+        blobs = []
+        for y in range(im.height):
+            for x in range(im.width):
+                i = y * im.width + x
+                if seen[i] or px[x, y][3] < 90:
+                    continue
+                q = deque([(x, y)]); seen[i] = 1; cells = []
+                while q:
+                    cx, cy = q.popleft(); cells.append((cx, cy))
+                    for dx in (-1, 0, 1):
+                        for dy in (-1, 0, 1):
+                            nx, ny = cx + dx, cy + dy
+                            if 0 <= nx < im.width and 0 <= ny < im.height:
+                                j = ny * im.width + nx
+                                if not seen[j] and px[nx, ny][3] >= 90:
+                                    seen[j] = 1; q.append((nx, ny))
+                blobs.append(cells)
+        if blobs:
+            keep = set(max(blobs, key=len))
+            for y in range(im.height):
+                for x in range(im.width):
+                    if (x, y) not in keep:
+                        r, g, b, _ = px[x, y]
+                        px[x, y] = (r, g, b, 0)
+        bb = im.getbbox()
+        if bb:
+            im = im.crop(bb)
+        if name in ('snow_crate', 'snow_xcrate'):
+            im = _add_snow_crate_depth(im)
+        im.save(os.path.join(dst, name + '.png'))
+    print('눈 맵 시트 %d조각' % len(SNOW_CROPS))
 
 
 def _foot_width(im):
@@ -264,6 +364,7 @@ def _foot_width(im):
 
 
 def build_tiles():
+    extract_snow_tiles()
     src = os.path.join(OUT, 'tiles')
     if not os.path.isdir(src):
         print('!! web/art/tiles 가 없다')

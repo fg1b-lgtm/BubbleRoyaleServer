@@ -547,7 +547,7 @@ static void TemplatePromises()
 // 판에 남아있는지(우연히 더 늘거나 준 게 없는지) 를 잰다
 static void LandmarkPromises()
 {
-    printf("\n--- 랜드마크(집·우물·텐트·장터) 약속 ---\n");
+    printf("\n--- 큰 구조물(집·우물·텐트·얼음성 등) 약속 ---\n");
 
     int bad_origin = 0;
     for (int t = 0; t < SECTOR_TEMPLATE_COUNT; ++t) {

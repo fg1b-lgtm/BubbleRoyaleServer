@@ -124,6 +124,16 @@ const ART_DATA = (() => {
       wallTop: '#415859', wallSide: '#293738', wallEdge: '#202b2c',
       crate: '#bb7c61', crateTop: '#d0a491', crateSide: '#9a5c42',
       markH: 'log2', markV: 'lamp2', mark: 'rock', crateKinds: ['ice', 'stone'], wallKinds: ['rock', 'rock', 'ashlar'],
+      tiles: { floor: ['snow_floor_a', 'snow_floor_b', 'snow_floor_c', 'snow_floor_d'],
+               wall: ['snow_wall_rock', 'snow_wall_ice', 'snow_boulder_tall',
+                      'snow_pillar_tall', 'snow_pillar_short', 'snow_sign',
+                      'snow_snowman', 'snow_pine', 'snow_rocks', 'snow_lamp',
+                      'snow_crystal', 'snow_grave', 'snow_boulder'],
+               big: [{ name: 'snow_castle', w: 2, h: 2 },
+                     { name: 'snow_igloo', w: 2, h: 2 },
+                     { name: 'snow_spring', w: 2, h: 2 }],
+               crate: ['snow_crate'],
+               push: ['snow_xcrate'] },
       step: 'ice' },
 
     { name: '부두',   // 9 DOCKS — 나무 판자와 화물
