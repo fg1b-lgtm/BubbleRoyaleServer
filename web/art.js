@@ -2391,6 +2391,16 @@ const Art = (() => {
       return;
     }
 
+    // 1(물풍선)·2(공격 거리)·3(속도)은 능력치 창과 같은 drawStatIcon으로 그린다.
+    // 예전에는 여기서 ITEM_ART의 도트 그림을 따로 썼는데, 능력치 창 아이콘을
+    // 점/+/번개에서 물건 모양으로 바꾸면서 둘이 갈라졌다 - 바닥에서는 번개를
+    // 줍고 능력치 창에는 신발이 뜨면 같은 능력인지 이어 읽히지 않는다.
+    // 판에서 본 것이 표에도 그대로 나와야 배울 게 없다(drawFace와 같은 이유).
+    if (kind === 1 || kind === 2 || kind === 3) {
+      drawStatIcon(g, cx, cy + up, T, kind);
+      return;
+    }
+
     const art = ITEM_ART[kind] || ITEM_ART[1];
     drawDots(g, art,
              Math.round((cx - 5.5 * P) / P) * P,
