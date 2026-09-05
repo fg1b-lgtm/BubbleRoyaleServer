@@ -281,7 +281,7 @@ static void Test4_Graze()
     Check(from == 10 && to == 11, "몸은 10, 11 두 칸에 걸쳐 있다");
 
     // 11번 칸만 물줄기로 덮는다
-    SetBlast(11, 10, 0, 42);
+    SetBlast(11, 10, 0);
     Tick();
 
     printf("  GRAZE %d 개, TRAPPED %d 개, 갇힘 %d 틱\n",
@@ -297,13 +297,13 @@ static void Test4_Graze()
     // 판정까지 넘어가면 그때는 맞아야 한다
     OpenBoard();
     int me2 = Join(10, 10);
-    SetBlast(10, 10, 0, 43);
+    SetBlast(10, 10, 0);
     Tick();
 
     Check(g_game.players[me2].trap_ticks > 0, "판정 칸이 맞으면 갇힌다");
 }
 
-// ── 시험 5 : 갇힘 5초와 스스로 탈출 ──────────────────────────
+// ── 시험 5 : 갇힘 7초와 스스로 탈출 ──────────────────────────
 static void Test5_Trap()
 {
     printf("\n=== 시험 5: 갇힘 ===\n");
@@ -312,14 +312,14 @@ static void Test5_Trap()
     int me = Join(10, 10);
     Player& p = g_game.players[me];
 
-    SetBlast(10, 10, 0, 50);
+    SetBlast(10, 10, 0);
     Tick();
 
     Check(p.trap_ticks > 0, "갇혔다");
     Check(CountEvent(EVT_TRAP) == 1, "TRAPPED 가 떴다");
 
     // 갇힌 동안에도 아주 느리게는 갈 수 있다.
-    // 완전히 묶어두면 5초가 죽은 시간이 된다
+    // 완전히 묶어두면 7초가 죽은 시간이 된다
     p.dir_x = 1;
     int before = p.px;
     Tick();
@@ -342,11 +342,11 @@ static void Test5_Trap()
     Check(p.alive, "갇힌 채로 물줄기 안에 있어도 안 죽는다");
 
     // 다른 폭발이 와도 마찬가지다. 마무리는 몸으로만 된다
-    SetBlast(10, 10, 1, 99);
+    SetBlast(10, 10, 1);
     Tick();
     Check(p.alive, "다른 물줄기로도 안 죽는다");
 
-    // 5초를 버티면 스스로 나온다
+    // 7초를 버티면 스스로 나온다
     int broke = -1;
     for (int t = 0; t < TRAP_DURATION_TICKS + 10; ++t) {
         Tick();
@@ -357,7 +357,7 @@ static void Test5_Trap()
     }
 
     printf("  갇힘 %d 틱(%d초) 뒤 BREAK OUT\n", TRAP_DURATION_TICKS, TRAP_DURATION_TICKS / TICK_RATE);
-    Check(broke >= 0, "5초를 버티면 스스로 나온다");
+    Check(broke >= 0, "7초를 버티면 스스로 나온다");
     Check(p.alive && p.trap_ticks == 0, "나온 뒤에는 움직일 수 있다");
     Check(p.invuln_ticks > 0, "나온 직후는 잠깐 무적이다");
 }
@@ -379,7 +379,7 @@ static void Test14_ItemSweptByBlast()
 
     // 바닥에 놓여 있던 아이템
     g_game.item[10][7] = ITEM_POWER;
-    SetBlast(7, 10, a, 77);
+    SetBlast(7, 10, a);
     printf("  바닥에 있던 아이템: %d\n", g_game.item[10][7]);
     Check(g_game.item[10][7] == ITEM_NONE, "바닥에 있던 아이템은 쓸려간다");
     Check(CountEvent(EVT_ITEM_GONE) == 1, "쓸려간 걸 화면에 알린다");
@@ -387,7 +387,7 @@ static void Test14_ItemSweptByBlast()
     // 아무것도 없는 칸에서는 알리지 않는다. 빈 칸마다 이벤트가 나가면
     // 물줄기 하나에 이벤트가 열 개씩 붙는다
     g_game.event_count = 0;
-    SetBlast(8, 10, a, 77);
+    SetBlast(8, 10, a);
     Check(CountEvent(EVT_ITEM_GONE) == 0, "빈 칸에서는 안 알린다");
 
     // **부숴서 나온 것은 살아남는다.** 여기가 이 시험의 요지다
@@ -428,7 +428,7 @@ static void Test6_PopByTouch()
     Player& v = g_game.players[victim];
     Player& k = g_game.players[killer];
 
-    SetBlast(10, 10, 0, 60);
+    SetBlast(10, 10, 0);
     Tick();
     Check(v.trap_ticks > 0, "먼저 갇혔다");
 
@@ -464,8 +464,8 @@ static void Test6b_TrappedCannotPop()
     int a = Join(10, 10);
     int b = Join(11, 10);
 
-    SetBlast(10, 10, 0, 70);
-    SetBlast(11, 10, 0, 70);
+    SetBlast(10, 10, 0);
+    SetBlast(11, 10, 0);
     Tick();
 
     Check(g_game.players[a].trap_ticks > 0 && g_game.players[b].trap_ticks > 0,
@@ -788,6 +788,36 @@ static void Test12_PushBox()
     Check(g_game.map.tile[10][11] == TILE_EMPTY, "상자도 물줄기에 부서진다");
 }
 
+// ── 시험 15 : 폭발 연출이 몰려도 판 상태 사건은 남는다 ─────────
+static void Test15_EventPressure()
+{
+    printf("\n=== 시험 15: 한 틱 이벤트 폭주 ===\n");
+
+    g_game.event_count = 0;
+    g_event_fx_dropped = 0;
+    g_event_state_dropped = 0;
+
+    for (int i = 0; i < 600; ++i) {
+        PushEvent(EVT_BLAST, i % MAP_W, (i / MAP_W) % MAP_H, 0, 0);
+    }
+    for (int i = 0; i < 1000; ++i) {
+        PushEvent(EVT_BLOCK, i % MAP_W, (i / MAP_W) % MAP_H, 0xFF, 0);
+    }
+
+    int blast = 0;
+    int block = 0;
+    for (int i = 0; i < g_game.event_count; ++i) {
+        if (g_game.events[i].type == EVT_BLAST) ++blast;
+        if (g_game.events[i].type == EVT_BLOCK) ++block;
+    }
+
+    printf("  물줄기 %d개, 블록 변경 %d개, 줄인 연출 %lld개\n",
+           blast, block, g_event_fx_dropped);
+    Check(blast == MAX_BLAST_EVENT_PER_TICK, "물줄기 연출은 정한 상한에서 줄인다");
+    Check(block == 1000, "뒤에 온 블록 변경 사건은 하나도 잃지 않는다");
+    Check(g_event_state_dropped == 0, "판 상태 사건을 버리지 않았다");
+}
+
 int main()
 {
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -807,6 +837,7 @@ int main()
     Test10_Pickup();
     Test11_KillLoot();
     Test12_Ultra();
+    Test15_EventPressure();
 
     printf("\n===== 결과: %d PASS / %d FAIL =====\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

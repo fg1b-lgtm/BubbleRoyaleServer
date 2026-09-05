@@ -120,7 +120,35 @@ struct GameEvent
     uint8_t value;
 };
 
-constexpr int MAX_EVENT_PER_TICK = 512;
+// 한 틱에 물풍선 여러 개가 같이 터지면 물줄기 칸만 수백 개가 생긴다.
+// 화면 효과가 상태 변경 사건을 밀어내지 않도록 전체 통을 넉넉히 두되,
+// 가장 시끄러운 BLAST 연출은 먼저 줄인다. 1536개도 패킷으로 약 14KB라
+// 세션 송신 링(16KB) 안에서 한 틱의 상태 변경을 보존할 수 있다.
+constexpr int MAX_EVENT_PER_TICK       = 1536;
+constexpr int MAX_BLAST_EVENT_PER_TICK = 384;
+
+// 소유 스레드: tick. 0이 아니면 [Net] 로그에서 바로 보인다.
+inline long long g_event_fx_dropped    = 0;
+inline long long g_event_state_dropped = 0;
+
+inline bool IsStateEvent(uint8_t type)
+{
+    switch (type) {
+    case EVT_DEATH:
+    case EVT_BLOCK:
+    case EVT_FLOOD_WARN:
+    case EVT_FLOOD:
+    case EVT_DROP:
+    case EVT_RING:
+    case EVT_POP:
+    case EVT_PUSH:
+    case EVT_ITEM:
+    case EVT_ITEM_GONE:
+        return true;
+    default:
+        return false;
+    }
+}
 
 struct GameState
 {
@@ -131,13 +159,11 @@ struct GameState
 
     // 물줄기가 덮고 있는 칸. 남은 틱 수를 그대로 담는다
     uint8_t  blast[MAP_H][MAP_W];
-    // 그 물줄기가 몇 번째 폭발인가. 나를 가둔 폭발로는 안 죽어야 해서 번호가 필요하다
-    uint16_t blast_gen[MAP_H][MAP_W];
+    // 시뮬레이터가 자폭 비율을 재는 진단값. 서버 판정에는 쓰지 않는다
     int8_t   blast_owner[MAP_H][MAP_W];
 
     uint8_t item[MAP_H][MAP_W];
 
-    uint16_t next_gen;      // 다음 폭발에 줄 번호
     MapRandom drop_rnd;     // 아이템이 나올지 굴리는 주사위
 
     // ── 침수 ──
@@ -177,10 +203,24 @@ struct GameState
 // 틱 스레드가 소유한다. 전역이지만 만지는 스레드는 하나뿐이다
 inline GameState g_game;
 
+// 방을 띄울 때 한 번 정하고 그 뒤에는 바꾸지 않는 최대 참가자 수다.
+// 배열 크기는 여전히 PLAYER_MAX 이지만, 새 자리는 이 값까지만 내준다.
+// 설정은 main 스레드가 워커를 시작하기 전에 쓰고 게임 틱은 읽기만 한다.
+inline int g_room_capacity = PLAYER_MAX;
+
 inline void PushEvent(uint8_t type, int x, int y, int who, int value)
 {
+    // 물줄기는 같은 칸을 여러 폭발이 덮어도 매번 생긴다. 연출을 조금 덜
+    // 보내는 편이 블록·아이템·사망 사건을 잃는 것보다 훨씬 안전하다.
+    if (type == EVT_BLAST && g_game.event_count >= MAX_BLAST_EVENT_PER_TICK) {
+        ++g_event_fx_dropped;
+        return;
+    }
+
     if (g_game.event_count >= MAX_EVENT_PER_TICK) {
-        return;   // 한 틱에 이만큼 넘게 생길 일이 없다. 넘치면 그냥 버린다
+        if (IsStateEvent(type)) ++g_event_state_dropped;
+        else                    ++g_event_fx_dropped;
+        return;
     }
 
     GameEvent& e = g_game.events[g_game.event_count++];
@@ -289,7 +329,6 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     for (int i = 0; i < ne; ++i) g_game.flood_order[g_game.flood_outer++] = edges[i];
 
     g_game.player_count = 0;
-    g_game.next_gen     = 1;
     g_game.tick         = 0;
     g_game.event_count  = 0;
 
@@ -318,7 +357,6 @@ inline void InitGame(unsigned int seed, int flood_scale = 1)
     for (int y = 0; y < MAP_H; ++y) {
         for (int x = 0; x < MAP_W; ++x) {
             g_game.blast[y][x]       = 0;
-            g_game.blast_gen[y][x]   = 0;
             g_game.blast_owner[y][x] = -1;
             g_game.item[y][x]        = ITEM_NONE;
         }
@@ -357,7 +395,7 @@ inline bool Occupied(const Player& p)
 inline int AddPlayer(Session* s, bool bot = false)
 {
     int slot = -1;
-    for (int i = 0; i < PLAYER_MAX; ++i) {
+    for (int i = 0; i < g_room_capacity; ++i) {
         if (!Occupied(g_game.players[i])) { slot = i; break; }
     }
     if (slot < 0) {
@@ -528,7 +566,7 @@ inline bool DropOneBot()
 // 남겨두면 사람이 안 올 때 그 자리가 계속 비어 있다
 inline void FillBots(int target)
 {
-    if (target > PLAYER_MAX) target = PLAYER_MAX;
+    if (target > g_room_capacity) target = g_room_capacity;
 
     while (g_game.player_count < target) {
         if (AddPlayer(nullptr, true) < 0) break;
@@ -762,8 +800,8 @@ inline void MovePlayer(const GameMap& map, Player& p)
     // ── 대쉬 ──────────────────────────────────────────────────
     //
     // 갇혀도 아주 느리게는 갈 수 있다.
-    // 아예 묶어두면 5초가 죽은 시간이 된다. 기어서라도 물줄기 밖으로 나갈 수 있어야
-    // 그 5초가 판단하는 시간이 된다
+    // 아예 묶어두면 7초가 죽은 시간이 된다. 기어서라도 물줄기 밖으로 나갈 수 있어야
+    // 그 7초가 판단하는 시간이 된다
     int speed = trapped ? TRAP_MOVE_SPEED
                         : (MOVE_SPEED_BASE + p.speed_lv * MOVE_SPEED_STEP);
 

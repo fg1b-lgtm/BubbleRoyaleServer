@@ -88,10 +88,9 @@ inline bool PlaceBubble(int slot)
 }
 
 // 한 칸을 물줄기로 덮는다
-inline void SetBlast(int tx, int ty, int owner, uint16_t gen)
+inline void SetBlast(int tx, int ty, int owner)
 {
     g_game.blast[ty][tx]       = BLAST_DURATION_TICKS;
-    g_game.blast_gen[ty][tx]   = gen;
     g_game.blast_owner[ty][tx] = (int8_t)owner;
 
     // 바닥에 있던 아이템은 물줄기에 쓸려간다.
@@ -142,11 +141,6 @@ inline void Explode(int index)
         return;
     }
 
-    uint16_t gen = g_game.next_gen++;
-    if (g_game.next_gen == 0) {
-        g_game.next_gen = 1;   // 0 은 "폭발 없음" 이라 건너뛴다
-    }
-
     b.used = false;
     g_game.map.tile[b.ty][b.tx] = TILE_EMPTY;   // 칸을 다시 연다
 
@@ -154,7 +148,7 @@ inline void Explode(int index)
         PushEvent(EVT_CHAIN, b.tx, b.ty, b.owner, b.chain);
     }
 
-    SetBlast(b.tx, b.ty, b.owner, gen);
+    SetBlast(b.tx, b.ty, b.owner);
 
     // 네 방향으로 뻗는다
     static const int DX[4] = {  1, -1,  0,  0 };
@@ -183,7 +177,7 @@ inline void Explode(int index)
                 // 부순 보상이 부순 물줄기에 없어지면 블록을 부술 이유가 없다.
                 //
                 // 쓸려가야 하는 건 **이미 바닥에 있던** 아이템이지 방금 나온 것이 아니다
-                SetBlast(x, y, b.owner, gen);
+                SetBlast(x, y, b.owner);
                 BreakBlock(x, y);
                 break;   // 블록을 부수고 거기서 멈춘다
             }
@@ -206,11 +200,11 @@ inline void Explode(int index)
                         break;
                     }
                 }
-                SetBlast(x, y, b.owner, gen);
+                SetBlast(x, y, b.owner);
                 break;   // 물풍선도 물줄기를 막는다. 그래서 풍선이 방패가 된다
             }
 
-            SetBlast(x, y, b.owner, gen);
+            SetBlast(x, y, b.owner);
         }
     }
 }
@@ -426,7 +420,7 @@ inline void ResolveHits()
 // 물줄기로 안 되고 거리를 좁혀야 하므로, 마무리하러 가는 것 자체가 위험을 진다.
 // 그래서 SPEC 2.7 이 말한 "잡으러 갈까" 가 진짜 판단거리가 된다.
 //
-// 갇힌 쪽도 기어서 도망칠 수 있으니 (TRAP_MOVE_SPEED) 쫓고 쫓기는 5초가 된다.
+// 갇힌 쪽도 기어서 도망칠 수 있으니 (TRAP_MOVE_SPEED) 쫓고 쫓기는 7초가 된다.
 inline void PopTrappedPlayers()
 {
     for (int i = 0; i < PLAYER_MAX; ++i) {
@@ -471,7 +465,7 @@ inline void UpdateTimers()
         if (p.trap_ticks > 0) {
             --p.trap_ticks;
             if (p.trap_ticks == 0) {
-                // 5초를 버텼다. 스스로 빠져나온다
+                // 7초를 버텼다. 스스로 빠져나온다
                 p.invuln_ticks = INVULN_TICKS;
                 PushEvent(EVT_BREAK, p.judge_tx, p.judge_ty, i, 0);
             }

@@ -41,7 +41,7 @@ const facesSeen = new Set();
 let sawMoving = false, sawStanding = false;
 
 ws.onopen = () => {
-    console.log('붙었다. 9.5초 동안 받아 본다.\n');
+    console.log('붙었다. 10.3초 동안 받아 본다.\n');
 
     // 3초 카운트다운이 끝나야 물풍선을 놓을 수 있다.
     // 그전에 놓으면 서버가 거절한다. 그게 맞는 동작이다
@@ -59,16 +59,18 @@ ws.onopen = () => {
     // 여기서 보려는 건 **끊기는 게 그 연결 하나뿐인가**다. 세션을 닫는 길에
     // 남의 자리를 건드리거나 틱을 세우면, 클라 하나가 판 전체를 내린다.
     // 스물넷이 붙는 게임에서 이게 제일 무서운 사고다
+    // 먼저 7.1초의 물풍선 폭발까지 본다. 그 전에 둘째 연결을 끊으면
+    // 한 명만 남아 라운드가 끝나고, 정상 물풍선도 폭발할 기회를 잃는다.
     setTimeout(() => {
         for (let i = 0; i < 20; ++i)
             if (filler.readyState === 1) filler.send(junk());
         junkSentAt = snapshots;
-    }, 6400);
-    setTimeout(() => { junkSnaps = snapshots - junkSentAt; }, 7200);
+    }, 7400);
+    setTimeout(() => { junkSnaps = snapshots - junkSentAt; }, 8200);
 
-    setTimeout(() => { restarted = true; send(restart()); }, 7600);
+    setTimeout(() => { restarted = true; send(restart()); }, 8400);
 
-    setTimeout(report, 9500);
+    setTimeout(report, 10300);
 };
 
 ws.onerror = (e) => { console.log('연결 실패. 서버와 다리가 떠 있나?'); process.exit(1); };
@@ -210,7 +212,7 @@ function report() {
         check(rows.size === welcome.mapH, '판이 빠짐없이 왔다');
     }
 
-    const secs = 9.5;
+    const secs = 10.3;
     console.log('  스냅샷 ' + snapshots + ' 개 (' + (snapshots / secs).toFixed(1) + '/초)');
     check(snapshots > secs * 25, '스냅샷이 초당 25개 이상 온다');
     check(maxPlayers >= 1, '스냅샷에 사람이 들어 있다');
